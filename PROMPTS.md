@@ -145,3 +145,126 @@ photo GPS matched against the GPS-synced track.
 **DECISION — set up the repo, defer implementation.** Spec, CLAUDE.md,
 PROMPTS.md, TODO.md, README committed. Next session opens by interrogating
 the decisions above rather than writing code.
+
+---
+
+## Session 2 — 2026-07-28 — interrogating the design, then first code
+
+> ok. let's start this project. let's built it with an existing project i
+> want to implmeent. but the data and website will be separate (e.g., the
+> website will be on github, data will exist locally). i want to build this
+> around for my friend's 100mile ultra marathon. i'm looking to point to his
+> strava, so we can get the course map, where is is on the map at a givien
+> time, but also the elevation profile. then we have the photos and videos
+> from different people/sources
+
+Flagged that the **Strava API cannot be used** (agreement bars showing an
+athlete's data to anyone but that athlete) and asked what the friend can
+actually hand over.
+
+> i want to build it with accepting either a GPX or strava URL. eventually
+> the GPX will be given to me, but for now i might only have the strava URL.
+
+Researched Strava embeds: the embed URL is
+`.../activities/{ID}/embed/{CODE}`, and `{CODE}` comes from the share dialog
+— it **cannot be derived from a plain activity URL**. An embed is also an
+opaque iframe that cannot sync to our cursor. So neither Strava path yields
+position-at-time; only a GPX export does.
+
+**DECISION — `course` is a union.** `gpx` | `strava-embed` | `strava-link` |
+absent. Only `gpx` produces a spine; the others are presentational and the
+spine-dependent features hide themselves. **This set the build order:**
+everything except the spine works with zero course data, so the spine is
+built last and the GPX lights it up later with no rework.
+
+---
+
+**Scale.** Asked how many people and files.
+
+> how hard would it to scale from 4 people to 8 people with lazy loading? to
+> more?
+
+Answered that people are nearly free (a layout and color question, capped
+around 8 by categorical-color distinguishability) and files are what cost:
+swimlanes are free at any scale because they render binned marks, while the
+feed and grid render real images. Named the two local-mode traps — blob URLs
+must be *revoked* on scroll-out, and a 12MP photo decodes to ~48MB so the
+grid must decode downscaled.
+
+**DECISION — design for 8 people / ~2k files.** Lazy loading, blob-URL
+lifecycle, and downscale-on-decode built in from the start (~1 extra day,
+painful to retrofit). Windowing and thumbnail generation stay deferred.
+
+---
+
+**Video.**
+
+> Lots of video, mostly short
+
+**DECISION — video is first-class, but a point on the timeline.** `duration`
+lives in the schema so spans are possible later. This plus viewer-only ingest
+means parsing video timestamps in the browser, which is the riskiest piece of
+the build: Apple writes `mvhd` creation_time in *local* time with no zone, so
+trusting it silently shifts clips by hours.
+
+---
+
+**Media with no usable timestamp.** Offered drop / unplaced tray / infer from
+file order.
+
+**DECISION — unplaced tray**, with manual placement writing `at` back into
+the manifest. Nothing is silently lost, and nothing is confidently wrong.
+
+---
+
+**Two artifacts or one?** Re-opened the Session 1 decision to keep the CLI,
+given that only the local-folder path matters right now.
+
+**DECISION — viewer only in v1; CLI deferred.** One artifact, no install, and
+no schema-drift risk yet. `src/core/` is still written to be imported by a
+CLI unchanged, which is why deferring it costs nothing. The CLI arrives when
+bucket upload or exiftool-grade metadata is actually needed.
+
+*Consequence, stated plainly:* v1 cannot send the crew a link. Sharing needs
+media at stable URLs, which is the deferred upload step.
+
+---
+
+**Role.**
+
+**DECISION — `role` carries behavior.** The runner's lane is pinned to the
+top, styled distinctly, and owns the course spine.
+
+---
+
+**Notes.**
+
+**DECISION — written in-viewer, exported back to the manifest.** Click an
+item, type a caption, "Export manifest" writes it out. No backend; you
+re-save the JSON.
+
+---
+
+**Aesthetic.** Offered its own dark identity, the `color-combinations`
+palette, or a hybrid.
+
+> i have a brand.yml file i use on my chendaniely.github.io website:
+> https://github.com/chendaniely/chendaniely.github.io/blob/main/_brand.yml
+> is this what you mean by option #2?
+
+Fetched it. The question dissolved: that `_brand.yml` **already contains a
+dark ramp** (`dark-base #171512`, `dark-surface #232019`, `dark-border
+#2E2B26`), so "its own dark identity" and "share the brand" were never in
+tension.
+
+**DECISION — the brand's dark ramp, permanently.** No light theme. Two
+derived values were required because the brand's own colors fail WCAG AA on
+the dark ground: links use a lightened blue (`#4E8FBF`, 5.3:1) rather than
+`#236192` (2.8:1), and danger text uses `#D98BA3` rather than `#9A4665`.
+Orange passes unchanged at 5.9:1 and becomes the cursor. Atkinson
+Hyperlegible is **self-hosted** so the site makes zero external requests.
+
+---
+
+**Implemented this session:** M0 (scaffold, brand tokens, core-purity test,
+Makefile) and M1 (`src/core/schema.ts`, `src/core/time.ts`, 44 tests).

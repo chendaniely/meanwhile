@@ -28,19 +28,31 @@ commit hash when done.
   per-person interactive step. Would write into the same manifest rather than
   becoming a real adapter. Low priority; the ZIP download covers it.
 
-## Open design questions
+## Deferred in session 2 (2026-07-28)
 
-Tracked in `CLAUDE.md` under "Open questions for the owner" — to be resolved
-with the owner before implementation starts. The two most likely to change the
-data model:
-
-- **Media with no usable timestamp** — drop, park in an "unplaced" tray, or
-  infer from file order?
-- **Video as a span, not a point** — a 4-minute clip occupies an interval on
-  the timeline, and nothing in the current swimlane design accounts for that.
+- **The ingest CLI itself.** v1 is viewer-only. The CLI returns when bucket
+  upload or exiftool-grade video metadata is actually needed. `src/core/` is
+  already written to be imported by it unchanged, and
+  `tests/core-purity.test.ts` keeps it that way.
+- **Sharing.** Follows directly from the above: v1 is local authoring only.
+  Sending the crew a link needs media at stable URLs.
+- **Video as a span, not a point.** Clips render as points with a poster
+  frame. `duration` is already in the schema, so spans need no migration —
+  only lane rendering.
+- **Windowed rendering** in the feed and grid. Lazy loading covers ~2k files;
+  past ~5k you need to render only visible rows.
+- **Generated thumbnails.** Needs the CLI. Until then the viewer decodes
+  downscaled with `createImageBitmap`.
+- **Lane grouping / collapsing** (all crew as one expandable lane). Useful
+  past ~8 people, which is also where categorical color stops being
+  distinguishable.
+- **A light theme.** Deliberately not built. Adding one means re-deriving
+  every contrast pair in `tokens.css`.
+- **HEIC display.** Metadata parses, but no browser except Safari can decode
+  the image; the tile shows a placeholder. Decoding would mean a WASM
+  dependency, which the budget does not currently justify.
 
 ## Housekeeping
 
 - Choose a license.
-- Decide the aesthetic (shared with `color-combinations`, or its own).
-- `Makefile` and `CHANGELOG.md` once there is anything to build or release.
+- `CHANGELOG.md` once there is a release to describe.

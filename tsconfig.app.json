@@ -1,0 +1,34 @@
+{
+  "$comment": [
+    "Browser code: src/core and src/viewer.",
+    "",
+    "`types: []` is load-bearing. Without it @types/node leaks in and",
+    "`process.env` or `Buffer` would type-check inside the viewer and inside",
+    "the pure kernel. The core-purity test would still catch it in core, but",
+    "this stops it a step earlier and covers the viewer too."
+  ],
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "skipLibCheck": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,77 @@
+@import './fonts.css';
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--mw-bg);
+  color: var(--mw-fg);
+  font-family: var(--mw-font);
+  font-size: var(--mw-text-base);
+  line-height: var(--mw-line-height);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 700;
+  line-height: var(--mw-line-height-heading);
+}
+
+a {
+  color: var(--mw-link);
+  text-decoration: underline;
+}
+
+code,
+kbd,
+time,
+.mw-mono {
+  font-family: var(--mw-font-mono);
+  font-size: 0.9em;
+  /* Timestamps are scanned in vertical columns; tabular figures keep the
+   * digits aligned so a lane reads as a list of times, not a ragged blob. */
+  font-variant-numeric: tabular-nums;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+img,
+video {
+  max-width: 100%;
+  display: block;
+}
+
+:focus-visible {
+  outline: 2px solid var(--mw-accent);
+  outline-offset: 2px;
+}
+
+/* Scrubbing the cursor animates a lot of things at once. Respect the OS
+ * setting rather than making anyone motion-sick to look at a race. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

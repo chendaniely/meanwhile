@@ -1,0 +1,40 @@
+/* Atkinson Hyperlegible, self-hosted (SIL OFL 1.1).
+ *
+ * Self-hosted rather than loaded from Google Fonts so the site makes zero
+ * external requests. The only external request meanwhile ever makes is an
+ * optional Strava embed iframe, and only when the manifest asks for one.
+ *
+ * Latin subset only (~56KB total across four files). */
+
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/atkinson-hyperlegible-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../fonts/atkinson-hyperlegible-700.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/atkinson-hyperlegible-400-italic.woff2') format('woff2');
+}
+
+/* Mono ships as a variable font, so one file covers the whole weight range. */
+@font-face {
+  font-family: 'Atkinson Hyperlegible Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('../fonts/atkinson-hyperlegible-mono.woff2') format('woff2');
+}

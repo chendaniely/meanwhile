@@ -1,26 +1,26 @@
 # CLAUDE.md — working rules and context for `meanwhile`
 
-## STATUS: DESIGN ONLY. NO CODE EXISTS YET.
+## STATUS: M0 + M1 done. Kernel exists; no views yet.
 
-As of 2026-07-28 this repo contains documentation and nothing else. There is
-no `src/`, no `package.json`, no build, no tests. **Do not describe any part
-of this system as implemented, and do not assume any file below exists** —
-every path in this document is a plan, not a fact. Check before you cite.
+As of 2026-07-28 the repo builds, tests, and serves an empty shell.
 
-## START HERE: what the owner wants from the next session
+**Built:** Vite + React + TS scaffold, brand tokens, `tests/core-purity.test.ts`,
+`Makefile`, `src/core/schema.ts`, `src/core/time.ts`. 44 tests pass.
 
-The owner ended the design session with this instruction:
+**Not built:** every view, all metadata extraction, folder ingest, the course
+spine. `src/viewer/App.tsx` is a shell with an empty state.
 
-> i will restart in a new session and i want you to ask me questions about
-> the decisions made, and we may need to make changes
+**Do not describe anything below as implemented unless it is in the "Built"
+list.** Check before you cite.
 
-**So the next session opens by interrogating the design, not by writing
-code.** Work through "Open questions" at the bottom of this file, and treat
-every decision in the record below as re-openable. The owner has already
-overruled Claude's recommendation once (keeping the CLI), so do not present
-these as settled.
+## START HERE: the plan
 
-Do not start implementing until the owner says to.
+The v1 plan is 12 milestones, M0-M11, each independently verifiable. The full
+plan with per-milestone verification criteria is in the session plan file; the
+milestone list also lives in the task list. Current position: **M2 (metadata
+extraction) is next.**
+
+Build order is not arbitrary — see "The course spine is built LAST" below.
 
 ---
 
@@ -65,24 +65,73 @@ this repo, and whoever controls the media host controls access.
 **Reversing it** means adopting a backend, storage, and auth — a service
 rather than a weekend project.
 
-### Two artifacts, one shared kernel
+### One artifact for now: the viewer. The CLI is deferred. *(revised session 2)*
 
-A viewer (React + Vite) and an ingest CLI (TypeScript on Node), both
-importing a pure `src/core/`.
+Session 1 chose to build a viewer **and** an ingest CLI. Session 2 revisited
+this given that only the local-folder path matters right now, and **deferred
+the CLI**: one artifact, no install, and no schema-drift risk yet.
 
-Claude proposed collapsing the CLI into the site (browser-side EXIF parsing,
-one artifact, no install). **The owner chose to keep both**, for
-exiftool-grade video metadata, Drive pulls, and bucket uploads.
+`src/core/` is still written to be imported by a CLI unchanged — that is
+precisely why deferring costs nothing. The purity test enforces it
+mechanically. The CLI arrives when bucket upload or exiftool-grade video
+metadata is actually needed, and `src/core/schema.ts` remains the single
+source of truth both would import.
 
-Consequence: **schema drift is now the project's main design risk.** The
-mitigation is non-negotiable — `src/core/schema.ts` is the single source of
-truth imported by *both*, so a schema change breaks both builds at once
-instead of one at runtime.
+The cost of this choice, accepted knowingly: **video timestamps must now be
+parsed in the browser**, which is the riskiest code in the build (see "The
+video trap"). And **v1 cannot send the crew a link** — sharing needs media at
+stable URLs, which is the deferred upload step.
 
-The CLI is TypeScript rather than Python **only** so it can share that kernel.
-If the owner would rather read Python, that trade is worth re-opening — but
-the answer must then include how the two stay in sync (a JSON Schema
-contract plus round-trip fixtures on both sides).
+The CLI language question (TypeScript vs Python) is therefore moot until the
+CLI exists. If it is ever written in Python, the answer must include how the
+two stay in sync: a JSON Schema contract plus round-trip fixtures on both
+sides.
+
+### The course spine is built LAST, and that is deliberate *(session 2)*
+
+Everything except the spine works with **zero course data** — swimlanes on a
+time axis, feed, and moment grid need no GPX at all. The GPX later *lights
+up* the elevation backdrop, distance axis, map, and automatic clock alignment
+without reworking anything already built.
+
+So `course` is a union, and missing data hides features rather than breaking
+them:
+
+```ts
+{ kind: 'gpx', src }          // full spine
+{ kind: 'strava-embed', url } // opaque iframe, presentational only
+{ kind: 'strava-link', url }  // hyperlink only
+undefined                     // no course; time axis only
+```
+
+**A bare Strava activity URL is not embeddable.** The embed URL is
+`.../activities/{ID}/embed/{CODE}` and `{CODE}` comes from Strava's share
+dialog — it cannot be derived. An embed is an opaque iframe that cannot sync
+to our cursor. Only a GPX yields position-at-time.
+
+### `timeSource` is recorded per item *(session 2)*
+
+Every item records where its timestamp came from: `gps`, `exif-offset`,
+`qt-offset`, `exif-naive`, `filename`, `mvhd`, `manual`, `none` — ordered
+most to least trustworthy. Two things depend on it:
+
+1. The UI shows how much to trust a placement. **A timeline that is
+   confidently wrong is worse than one with visible gaps.**
+2. **Only device-clock sources get `clockOffset` applied.** A GPS timestamp
+   came from satellites; a manual placement came from the author. Correcting
+   those would introduce the very error the offset exists to remove. Enforced
+   by `appliesClockOffset()` in `src/core/time.ts`.
+
+`item.at` is always the time **as recorded**, never corrected. Correction
+happens at render time, so adjusting one person's clock is a one-line
+manifest edit rather than a rewrite of every item they shot.
+
+### Media with no usable timestamp goes to an unplaced tray *(session 2)*
+
+`timeSource: 'none'`, no `at`. Visible in a holding area, draggable onto the
+timeline, which writes `at` and flips the source to `manual`. Chosen over
+dropping (silent loss) and over inferring from file order (confidently
+wrong).
 
 ### The manifest is the contract
 
@@ -151,6 +200,9 @@ a future session will be tempted to assume works. It does not.
 | **Photos → Drive copy** | No real path. Auto-sync died July 2019; the Drive desktop app stops accepting new backup folders 2026-06-15 and stops syncing existing ones 2026-08-10. Only "Upload from Drive" *into* Photos survives. Drive is a **collection point**, not a waystation. |
 | **Strava API** | **Forbidden for this use case.** The agreement (2024-11-11) bars third-party apps from displaying a user's activity data to anyone other than that user — exactly what meanwhile does. Plus $11.99/mo for Standard tier from June 2026. **Take a GPX export instead**, which also works for Garmin/COROS/any watch. |
 | **`showDirectoryPicker()`** | Chrome/Edge/Opera only. **Not Safari on macOS or iOS. Not Firefox.** `<input type="file" webkitdirectory>` is the fallback. Hence: local mode is for desktop authoring, remote URLs are the shareable artifact for phones. |
+| **Strava embeds** *(v2)* | Embed URL is `.../activities/{ID}/embed/{CODE}`. `{CODE}` comes from Strava's share dialog and **cannot be derived from an activity URL.** The embed is an opaque iframe — it cannot sync to our cursor and yields no position-at-time. |
+| **Apple `mvhd` timestamps** *(v2)* | MP4/MOV `mvhd` creation_time is nominally UTC, but **Apple writes LOCAL time there with no zone.** Trusting it shifts clips by hours with no error. Prefer `com.apple.quicktime.creationdate`, which carries a real UTC offset. |
+| **HEIC** *(v2)* | iPhones shoot it by default and **no browser but Safari can decode it.** Metadata is readable (HEIC is ISOBMFF, same walker as MP4), so the item still gets placed — but the image will not render and needs a placeholder tile. |
 
 **The data-quality rule** — the highest-leverage sentence in the README:
 
@@ -163,10 +215,16 @@ a future session will be tempted to assume works. It does not.
 
 - `src/core/` is a **pure TypeScript kernel**: schema and validation, clock
   math, grouping, timeline binning, the course spine. Only relative imports
-  of other core files; no React, no Node APIs, no browser globals. To be
-  enforced by `tests/core-purity.test.ts` — never weaken that test.
-- Both the viewer and the CLI import `src/core/schema.ts`. Neither may define
-  its own notion of the manifest.
+  of other core files; no React, no Node APIs, no browser globals. Enforced
+  by `tests/core-purity.test.ts` — **never weaken that test.** It has been
+  verified to fail on both a package import and a DOM global.
+  - Two consequences it already forces: GPX parsing cannot use `DOMParser`,
+    and metadata extraction takes an `ArrayBuffer`, never a `File` or `Blob`.
+    Turning a file into bytes is the viewer's job.
+  - `TextDecoder`, `Intl`, and `Date` are allowed: ECMAScript/WHATWG globals
+    present identically in Node and browsers, not DOM APIs.
+- Nothing outside `src/core/schema.ts` may define its own notion of the
+  manifest.
 - The viewer reads ONLY a validated, schema-versioned manifest. It refuses
   unknown `schema` values with a legible error rather than a broken render.
 - App state is one serializable object, and the parts that matter are
@@ -184,14 +242,30 @@ or Strava APIs.
 
 ## Dependency budget
 
-Nothing is installed yet. The intended runtime set is small — react,
-react-dom, and `d3-scale`/`d3-time` for the axis. Dev: vite, typescript,
-vitest, @vitejs/plugin-react, tsx, and types.
-
-GPX and TCX are XML and must be parsed without a new dependency. FIT is
-binary and would need one, which is why it is deferred.
-
 **Justify every addition in this file before installing it.**
+
+Installed and why:
+
+| Package | Why |
+|---|---|
+| `react`, `react-dom` | the viewer |
+| `d3-scale`, `d3-time` | axis tick math only — no D3 selections, no D3 DOM |
+| `vite`, `@vitejs/plugin-react`, `typescript`, `vitest` | build and test |
+| `@types/react`, `@types/react-dom`, `@types/d3-*` | types for the above |
+| `@types/node` | **dev-only, and confined to `tsconfig.node.json`.** The test suite reads files off disk and `vite.config.ts` reads `process.env`. `tsconfig.app.json` sets `"types": []` so it cannot leak into `src/` — that line is load-bearing. |
+
+**Not installed, deliberately:**
+
+- **No EXIF library.** We need a narrow slice (DateTimeOriginal,
+  OffsetTimeOriginal, GPS, orientation) and the ISOBMFF walker for video has
+  no good tiny dependency anyway. A focused TIFF/IFD walker is ~250 lines and
+  keeps `core/` dependency-free. *Escape hatch:* `exifr` is the pre-approved
+  fallback if this bogs down — but justify it here first.
+- **No XML parser.** GPX and TCX are XML, but `DOMParser` is a browser global
+  and `core/` must run under Node too. `course.ts` hand-rolls a small scanner.
+  This is why a future CLI gets GPX support for free.
+
+FIT is binary and would need a real dependency, which is why it is deferred.
 
 ## The documentation contract
 
@@ -202,8 +276,8 @@ structure, or behavior MUST update the affected docs in the SAME commit:
 
 - `README.md` — what it is plus complete setup/run/deploy instructions,
   written for a non-JS reader. Never document a command that does not work.
-- `Makefile` — must always match reality; every target works. *(Not yet
-  created — there is nothing to run.)*
+- `Makefile` — must always match reality; every target works. Run
+  `make help` to see them. A Makefile that lies is worse than none.
 - `PROMPTS.md` — append-only log of the owner's prompts (**verbatim**) and
   the decisions made. Every session, append.
 - `TODO.md` — anything deliberately deferred.
@@ -213,16 +287,47 @@ structure, or behavior MUST update the affected docs in the SAME commit:
   the project is human-guided, not blindly vibe-coded. Keep that framing.
 - The spec in `docs/superpowers/specs/` — update if the design changes.
 
-## Aesthetic
+## Aesthetic — RESOLVED *(session 2)*
 
-**Undecided — ask.** The owner's `color-combinations` project uses a "Washi &
-Ink" japandi palette with their brand colors (NYC orange `#F26522` sparingly,
-blue `#236192` for links, warm neutrals). Whether meanwhile shares that
-identity or gets its own has not been discussed.
+meanwhile runs permanently on the **dark ramp of the owner's `_brand.yml`**
+(github.com/chendaniely/chendaniely.github.io). That file already contains a
+dark ramp, so "its own identity" and "share the brand" were never in tension.
 
-Worth raising: this app is mostly a dark canvas behind photographs, and
-photos generally want a neutral, recessive chrome that does not compete with
-them.
+**There is no light theme**, and adding one means re-deriving every contrast
+pair. Tokens live in `src/viewer/styles/tokens.css`.
+
+Two values are **derived, not from the brand**, because the brand's own
+colors fail WCAG AA on the dark ground. Do not "fix" these back:
+
+| Token | Value | Why not the brand value |
+|---|---|---|
+| `--mw-link` | `#4E8FBF` (5.3:1) | brand `#236192` is **2.8:1** on `#171512` — unreadable |
+| `--mw-danger` | `#D98BA3` (7.2:1) | brand `#9A4665` is **3.0:1** |
+
+Orange `#F26522` passes unchanged at 5.9:1 and is the cursor accent.
+`--mw-fg-faint` is 4.1:1 and is **borders and decoration only, never text**.
+
+Atkinson Hyperlegible is **self-hosted** (`src/viewer/fonts/`, SIL OFL, ~56KB)
+so the site makes zero external requests. The only external request meanwhile
+ever makes is an optional Strava embed iframe.
+
+## Scale target *(session 2)*
+
+**8 people, ~2k files.** People are nearly free — a layout and color
+question, capped near 8 by categorical-color distinguishability. Files are
+what cost, and swimlanes are free at any scale because they render binned
+marks rather than images.
+
+Built in from the start because retrofitting them is painful:
+
+- **Blob URLs must be revoked** on scroll-out. Local mode creates one per
+  file; without revocation memory grows until the tab dies.
+- **Decode downscaled.** A 12MP photo decodes to ~48MB; fifty on screen is
+  2.4GB. `createImageBitmap(file, {resizeWidth})` off-thread is the fix.
+- Lazy loading via `IntersectionObserver`.
+
+Deferred: windowed rendering (needed past ~5k files) and CLI-generated
+thumbnails. Both additive.
 
 ---
 
@@ -233,24 +338,16 @@ Ask these. Do not answer them unilaterally.
 1. **Public from day one?** The site is public by design, but the *manifest*
    for your friend's race is a separate choice. Public repo with a private
    manifest, or keep the whole thing unlisted until the crew has seen it?
-2. **Does `role` do anything?** Is runner/crew/friend just a label, or does
-   the runner's lane get pinned to the top, styled differently, treated as
-   the spine's owner?
-3. **Media with no usable timestamp.** Some files will arrive stripped. Drop
-   them, park them in an "unplaced" tray for manual placement, or guess from
-   file order? This needs an answer before the data model is fixed.
-4. **Scope of an event.** One manifest per event. Does a multi-day event, or
+2. **Scope of an event.** One manifest per event. Does a multi-day event, or
    a series (training runs leading up to the race), need a collection
-   concept, or is one file always enough?
-5. **Who writes the notes, and when?** Per-item `note` is in the schema, but
-   the workflow is undefined — do you write captions while assembling, or do
-   the crew annotate their own photos somehow?
-6. **Aesthetic** — shared identity with `color-combinations`, or its own?
-7. **CLI language** — TypeScript for kernel-sharing, or Python for
-   legibility? (See the decision record for the cost of switching.)
-8. **Video.** How much of the media is video, and how long? It changes the
-   swimlane design substantially — a 4-minute clip is a *span* on the
-   timeline, not a point, and nothing in the current design accounts for
-   that.
-9. **Rough scale.** How many files total, and how many people? A few hundred
-   and four people is a very different renderer from twenty thousand.
+   concept, or is one file always enough? *(Assumed: one file is enough.
+   YAGNI until told otherwise.)*
+3. **License.** Still unchosen.
+
+### Answered in session 2 — do not re-ask
+
+`role` carries behavior (runner pinned top, owns the spine) · no-timestamp
+media goes to an unplaced tray · notes are written in-viewer and exported ·
+aesthetic is the brand's dark ramp · CLI is deferred so its language is moot ·
+lots of short video, treated as points with `duration` in the schema · 8
+people / ~2k files.

@@ -3,10 +3,10 @@
 *Many people's photos, one shared timeline. See what everyone was doing in
 relation to everyone else.*
 
-> **Status: design only. Nothing is built yet.**
-> This repo currently contains a design spec and working notes. There is no
-> app to run, no install steps, and no commands. This README will grow setup
-> and usage instructions when there is something to set up.
+> **Status: early. The scaffolding and the timeline maths are built; none of
+> the views are.**
+> You can run it, but right now it shows an empty page. See
+> [Running it](#running-it) below.
 
 ## The idea
 
@@ -43,6 +43,21 @@ richer: an elevation profile behind the photos, a map of the course, the
 option to lay everything out by mile instead of by hour — and automatic
 correction of the clock differences between everyone's cameras.
 
+### Ask for the GPX, not the Strava link
+
+A Strava link alone can't do any of that. meanwhile can show one, but it's
+just a link (or at best Strava's own embedded widget, which is a sealed box
+that can't follow your cursor). None of it says *where the runner was at
+2:14am*, which is the whole point.
+
+The file that does is a GPX, and getting it takes about ten seconds:
+
+> On strava.com, open the activity → the **⋯** menu → **Export GPX**.
+
+It's the athlete's own file, so there are no API terms or fees involved — and
+the same export works from Garmin, COROS, or any other watch, so none of this
+depends on Strava at all.
+
 ## Planned views
 
 All four share one cursor, so switching between them keeps your place in time.
@@ -53,6 +68,51 @@ All four share one cursor, so switching between them keeps your place in time.
   who shot it. The phone view.
 - **Moment grid** — pick a time, see what all four people captured right then.
 - **Map** — where everyone was, drawn on the course.
+
+## Running it
+
+You need **Node.js 20 or newer**. Check with `node --version`. If you don't
+have it, install it from [nodejs.org](https://nodejs.org/) or with
+`brew install node`.
+
+Then, from inside this folder:
+
+```sh
+make install    # once, and again after pulling changes
+make dev        # starts the site at http://localhost:5173
+```
+
+Leave `make dev` running and open that address in **Chrome or Edge**. Press
+`Ctrl-C` in the terminal to stop it.
+
+> Chrome or Edge specifically, for now. Reading a folder off your own disk
+> uses a browser feature Safari and Firefox don't have yet. That only affects
+> *building* a timeline on your own machine — once a timeline points at
+> photos on the web, any browser can open it.
+
+Other commands:
+
+| Command | What it does |
+|---|---|
+| `make help` | List every command |
+| `make test` | Run the test suite |
+| `make check` | Everything the project checks before a commit |
+| `make build` | Produce the publishable site in `dist/` |
+| `make preview` | Serve `dist/` so you can check it before publishing |
+| `make clean` | Delete `dist/` and the installed packages |
+
+**Your photos never go in this repo.** `data/` is ignored by git, and so are
+media files anywhere in the folder. This is deliberate: a 24-hour race across
+several people is many gigabytes of video, and git keeps every byte forever
+even after you delete it.
+
+## What works today
+
+- The timeline maths: the manifest format, its validation, and all the
+  clock-offset and timezone handling.
+- A page that loads, in the right typeface and colors.
+
+Nothing else. There is no way to load photos yet — that's the next step.
 
 ## If you're contributing photos to an event
 
@@ -66,6 +126,13 @@ photo with no timestamp has no place on the timeline. Send originals.
 Coming from Google Photos? Use the album's **"Download all"** button to get a
 ZIP. Don't right-click-save individual images from the web page; that gives
 you a stripped copy.
+
+**On an iPhone, send JPEG rather than HEIC.** iPhones shoot HEIC by default,
+and no browser except Safari can display it. meanwhile will still place a
+HEIC photo correctly on the timeline — it can read the timestamp — but it
+can't show you the picture. To change this: *Settings → Camera → Formats →
+Most Compatible*. For photos you've already taken, AirDrop to a Mac converts
+them automatically.
 
 ## Documentation
 

@@ -1,0 +1,219 @@
+import { describe, expect, it } from 'vitest';
+import { SCHEMA_VERSION, isExactTime, validateManifest } from '../src/core/schema.ts';
+
+function minimal(overrides: Record<string, unknown> = {}): unknown {
+  return {
+    schema: SCHEMA_VERSION,
+    event: { title: 'Cascade Crest 100', timezone: 'America/Los_Angeles' },
+    people: [{ id: 'sam', name: 'Sam', role: 'runner' }],
+    items: [
+      {
+        id: 'a1f',
+        person: 'sam',
+        type: 'photo',
+        src: 'sam/IMG_4417.jpg',
+        at: '2026-08-22T13:12:04Z',
+        timeSource: 'exif-offset',
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function errorsOf(input: unknown): string[] {
+  const r = validateManifest(input);
+  return r.ok ? [] : r.errors;
+}
+
+describe('validateManifest', () => {
+  it('accepts a minimal valid manifest', () => {
+    const r = validateManifest(minimal());
+    expect(r.ok).toBe(true);
+  });
+
+  it('refuses a schema version it does not understand', () => {
+    const r = validateManifest(minimal({ schema: 99 }));
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    // A legible refusal beats a render that is subtly wrong.
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toContain('version 99');
+    expect(r.errors[0]).toContain(`version ${SCHEMA_VERSION}`);
+  });
+
+  it('refuses a manifest with no schema field at all', () => {
+    const noSchema = minimal() as Record<string, unknown>;
+    delete noSchema['schema'];
+    expect(errorsOf(noSchema)[0]).toContain('missing "schema"');
+  });
+
+  it('rejects non-objects', () => {
+    expect(errorsOf(null)).toHaveLength(1);
+    expect(errorsOf([])).toHaveLength(1);
+    expect(errorsOf('{}')).toHaveLength(1);
+  });
+
+  it('collects every problem instead of stopping at the first', () => {
+    const errs = errorsOf(
+      minimal({
+        event: {},
+        people: [{ id: '', name: '' }],
+      }),
+    );
+    expect(errs.length).toBeGreaterThan(2);
+  });
+
+  it('catches an item pointing at a person who does not exist', () => {
+    const errs = errorsOf(
+      minimal({
+        items: [
+          {
+            id: 'a1f',
+            person: 'nobody',
+            type: 'photo',
+            src: 'x.jpg',
+            at: '2026-08-22T13:12:04Z',
+            timeSource: 'exif-offset',
+          },
+        ],
+      }),
+    );
+    expect(errs.some((e) => e.includes('unknown person "nobody"'))).toBe(true);
+  });
+
+  it('catches duplicate person and item ids', () => {
+    expect(
+      errorsOf(
+        minimal({
+          people: [
+            { id: 'sam', name: 'Sam' },
+            { id: 'sam', name: 'Sam Again' },
+          ],
+        }),
+      ).some((e) => e.includes('more than once')),
+    ).toBe(true);
+  });
+
+  it('requires a timestamp unless timeSource is "none"', () => {
+    const errs = errorsOf(
+      minimal({
+        items: [{ id: 'a', person: 'sam', type: 'photo', src: 'x.jpg', timeSource: 'exif-offset' }],
+      }),
+    );
+    expect(errs.some((e) => e.includes('.at must be an ISO-8601'))).toBe(true);
+  });
+
+  it('accepts an unplaced item with no timestamp', () => {
+    const r = validateManifest(
+      minimal({
+        items: [{ id: 'a', person: 'sam', type: 'photo', src: 'x.jpg', timeSource: 'none' }],
+      }),
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects an unplaced item that nonetheless carries a time', () => {
+    const errs = errorsOf(
+      minimal({
+        items: [
+          {
+            id: 'a',
+            person: 'sam',
+            type: 'photo',
+            src: 'x.jpg',
+            at: '2026-08-22T13:12:04Z',
+            timeSource: 'none',
+          },
+        ],
+      }),
+    );
+    expect(errs.some((e) => e.includes('"manual"'))).toBe(true);
+  });
+
+  it('validates GPS coordinates are on the planet', () => {
+    const errs = errorsOf(
+      minimal({
+        items: [
+          {
+            id: 'a',
+            person: 'sam',
+            type: 'photo',
+            src: 'x.jpg',
+            at: '2026-08-22T13:12:04Z',
+            timeSource: 'gps',
+            gps: [147.39, -121.39],
+          },
+        ],
+      }),
+    );
+    expect(errs.some((e) => e.includes('latitude, longitude'))).toBe(true);
+  });
+
+  it('requires a marker to say where it goes', () => {
+    const errs = errorsOf(minimal({ markers: [{ label: 'Hyak aid station' }] }));
+    expect(errs.some((e) => e.includes('atDistance'))).toBe(true);
+  });
+
+  it('accepts markers given in either time or distance', () => {
+    const r = validateManifest(
+      minimal({
+        markers: [
+          { label: 'Hyak aid station', atDistance: 66000 },
+          { label: 'Sunrise', at: '2026-08-22T12:38:00Z' },
+        ],
+      }),
+    );
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe('course variants', () => {
+  it('accepts a GPX course', () => {
+    const r = validateManifest(minimal({ course: { kind: 'gpx', src: 'sam.gpx', person: 'sam' } }));
+    expect(r.ok).toBe(true);
+    expect(r.warnings).toEqual([]);
+  });
+
+  it('accepts a Strava fallback but warns that the spine stays off', () => {
+    const r = validateManifest(
+      minimal({ course: { kind: 'strava-link', url: 'https://www.strava.com/activities/123' } }),
+    );
+    expect(r.ok).toBe(true);
+    // The user needs to know why the map and elevation profile are missing.
+    expect(r.warnings.join(' ')).toMatch(/GPX export/);
+  });
+
+  it('rejects an unknown course kind', () => {
+    expect(errorsOf(minimal({ course: { kind: 'garmin-api', url: 'x' } })).length).toBe(1);
+  });
+
+  it('rejects a course owned by an unknown person', () => {
+    const errs = errorsOf(minimal({ course: { kind: 'gpx', src: 'x.gpx', person: 'ghost' } }));
+    expect(errs.some((e) => e.includes('unknown person "ghost"'))).toBe(true);
+  });
+});
+
+describe('warnings do not block loading', () => {
+  it('warns when more than one person is the runner', () => {
+    const r = validateManifest(
+      minimal({
+        people: [
+          { id: 'sam', name: 'Sam', role: 'runner' },
+          { id: 'ali', name: 'Ali', role: 'runner' },
+        ],
+      }),
+    );
+    expect(r.ok).toBe(true);
+    expect(r.warnings.join(' ')).toMatch(/pinned to the top lane/);
+  });
+});
+
+describe('isExactTime', () => {
+  it('marks satellite time and author intent as exact, everything else not', () => {
+    expect(isExactTime('gps')).toBe(true);
+    expect(isExactTime('manual')).toBe(true);
+    expect(isExactTime('exif-offset')).toBe(false);
+    expect(isExactTime('mvhd')).toBe(false);
+    expect(isExactTime('none')).toBe(false);
+  });
+});

@@ -1,8 +1,9 @@
 # meanwhile — design
 
 **Date:** 2026-07-28
-**Status:** approved in brainstorming; not yet implemented
+**Status:** approved; M0-M1 implemented
 **Owner:** Daniel Chen (@chendaniely)
+**Revised:** 2026-07-28 (session 2) — see §12 for what changed and why
 
 ---
 
@@ -320,13 +321,115 @@ No backend. No user accounts. No media stored in git — four people across a
 forever even after a delete. No runtime dependency on the Google Photos or
 Strava APIs. No state-management library, no router.
 
-## 11. Open questions for the next session
-
-Deliberately unresolved; see `CLAUDE.md` §"Open questions" for the full list
-with context.
+## 11. Open questions
 
 1. Is the site public from day one, or private until the crew has seen it?
-2. Does "role" (runner/crew/friend) carry any behavior, or is it a label?
-3. What is the fallback lane for media with no usable timestamp?
-4. Multi-day and multi-event: one manifest per event, or a collection?
-5. Who writes the `note` comments, and when in the workflow?
+2. Multi-day and multi-event: one manifest per event, or a collection?
+   *(Assumed one file is enough until told otherwise.)*
+3. License.
+
+## 12. Session 2 revisions (2026-07-28)
+
+The design above stands except where noted here. Sections 3.2, 6, and 9 are
+superseded by this one.
+
+### 12.1 The CLI is deferred; v1 is viewer-only
+
+§3.2 described an ingest CLI shipping alongside the viewer. Since only the
+local-folder path matters right now, v1 ships **the viewer alone**: one
+artifact, no install, no schema-drift risk yet.
+
+`src/core/` is still written to be imported by a CLI unchanged — that is
+exactly why deferring costs nothing — and `tests/core-purity.test.ts`
+enforces it mechanically. The CLI arrives when bucket upload or
+exiftool-grade video metadata is actually needed.
+
+Two consequences, accepted knowingly:
+
+- **Video timestamps must be parsed in the browser** (§12.3).
+- **v1 cannot send the crew a link.** Sharing needs media at stable URLs,
+  which is the deferred upload step. v1 is local authoring: point the site at
+  a folder and look at the timeline.
+
+### 12.2 `course` is a union, and the spine is built LAST
+
+§5 assumed a GPX. The owner may only have a Strava URL at first, so `course`
+becomes:
+
+```ts
+{ kind: 'gpx', src }          // full spine
+{ kind: 'strava-embed', url } // opaque iframe, presentational only
+{ kind: 'strava-link', url }  // hyperlink only
+undefined                     // no course; time axis only
+```
+
+Verified: **a bare Strava activity URL is not embeddable.** The embed URL is
+`.../activities/{ID}/embed/{CODE}` and `{CODE}` comes from Strava's share
+dialog — it cannot be derived. The embed is an opaque iframe that cannot sync
+to our cursor. Neither Strava path yields position-at-time; only a GPX does.
+
+This sets the **build order**. Swimlanes on a time axis, the feed, and the
+moment grid need no course data at all, so they come first and the spine
+comes last — where it *lights up* the elevation backdrop, distance axis, map,
+and automatic clock alignment without reworking anything. Missing course data
+hides features rather than breaking them.
+
+### 12.3 `timeSource` per item
+
+New required field on every item, ordered most to least trustworthy: `gps`,
+`exif-offset`, `qt-offset`, `exif-naive`, `filename`, `mvhd`, `manual`,
+`none`. Two things depend on it.
+
+**It marks confidence.** A timeline that is confidently wrong is worse than
+one with visible gaps, and the worst offender is Apple's `mvhd`
+creation_time: nominally UTC, but Apple writes *local* time there with no
+zone, so trusting it shifts clips by hours with no error. Prefer
+`com.apple.quicktime.creationdate`, which carries a real UTC offset.
+
+**It gates clock correction.** Only device-clock sources get `clockOffset`
+applied. A GPS timestamp came from satellites; a manual placement came from
+the author. Correcting either would introduce the very error the offset
+exists to remove.
+
+Relatedly, `item.at` is the time **as recorded**, never corrected. Correction
+happens at render time (§8), so adjusting one person's clock is a one-line
+manifest edit rather than a rewrite of every item they shot.
+
+### 12.4 Media with no usable timestamp: an unplaced tray
+
+`timeSource: 'none'`, no `at`. Visible in a holding area, draggable onto the
+timeline, which writes `at` and flips the source to `manual`. Chosen over
+dropping (silent loss) and over inferring from file order (confidently
+wrong).
+
+### 12.5 Scale, and video
+
+**Target: 8 people, ~2k files.** People are nearly free; files are what cost,
+and swimlanes are free at any scale because they render binned marks rather
+than images. Built in from the start because retrofitting is painful: blob-URL
+revocation on scroll-out, `createImageBitmap(file, {resizeWidth})` to decode
+downscaled off-thread, and `IntersectionObserver` lazy loading. Deferred:
+windowed rendering (needed past ~5k) and generated thumbnails.
+
+**Video is lots and mostly short.** It renders as a point on the timeline with
+a poster frame, one clip playing at a time. `duration` is in the schema so
+spans become possible later without a migration.
+
+**HEIC** is readable but not displayable: iPhones shoot it by default and no
+browser but Safari can decode it. Metadata parses fine (HEIC is ISOBMFF, the
+same walker as MP4), so the item is still placed correctly — the tile shows a
+placeholder.
+
+### 12.6 Aesthetic: the brand's dark ramp
+
+The owner's `_brand.yml` already contains a dark ramp, so "its own identity"
+and "share the brand" were never in tension. No light theme.
+
+Two values are derived rather than taken from the brand, because the brand's
+own colors fail WCAG AA on `#171512`: links use `#4E8FBF` (5.3:1) instead of
+`#236192` (2.8:1), and danger text uses `#D98BA3` instead of `#9A4665`
+(3.0:1). Orange `#F26522` passes unchanged at 5.9:1 and is the cursor.
+
+Atkinson Hyperlegible is self-hosted (~56KB) so the site makes zero external
+requests. The only external request meanwhile ever makes is an optional
+Strava embed iframe.

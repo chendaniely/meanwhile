@@ -1,0 +1,79 @@
+/* Design tokens, derived from the owner's _brand.yml
+ * (github.com/chendaniely/chendaniely.github.io/blob/main/_brand.yml).
+ *
+ * meanwhile runs permanently on the brand's DARK ramp. This is a deliberate
+ * choice, not a dark-mode toggle: the app is mostly a canvas behind other
+ * people's photographs, and a light warm ground visibly tints them. The
+ * brand's dark-base is warm (R>G>B) but at that lightness its chroma is ~2%
+ * — far too small to affect how a photo reads.
+ *
+ * There is no light theme. Adding one would mean re-deriving every contrast
+ * pair below. */
+
+:root {
+  /* ---- Brand palette, verbatim from _brand.yml ---------------------- */
+  --brand-orange: #f26522;
+  --brand-blue: #236192;
+  --brand-warm-white: #f8f6f2;
+  --brand-sand: #e8ddd2;
+  --brand-stone: #b8aea2;
+  --brand-warm-gray: #7e7468;
+  --brand-charcoal: #2f2a26;
+  --brand-near-black: #1c1a17;
+  --brand-dark-base: #171512;
+  --brand-dark-surface: #232019;
+  --brand-dark-border: #2e2b26;
+  --brand-success: #72994e;
+  --brand-danger: #9a4665;
+
+  /* ---- Surfaces ----------------------------------------------------- */
+  --mw-bg: var(--brand-dark-base); /* the canvas photos sit on */
+  --mw-surface: var(--brand-dark-surface); /* panels, cards, chrome */
+  --mw-surface-raised: var(--brand-charcoal); /* hover, active, popovers */
+  --mw-border: var(--brand-dark-border);
+
+  /* ---- Foreground ---------------------------------------------------
+   * Contrast ratios below are against --mw-bg (#171512), computed, not
+   * guessed. WCAG AA body text needs 4.5:1. */
+  --mw-fg: var(--brand-warm-white); /* 17.2:1 — primary text */
+  --mw-fg-muted: var(--brand-stone); /* 8.5:1  — secondary text */
+  --mw-fg-faint: var(--brand-warm-gray); /* 4.1:1  — SEE WARNING BELOW */
+
+  /* WARNING: --mw-fg-faint is 4.1:1 and does NOT meet AA for body text.
+   * Use it only for borders, dividers, and decorative marks — never for
+   * text a reader needs. Reach for --mw-fg-muted instead. */
+
+  /* ---- Accents -------------------------------------------------------
+   * The brand's orange passes AA on the dark ground unchanged. The brand's
+   * blue does NOT (2.8:1), so links use a lightened instance at the same
+   * hue (205 degrees). Same for danger. */
+  --mw-accent: var(--brand-orange); /* 5.9:1 — the cursor */
+  --mw-accent-dim: #a8451a; /* cursor trail, non-text only */
+  --mw-link: #4e8fbf; /* 5.3:1 — lightened brand-blue */
+  --mw-success: var(--brand-success); /* 5.7:1 */
+  --mw-danger: #d98ba3; /* 7.2:1 — lightened brand-danger */
+  --mw-danger-bg: var(--brand-danger); /* fills and borders only */
+
+  /* ---- Typography ---------------------------------------------------- */
+  --mw-font: 'Atkinson Hyperlegible', system-ui, -apple-system, sans-serif;
+  --mw-font-mono: 'Atkinson Hyperlegible Mono', ui-monospace, monospace;
+  --mw-text-base: 1rem;
+  --mw-line-height: 1.75;
+  --mw-line-height-heading: 1.2;
+
+  /* Timestamps, offsets, and coordinates are tabular data and always set in
+   * mono, so digits line up when scanning a lane. */
+  --mw-text-sm: 0.875rem;
+  --mw-text-xs: 0.75rem;
+
+  /* ---- Space (4px base) ---------------------------------------------- */
+  --mw-space-1: 0.25rem;
+  --mw-space-2: 0.5rem;
+  --mw-space-3: 0.75rem;
+  --mw-space-4: 1rem;
+  --mw-space-6: 1.5rem;
+  --mw-space-8: 2rem;
+
+  --mw-radius: 4px;
+  --mw-radius-lg: 8px;
+}

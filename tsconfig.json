@@ -1,0 +1,10 @@
+{
+  "$comment": [
+    "Solution file. The real settings live in the two referenced configs:",
+    "  tsconfig.app.json  - browser code (src/), no Node types",
+    "  tsconfig.node.json - tests and vite.config.ts, Node types allowed",
+    "`make typecheck` runs both."
+  ],
+  "files": [],
+  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }]
+}

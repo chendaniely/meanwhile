@@ -1,0 +1,28 @@
+# Event data lives locally and NEVER in git.
+# Four people across a 24-hour race is many GB of video, and git history
+# retains every byte forever even after a delete.
+/data/
+*.gpx
+*.tcx
+manifest.json
+
+# Media, in case anything lands outside data/
+*.jpg
+*.jpeg
+*.png
+*.heic
+*.HEIC
+*.mov
+*.MOV
+*.mp4
+*.MP4
+
+# Test fixtures are a deliberate, narrow exception: hand-built byte-level
+# parser inputs, capped at 100KB total. See tests/fixtures/README.md.
+!/tests/fixtures/**
+
+# Build + tooling
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
