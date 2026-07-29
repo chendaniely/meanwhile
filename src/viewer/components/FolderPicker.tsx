@@ -88,16 +88,20 @@ export function FilePicker({ onPicked, onError }: Pick<Props, 'onPicked' | 'onEr
       <button type="button" className="button" onClick={() => inputRef.current?.click()}>
         Pick files instead
       </button>
+      {/* The track extensions in `accept` are load-bearing. With only
+          `image/*,video/*` the file dialog greys out a .gpx, so the sole route
+          into the course view was opening a whole folder — and anyone handed a
+          bare track file had no way in at all. */}
       <input
         ref={inputRef}
         type="file"
         multiple
-        accept="image/*,video/*"
+        accept="image/*,video/*,.gpx,.tcx"
         hidden
         data-testid="file-input"
         onChange={(event) => {
           const files = filesFromInput(event.target.files);
-          if (files.length === 0) onError('None of those are photos or videos.');
+          if (files.length === 0) onError('None of those are photos, videos, or a GPX/TCX track.');
           else onPicked(files);
           event.target.value = '';
         }}

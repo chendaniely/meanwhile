@@ -257,6 +257,12 @@ export function App() {
             Put each person&rsquo;s photos in their own subfolder. The folder name becomes their name
             on the timeline.
           </p>
+          {/* There is no separate control for the track, and no way to guess
+              that, so the empty state has to say it. */}
+          <p className="app__hint">
+            Drop a <strong>.gpx</strong> or <strong>.tcx</strong> in with the photos and the course
+            map and elevation profile appear too. There is no separate step for it.
+          </p>
           <div className="app__actions">
             <FolderPicker onPicked={(f) => void handlePicked(f)} onError={setError} />
             <FilePicker onPicked={(f) => void handlePicked(f)} onError={setError} />

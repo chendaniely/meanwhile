@@ -341,6 +341,20 @@ report tells you how many fell back to that weakest signal.
 
 If you only have a handful of loose files, **Pick files instead** works too.
 
+### Where the GPX goes
+
+There is no separate button for the track, and nowhere to upload it to.
+**Put the `.gpx` or `.tcx` in the folder with the photos** — anywhere inside
+it, at any depth — and meanwhile finds it while it reads the folder. A
+**Course** tab then appears next to Feed and Swimlanes.
+
+If you have several tracks in there, the richest one wins: a TCX carrying
+heart rate beats a bare GPX.
+
+**Pick files instead** also accepts a track, so you can select the photos and
+the `.gpx` together, and a track on its own is enough to look at the course
+before any photos exist.
+
 ### Checking your media before you build anything
 
 Point this at a folder and it tells you what meanwhile would make of it:
