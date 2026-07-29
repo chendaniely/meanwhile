@@ -48,19 +48,18 @@ thing to explain. `items[].note` disappears.
 ### `notes*.csv`
 
 ```csv
-id,date,time,until_date,until_time,tz,people,photo,author,text
-n_k3f9x2,2026-07-25,15:45,,,,Priya,,Dan,wrong turn on the ridge
-n_p1a7m4,2026-07-25,15:53,,,,Priya;Sam,PXL_20260725_215331309.jpg,Dan,the buckle
-,2026-07-26,03:00,,06:40,,Sam,,Dan;Priya,asleep in the car
+id,year,month,day,hour,minute,duration,tz,people,photo,author,text
+n_k3f9x2,2026,7,25,15,45,,,Priya,,Dan,wrong turn on the ridge
+n_p1a7m4,2026,7,25,15,53,,,Priya;Sam,PXL_20260725_215331309.jpg,Dan,the buckle
+,2026,7,26,3,0,PT3H40M,,Sam,,Dan;Priya,asleep in the car
 ```
 
 | Column | Meaning |
 |---|---|
 | `id` | Opaque, stable, machine-written. **May be blank** — see below. |
-| `date` | `YYYY-MM-DD`. Required. |
-| `time` | `HH:MM`, 24-hour. Required. Together these place the note in the timeline. |
-| `until_date` | End of a span. **Blank means the same day as `date`** — only needed when something crosses midnight. |
-| `until_time` | End of a span. Blank for a moment. |
+| `year` `month` `day` | Whole numbers. `2026,7,25`. Not zero-padded; padding is lost anyway and means nothing. |
+| `hour` `minute` | Whole numbers, 24-hour. `15,45`. Midnight is `0,0`. |
+| `duration` | ISO-8601, e.g. `PT3H40M`. Blank for a moment rather than a span. |
 | `tz` | IANA zone, e.g. `America/Denver`. **Blank means the event's timezone**, which is the normal case. |
 | `people` | Who it is **about**. Semicolon-separated names. |
 | `photo` | Item this is a caption for. Blank for a standalone note. |
@@ -72,26 +71,47 @@ or insert their own. **Unknown columns are preserved on write** — if someone
 adds `tags`, it survives the round trip. Losing a column someone typed into
 would be the same class of failure as losing a note.
 
-#### Why the date and the time are separate columns
+#### Why the timestamp is five integers
+
+> "i want to make sure the underlying data is safe from corruption"
+
+**No format survives a spreadsheet except plain integers.** `2026-07-25` in a
+cell is still a date to Excel, which rewrites it to `7/25/26` on save, or to
+the serial number `45861`. `15:45` becomes `3:45 PM` or the fraction
+`0.65625`. Splitting date from time makes that *recoverable* — the column says
+what a bare number means — but recoverable is weaker than safe.
+
+Integers are simply never reformatted. Nothing in `year,month,day,hour,minute`
+can be corrupted, so nothing has to be repaired.
+
+The ergonomic reason that started this survives intact:
 
 > "most likely it'll be the same date, but different times and the user might
 > just click drag/copy paste the date. while they are filling out times."
 
-That ergonomic reason is real, and there is a stronger technical one.
+You drag `year`, `month` and `day` down the sheet and type the hours and
+minutes — which is now three columns of dragging instead of one, but they are
+adjacent and drag as a block.
 
-**No format is safe from a spreadsheet except plain integers.** `2026-07-25`
-alone in a cell is still a date to Excel, so splitting does not prevent
-mangling. What splitting does is make mangling **recoverable**: Excel rewrites
-a date as a serial number (`45861`) and a time as a fraction of a day
-(`0.65625`). In one combined column a bare number is ambiguous. In separate
-columns **the column says which it is**, so the worst case converts back
-exactly.
+**The composer still shows one time box.** `YYYY-MM-DD HH:MM` is what a person
+types in one go; five inputs would slow down the path this feature exists to
+make fast. The split is a property of the file, and the file is where
+drag-filling happens.
 
-Fully splitting into `YYYY,MM,DD,HH,MM` would be the only truly mangle-proof
-option, since integers are never reformatted. It costs ten cells per note once
-`until` is included, and the file stops being readable at a glance. Deferred
-rather than rejected — the reader should be written so that adding those
-columns later is additive.
+#### `duration` rather than an end time
+
+An end *timestamp* would need its own year, month and day, because a 33-hour
+race crosses midnight and 31 July crosses a month. A duration has no boundary
+cases at all — one column, and midnight stops being special.
+
+ISO-8601 (`PT3H40M`, `PT20M`) rather than a number of minutes, because **the
+unit travels with the value**. `duration_minutes` puts the unit in a header
+that a copied cell leaves behind. It is also what `clockOffset` already uses,
+so the project has one convention for "how long" rather than two. Excel leaves
+it alone for the same reason it leaves the id alone: it is neither a number nor
+a date.
+
+The cost, accepted: you cannot sum or sort durations in a spreadsheet.
 
 #### `tz` is an IANA name, not an offset
 
@@ -181,23 +201,19 @@ Any file matching `notes*.csv` is a notes file — `notes.csv`,
 `notes-priya.csv`, `notes_dan.csv` — which picks up the intended files without
 sweeping in an unrelated spreadsheet.
 
-**Strict on write, forgiving on read.** The site writes `YYYY-MM-DD` and
-`HH:MM`. For `date` it accepts:
+**Strict on write, forgiving on read.** The site writes plain integers. It
+accepts, because a file may have been written by hand or by an older version:
 
-- `2026-07-25`
-- `7/25/26` and `7/25/2026` — what a US-locale Excel writes back
-- `25/07/2026` — and elsewhere
-- a bare integer, read as an Excel serial date
+- integers, the normal case
+- zero-padded strings — `07` for July
+- a combined `date` column (`2026-07-25`, `7/25/26`, or an Excel serial
+  number) and a combined `time` column (`15:45`, `3:45 PM`, or a day fraction)
+- a combined ISO `at` column, as written before this change
 
-For `time` it accepts `15:45`, `15:45:00`, `3:45 PM`, and a bare fraction read
-as a portion of a day. **A combined `at` column is still accepted** for files
-written before this change, and is split on read.
+Each is split into the five integer columns on read and written back that way,
+so a file repairs itself the first time it is saved.
 
-This is not indulgence. A spreadsheet **will** reformat dates, and a format
-that breaks when it does is not a spreadsheet format. Same principle for
-`people` (names matched case-insensitively; an unknown name is kept verbatim
-and reported) and `photo` (full relative path, or a bare filename when it
-matches exactly one item).
+`duration` accepts an ISO-8601 duration, and a bare number read as minutes.
 
 A row that cannot be read is **reported in the ingest report, never dropped
 silently** — consistent with the unplaced-media tray.
@@ -228,18 +244,18 @@ mapping is part of the format, not an implementation detail:
 | Composer field | Column | Change needed |
 |---|---|---|
 | What happened | `text` | Newlines become spaces on write. |
-| When | `date` + `time` | Split on write; the field stays one box. |
-| Until (optional) | `until_date` + `until_time` | `until_date` written only when it differs from `date`. |
+| When | `year` `month` `day` `hour` `minute` | Split on write; the field stays one box. |
+| Until (optional) | `duration` | Entered as an end time, stored as ISO-8601 elapsed. |
 | Whose | `people` | **Now multi-select.** See below. |
 | Written by | `author` | **New**, also multi-select. See below. |
 | — | `tz` | Written only when it differs from the event's timezone. |
 | — | `photo` | Filled only when captioning from the lightbox. |
 | — | `id` | Minted at creation. Never shown. |
 
-**The composer keeps one box for a time**, not two. `YYYY-MM-DD HH:MM` is what
-a person types in one go; splitting it into two inputs would slow down the very
-path this feature exists to make fast. The split is a property of the file, and
-the file is where drag-fill happens.
+**The composer keeps one box for a time**, and keeps asking for an end time
+rather than a duration, because "until 6:40" is how a person remembers a nap.
+The conversion to five integers and an elapsed duration happens on write. The
+UI shape and the file shape are allowed to differ, and here they should.
 
 ### `people` and `author` are both searchable multi-selects
 
@@ -321,19 +337,24 @@ layout without being asked.
 ## Testing
 
 - `notes.csv` round-trips: write, read, and get identical notes back.
-- Every accepted date and time format parses to the same instant, including
-  Excel serial dates and day fractions.
-- A blank `until_date` with a filled `until_time` means the same day; a span
-  crossing midnight needs both and works.
-- A blank `tz` resolves through the event's timezone; a filled one overrides it.
-- Text containing commas, quotes, semicolons and newlines survives a round trip.
+- The five integer columns parse to the right instant through `tz`, and
+  through the event timezone when `tz` is blank.
+- Legacy shapes are accepted and repaired on save: zero-padded numbers, a
+  combined `date`/`time` pair, an Excel serial date, a day fraction, and a
+  single ISO `at` column.
+- `duration` round-trips as ISO-8601; a bare number is read as minutes; a
+  blank means a moment.
+- A span crossing midnight, a month end and a year end all resolve correctly —
+  the cases an end-timestamp would have needed extra columns for.
+- Text containing commas, quotes, semicolons and newlines survives a round
+  trip, with newlines collapsed to spaces.
 - A note beginning `=`, `+`, `-` or `@` is written escaped and read back
   unescaped.
 - A file written with a BOM and one without both read correctly.
-- A legacy combined `at` column is split on read.
-- Blank ids are minted; duplicated ids are re-minted; existing ids survive.
-- Row-binding three files yields the union, sorted by `at`.
 - Unknown columns survive a round trip.
 - A malformed row is reported, and the rest of the file still loads.
+- Blank ids are minted; duplicated ids are re-minted; existing ids survive.
+- Row-binding three files yields the union, sorted by time.
+- Names in `people` match case-insensitively; unknown names are preserved.
 - An old manifest with `notes[]` and `items[].note` migrates to a notes file.
 - Names in `people` match case-insensitively; unknown names are preserved.
