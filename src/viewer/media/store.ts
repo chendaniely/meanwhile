@@ -22,8 +22,18 @@ import { decodeThumbnail, decodeVideoPoster } from './thumbnails.ts';
 /** Roughly 400 thumbnails at ~240KB each. Far below what a tab can hold. */
 const DEFAULT_BUDGET_BYTES = 96 * 1024 * 1024;
 
-/** Decoding is worker-backed but not free; too many at once starves scroll. */
-const MAX_CONCURRENT_DECODES = 4;
+/**
+ * Images and video posters get SEPARATE lanes, and this is not a nicety.
+ *
+ * A poster has to load a container, seek, and paint a frame — hundreds of
+ * milliseconds at best, and up to a ten-second timeout for a clip the browser
+ * cannot decode. An image decode is a few milliseconds. Sharing one queue
+ * means a handful of awkward videos occupy every slot and no photo on screen
+ * loads at all, which is exactly what happened: five tiles, four of them
+ * video, and nothing rendered.
+ */
+const LANE_LIMITS = { image: 4, video: 2 } as const;
+type Lane = keyof typeof LANE_LIMITS;
 
 interface Entry {
   url: string;
@@ -50,8 +60,8 @@ export class MediaStore {
 
   private used = 0;
   private clock = 0;
-  private running = 0;
-  private readonly queue: Array<() => void> = [];
+  private readonly running: Record<Lane, number> = { image: 0, video: 0 };
+  private readonly queues: Record<Lane, Array<() => void>> = { image: [], video: [] };
   private disposed = false;
 
   constructor(files: ReadonlyMap<string, File>, options: MediaStoreOptions = {}) {
@@ -106,12 +116,13 @@ export class MediaStore {
     const file = this.files.get(item.id);
     if (!file) return null;
 
-    const blob = await this.enqueue(async () => {
+    const lane: Lane = item.type === 'video' ? 'video' : 'image';
+    const blob = await this.enqueue(lane, async () => {
       const options = {
         maxWidth: this.thumbWidth,
         ...(item.width !== undefined ? { naturalWidth: item.width } : {}),
       };
-      return item.type === 'video'
+      return lane === 'video'
         ? decodeVideoPoster(file, {
             ...options,
             ...(item.duration !== undefined ? { duration: item.duration } : {}),
@@ -196,21 +207,21 @@ export class MediaStore {
     // problem rather than a leak.
   }
 
-  /** Bounded parallelism, so decoding does not starve scrolling. */
-  private enqueue<T>(task: () => Promise<T>): Promise<T> {
+  /** Bounded parallelism per lane, so slow video cannot starve fast images. */
+  private enqueue<T>(lane: Lane, task: () => Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const run = () => {
-        this.running++;
+        this.running[lane]++;
         task()
           .then(resolve, reject)
           .finally(() => {
-            this.running--;
-            const next = this.queue.shift();
+            this.running[lane]--;
+            const next = this.queues[lane].shift();
             if (next) next();
           });
       };
-      if (this.running < MAX_CONCURRENT_DECODES) run();
-      else this.queue.push(run);
+      if (this.running[lane] < LANE_LIMITS[lane]) run();
+      else this.queues[lane].push(run);
     });
   }
 
@@ -221,7 +232,8 @@ export class MediaStore {
     for (const entry of this.originals.values()) URL.revokeObjectURL(entry.url);
     this.entries.clear();
     this.originals.clear();
-    this.queue.length = 0;
+    this.queues.image.length = 0;
+    this.queues.video.length = 0;
     this.used = 0;
   }
 
@@ -231,7 +243,7 @@ export class MediaStore {
       cached: this.entries.size,
       bytes: this.used,
       originals: this.originals.size,
-      queued: this.queue.length,
+      queued: this.queues.image.length + this.queues.video.length,
     };
   }
 }

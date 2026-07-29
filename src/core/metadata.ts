@@ -144,6 +144,31 @@ export function parseFilenameTime(filename: string): FilenameTime | null {
   return isPixel ? { at: `${stamp}Z`, zoned: true } : { at: stamp, zoned: false };
 }
 
+/**
+ * Why a file has no usable time, in terms of what to DO about it.
+ *
+ * "No timestamp found" is true but useless. What the author needs to know is
+ * whether to chase the person for the original, or whether the file was
+ * always going to be like this.
+ */
+export function diagnoseMissingTime(filename: string): string {
+  const base = filename.slice(filename.lastIndexOf('/') + 1);
+
+  if (/^IMG[-_]\d{8}[-_]WA/i.test(base)) {
+    return 'Came through WhatsApp, which strips the metadata. The filename gives the date but not the time. Ask for the original.';
+  }
+  if (/^(image|photo|IMG)[-_ ]?\d{1,4}\.\w+$/i.test(base) || /^FullSizeRender/i.test(base)) {
+    return 'Named like a re-saved copy. Messaging apps and screenshots-of-photos lose the original metadata. Ask for the original.';
+  }
+  if (/^(Screenshot|Screen Shot)/i.test(base)) {
+    return 'A screenshot, which has no capture time of its own.';
+  }
+  if (/\.(png|webp|gif)$/i.test(base)) {
+    return 'This format carries no capture time. Place it by hand, or find the original photo.';
+  }
+  return 'No date in the file and none in the filename. Usually means it was re-saved or sent through an app that strips metadata.';
+}
+
 export interface ResolveContext {
   /**
    * Whether `event.timezone` is set. Without it, a naive timestamp cannot

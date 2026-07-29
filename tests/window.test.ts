@@ -10,6 +10,7 @@ import {
   isWithin,
   itemsInWindow,
   placeItems,
+  shiftWindow,
   unionSpan,
   windowFromCourse,
   type PlacedItem,
@@ -53,7 +54,9 @@ describe('placeItems', () => {
       ]),
     );
     expect(placed.map((p) => p.item.id)).toEqual(['early', 'late']);
-    expect(unplaced.map((i) => i.id)).toEqual(['nope']);
+    expect(unplaced.map((u) => u.item.id)).toEqual(['nope']);
+    // The reason has to be actionable, not just "no timestamp".
+    expect(unplaced[0]?.reason).toMatch(/metadata|filename|original/i);
   });
 
   it('applies each person clock offset before ordering', () => {
@@ -66,6 +69,34 @@ describe('placeItems', () => {
       ]),
     );
     expect(placed.map((p) => p.item.id)).toEqual(['dan-shot', 'sam-shot']);
+  });
+});
+
+describe('why an item could not be placed', () => {
+  it('names WhatsApp specifically, because the fix is to ask for the original', () => {
+    const { unplaced } = placeItems(manifestOf([{ id: 'IMG-20260722-WA0005.jpg' }]));
+    expect(unplaced[0]?.reason).toMatch(/WhatsApp/);
+  });
+
+  it('distinguishes "no time at all" from "no timezone to read it in"', () => {
+    // Different problems with different fixes: chase the person for the
+    // original, versus set event.timezone.
+    const noZone: Manifest = {
+      schema: SCHEMA_VERSION,
+      event: { title: 'x' },
+      people: [{ id: 'sam', name: 'Sam' }],
+      items: [
+        {
+          id: 'a.jpg',
+          person: 'sam',
+          type: 'photo',
+          src: 'a.jpg',
+          at: '2026-07-24T06:12:04',
+          timeSource: 'exif-naive',
+        },
+      ],
+    };
+    expect(placeItems(noZone).unplaced[0]?.reason).toMatch(/timezone/i);
   });
 });
 
@@ -205,6 +236,34 @@ describe('clampWindow', () => {
     expect(w.to - w.from).toBeGreaterThan(0);
     expect(w.to).toBeLessThanOrEqual(bounds.to);
     expect(w.from).toBeGreaterThanOrEqual(bounds.from);
+  });
+});
+
+describe('shiftWindow', () => {
+  const bounds = { from: 0, to: 10 * HOUR };
+
+  it('slides without resizing', () => {
+    const moved = shiftWindow({ from: 2 * HOUR, to: 4 * HOUR }, HOUR, bounds);
+    expect(moved).toEqual({ from: 3 * HOUR, to: 5 * HOUR });
+  });
+
+  it('stops at the edge rather than squashing', () => {
+    // The difference from clampWindow: panning into the boundary must keep
+    // the width, or the range silently narrows every time you overshoot.
+    const moved = shiftWindow({ from: 8 * HOUR, to: 10 * HOUR }, 5 * HOUR, bounds);
+    expect(moved).toEqual({ from: 8 * HOUR, to: 10 * HOUR });
+    expect(moved.to - moved.from).toBe(2 * HOUR);
+  });
+
+  it('stops at the start edge too', () => {
+    const moved = shiftWindow({ from: HOUR, to: 3 * HOUR }, -5 * HOUR, bounds);
+    expect(moved).toEqual({ from: 0, to: 2 * HOUR });
+  });
+
+  it('pins a window wider than the data instead of drifting', () => {
+    const moved = shiftWindow({ from: -5 * HOUR, to: 20 * HOUR }, 3 * HOUR, bounds);
+    expect(moved.from).toBe(bounds.from);
+    expect(moved.to - moved.from).toBe(25 * HOUR);
   });
 });
 

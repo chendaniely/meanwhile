@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { GroupingInfo } from '../core/assemble.ts';
 import type { Manifest } from '../core/schema.ts';
 import {
@@ -12,6 +12,8 @@ import { Feed } from './components/Feed.tsx';
 import { FilePicker, FolderPicker } from './components/FolderPicker.tsx';
 import { IngestReport } from './components/IngestReport.tsx';
 import { TimeWindowSlider } from './components/TimeWindowSlider.tsx';
+import { TimezoneField } from './components/TimezoneField.tsx';
+import { UnplacedTray } from './components/UnplacedTray.tsx';
 import { MediaProvider } from './media/MediaContext.tsx';
 import { MediaStore } from './media/store.ts';
 import type { PickedFile } from './media/folder.ts';
@@ -130,8 +132,17 @@ export function App() {
    * Skipping that disposal would leak every object URL from the previous
    * folder — nothing else revokes them.
    */
-  const store = useMemo(() => (files ? new MediaStore(files) : null), [files]);
-  useEffect(() => () => store?.dispose(), [store]);
+  const previousStore = useRef<MediaStore | null>(null);
+  const store = useMemo(() => {
+    // Dispose the OUTGOING store here rather than in an effect cleanup.
+    // StrictMode runs effect cleanups on mount, which would dispose the store
+    // that was just created and is about to be used — the same class of bug
+    // as the observer in useInView.
+    previousStore.current?.dispose();
+    const next = files ? new MediaStore(files) : null;
+    previousStore.current = next;
+    return next;
+  }, [files]);
 
   // One resolution pass per manifest, shared by the slider and the report, so
   // every part of the screen agrees about where things sit.
@@ -237,15 +248,10 @@ export function App() {
                 onChange={(e) => updateEvent({ title: e.target.value })}
               />
             </label>
-            <label className="field">
-              <span className="field__label">Timezone</span>
-              <input
-                className="field__input mw-mono"
-                value={stage.manifest.event.timezone ?? ''}
-                placeholder="America/Los_Angeles"
-                onChange={(e) => updateEvent({ timezone: e.target.value })}
-              />
-            </label>
+            <TimezoneField
+              value={stage.manifest.event.timezone ?? ''}
+              onChange={(next) => updateEvent({ timezone: next })}
+            />
             <label className="field">
               <span className="field__label">Strava activity (optional)</span>
               <input
@@ -277,6 +283,7 @@ export function App() {
           {placement && range && store && (
             <MediaProvider store={store}>
               <Feed manifest={stage.manifest} placed={placement.placed} range={range} />
+              <UnplacedTray manifest={stage.manifest} unplaced={placement.unplaced} />
             </MediaProvider>
           )}
 

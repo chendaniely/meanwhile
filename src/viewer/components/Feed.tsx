@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { assignLaneColors } from '../../core/palette.ts';
 import type { Manifest, PersonId } from '../../core/schema.ts';
 import { formatClock, formatDateTime } from '../../core/time.ts';
 import { isWithin, type PlacedItem, type TimeWindow } from '../../core/window.ts';
+import { Lightbox } from './Lightbox.tsx';
 import { MediaTile } from './MediaTile.tsx';
 
 /**
@@ -56,9 +57,20 @@ export function Feed({ manifest, placed, range }: Props) {
     [manifest.people],
   );
 
-  const moments = useMemo(
-    () => toMoments(placed.filter((p) => isWithin(p.instant, range))),
-    [placed, range],
+  /**
+   * The flat, in-order list the lightbox steps through.
+   *
+   * Kept separate from the moment grouping on purpose: arrow keys should walk
+   * the whole event, not stop at the edge of whichever moment you opened
+   * from.
+   */
+  const visible = useMemo(() => placed.filter((p) => isWithin(p.instant, range)), [placed, range]);
+  const moments = useMemo(() => toMoments(visible), [visible]);
+
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const indexOf = useMemo(
+    () => new Map(visible.map((entry, i) => [entry.item.id, i])),
+    [visible],
   );
 
   if (moments.length === 0) {
@@ -73,6 +85,18 @@ export function Feed({ manifest, placed, range }: Props) {
 
   return (
     <div className="feed">
+      {openIndex !== null && (
+        <Lightbox
+          items={visible}
+          index={openIndex}
+          onIndex={setOpenIndex}
+          onClose={() => setOpenIndex(null)}
+          colors={colors}
+          names={names}
+          {...(zone ? { timezone: zone } : {})}
+        />
+      )}
+
       {moments.map((moment) => {
         const day = formatDateTime(moment.at, zone).replace(/,.*$/, '');
         const newDay = day !== lastDay;
@@ -110,6 +134,7 @@ export function Feed({ manifest, placed, range }: Props) {
                   item={item}
                   {...(colors.get(item.person) ? { color: colors.get(item.person) as string } : {})}
                   caption={formatClock(instant, zone)}
+                  onOpen={() => setOpenIndex(indexOf.get(item.id) ?? 0)}
                 />
               ))}
             </div>

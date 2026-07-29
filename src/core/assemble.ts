@@ -364,7 +364,7 @@ export function summarize(manifest: Manifest, range?: TimeWindow): IngestSummary
   let videos = 0;
   let withGps = 0;
 
-  const counted = [...visible.map((p) => p.item), ...unplaced];
+  const counted = [...visible.map((p) => p.item), ...unplaced.map((u) => u.item)];
   for (const item of counted) {
     bySource[item.timeSource] = (bySource[item.timeSource] ?? 0) + 1;
     if (item.type === 'video') videos++;

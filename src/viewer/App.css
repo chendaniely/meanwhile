@@ -400,7 +400,15 @@
   background: rgb(242 101 34 / 8%);
   border-left: 2px solid var(--mw-accent);
   border-right: 2px solid var(--mw-accent);
-  pointer-events: none;
+  /* Interactive: dragging the band slides the whole range. The handles below
+     still take their own pointer events, since they sit above it. */
+  cursor: grab;
+  touch-action: none;
+}
+
+.window__selection:active {
+  cursor: grabbing;
+  background: rgb(242 101 34 / 14%);
 }
 
 /* Two native range inputs stacked over the histogram. The tracks are
@@ -664,27 +672,6 @@
   height: 3px;
 }
 
-.tile__play {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--mw-space-2);
-  background: rgb(23 21 18 / 25%);
-  border: none;
-}
-
-.tile__play:hover {
-  background: rgb(23 21 18 / 10%);
-}
-
-.tile__play-glyph {
-  font-size: 1.5rem;
-  color: var(--brand-warm-white);
-  text-shadow: 0 1px 4px rgb(0 0 0 / 60%);
-}
-
 .tile__duration {
   position: absolute;
   right: var(--mw-space-2);
@@ -694,13 +681,6 @@
   background: rgb(23 21 18 / 70%);
   border-radius: var(--mw-radius);
   padding: 0 var(--mw-space-1);
-}
-
-.tile__open {
-  position: absolute;
-  inset: 0;
-  background: none;
-  border: none;
 }
 
 .tile__caption {
@@ -716,4 +696,307 @@
      sky or a dark night shot without boxing in the photograph. */
   background: linear-gradient(to top, rgb(23 21 18 / 78%), rgb(23 21 18 / 0%));
   pointer-events: none;
+}
+
+/* ---- lightbox ---------------------------------------------------------- */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Nearly opaque rather than a light scrim: the whole point is to look at
+     the photograph, and a half-visible grid behind it competes. */
+  background: rgb(12 11 9 / 96%);
+}
+
+.lightbox__stage {
+  max-width: min(96vw, 1600px);
+  max-height: calc(100vh - 7rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lightbox__media {
+  max-width: min(96vw, 1600px);
+  max-height: calc(100vh - 7rem);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: var(--mw-radius);
+}
+
+.lightbox__failed {
+  max-width: 34ch;
+  text-align: center;
+  color: var(--mw-fg-muted);
+  border: 1px dashed var(--mw-border);
+  border-radius: var(--mw-radius-lg);
+  padding: var(--mw-space-8);
+}
+
+.lightbox__failed-kind {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--mw-fg);
+  letter-spacing: 0.08em;
+  margin-top: 0;
+}
+
+.lightbox__bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: var(--mw-space-3) var(--mw-space-6);
+  background: var(--mw-bg);
+  border-top: 1px solid var(--mw-border);
+}
+
+.lightbox__meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--mw-space-4);
+  flex-wrap: wrap;
+  font-size: var(--mw-text-sm);
+  color: var(--mw-fg-muted);
+}
+
+.lightbox__person {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mw-space-2);
+  color: var(--mw-fg);
+}
+
+.lightbox__swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.lightbox__name {
+  color: var(--mw-fg-faint);
+  overflow-wrap: anywhere;
+}
+
+.lightbox__position {
+  margin-left: auto;
+}
+
+/* Says WHY a time might be off, at the moment you are looking closely enough
+   to care. The grid is the wrong place for this; here it is welcome. */
+.lightbox__caution {
+  margin: var(--mw-space-2) 0 0;
+  font-size: var(--mw-text-xs);
+  color: var(--mw-accent);
+}
+
+.lightbox__nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 72px;
+  font-size: 2rem;
+  line-height: 1;
+  background: rgb(35 32 25 / 70%);
+  color: var(--mw-fg);
+  border: 1px solid var(--mw-border);
+  border-radius: var(--mw-radius);
+}
+
+.lightbox__nav:hover:not(:disabled) {
+  background: var(--mw-surface-raised);
+}
+
+.lightbox__nav:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.lightbox__nav--prev {
+  left: var(--mw-space-3);
+}
+
+.lightbox__nav--next {
+  right: var(--mw-space-3);
+}
+
+.lightbox__close {
+  position: absolute;
+  top: var(--mw-space-3);
+  right: var(--mw-space-3);
+  width: 40px;
+  height: 40px;
+  font-size: 1.1rem;
+  background: rgb(35 32 25 / 70%);
+  color: var(--mw-fg);
+  border: 1px solid var(--mw-border);
+  border-radius: var(--mw-radius);
+}
+
+.lightbox__close:hover {
+  background: var(--mw-surface-raised);
+}
+
+/* The play glyph is now an affordance, not a button — playback happens in the
+   lightbox. */
+.tile__play-glyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  color: var(--brand-warm-white);
+  text-shadow: 0 1px 6px rgb(0 0 0 / 70%);
+  pointer-events: none;
+}
+
+.tile__open {
+  position: absolute;
+  inset: 0;
+  background: none;
+  border: none;
+  cursor: zoom-in;
+}
+
+.tile__open:hover {
+  background: rgb(248 246 242 / 8%);
+}
+
+/* ---- unplaced tray ----------------------------------------------------- */
+
+.unplaced {
+  margin: var(--mw-space-8) 0;
+  border: 1px solid var(--mw-border);
+  border-left: 3px solid var(--mw-accent);
+  border-radius: 0 var(--mw-radius-lg) var(--mw-radius-lg) 0;
+  background: var(--mw-surface);
+}
+
+.unplaced__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--mw-space-3);
+  width: 100%;
+  padding: var(--mw-space-3) var(--mw-space-4);
+  background: none;
+  border: none;
+  text-align: left;
+  color: var(--mw-fg-muted);
+  font-size: var(--mw-text-sm);
+}
+
+.unplaced__count {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--mw-accent);
+}
+
+.unplaced__chevron {
+  margin-left: auto;
+  color: var(--mw-fg-faint);
+}
+
+.unplaced__body {
+  padding: 0 var(--mw-space-4) var(--mw-space-4);
+}
+
+.unplaced__lead {
+  font-size: var(--mw-text-sm);
+  color: var(--mw-fg-muted);
+  max-width: 62ch;
+  margin-top: 0;
+}
+
+.unplaced__group {
+  margin-top: var(--mw-space-6);
+}
+
+.unplaced__person {
+  display: flex;
+  align-items: center;
+  gap: var(--mw-space-2);
+  font-size: var(--mw-text-sm);
+  padding-bottom: var(--mw-space-2);
+  border-bottom: 1px solid var(--mw-border);
+}
+
+.unplaced__swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.unplaced__person-count {
+  margin-left: auto;
+  color: var(--mw-fg-muted);
+  font-weight: 400;
+}
+
+.unplaced__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.unplaced__row {
+  display: flex;
+  gap: var(--mw-space-4);
+  padding: var(--mw-space-3) 0;
+  border-bottom: 1px solid var(--mw-border);
+}
+
+/* Big enough to recognise the shot, which is the point — you are trying to
+   tell someone WHICH photo you want resent. */
+.unplaced__thumb {
+  flex: none;
+  width: 120px;
+}
+
+.unplaced__detail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--mw-space-1);
+}
+
+.unplaced__path {
+  margin: 0;
+  font-size: var(--mw-text-sm);
+  color: var(--mw-fg);
+  overflow-wrap: anywhere;
+}
+
+.unplaced__reason {
+  margin: 0;
+  font-size: var(--mw-text-sm);
+  color: var(--mw-fg-muted);
+  max-width: 62ch;
+}
+
+.unplaced__facts {
+  margin: 0;
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-faint);
+}
+
+.field__note {
+  color: var(--mw-fg-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.field__warning {
+  font-size: var(--mw-text-xs);
+  color: var(--mw-accent);
+}
+
+.field__input[aria-invalid='true'] {
+  border-color: var(--mw-accent);
 }

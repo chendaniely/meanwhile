@@ -292,6 +292,33 @@ and `tests/media-store.test.ts` fails if any URL is created and not revoked.
   handle never fires `seeked`, so the wait needs a timeout, not just events.
 - **Only one video plays at a time**, tracked in `MediaContext`.
 
+### Verifying in a browser: the tab must be VISIBLE
+
+Chrome pauses `requestAnimationFrame` **and IntersectionObserver delivery**
+for tabs whose `document.visibilityState` is `hidden` — which is what an
+automation tab is whenever the Chrome window is not frontmost.
+
+Everything lazy therefore appears broken: tiles never load, nothing decodes,
+`MediaStore.stats()` shows zero. It looks exactly like a bug in the loading
+code, and an hour was lost to that. **Check `document.visibilityState`
+first.** Screenshots still work on a hidden tab, which makes it more
+confusing, not less.
+
+### Two StrictMode hazards, both found the hard way
+
+React runs every effect mount → cleanup → mount in development. Two patterns
+that look right and are not:
+
+1. **Observe in a ref callback, disconnect in a `useEffect(..., [])`
+   cleanup.** The cleanup fires on mount and disconnects immediately, and the
+   empty effect body has nothing to re-observe with. Use React 19's
+   ref-callback cleanup instead, so attach and detach cannot drift apart.
+   See `src/viewer/hooks/useInView.ts`.
+2. **Create a resource with `useMemo`, dispose it in an effect cleanup.** The
+   cleanup disposes the instance that was just created and is about to be
+   used. Dispose the OUTGOING one when the new one is made instead. See the
+   `MediaStore` construction in `App.tsx`.
+
 ### The time window *(built after the owner asked for it)*
 
 > "i may not want to see all the photos listed in the timeline, and give me

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatDateTime, formatSpan } from '../../core/time.ts';
 import {
   clampWindow,
   clusters as findClusters,
   histogram,
   isWithin,
+  shiftWindow,
   unionSpan,
   type PlacedItem,
   type TimeWindow,
@@ -138,6 +139,45 @@ export function TimeWindowSlider({
     onChange(clampWindow(united, bounds));
   };
 
+  /**
+   * Dragging the selected band slides the whole range, keeping its width.
+   *
+   * The handles set the edges; this moves the thing as a unit, which is what
+   * you want once you have the right duration and just need it somewhere
+   * else. Pointer capture means the drag survives the cursor leaving the
+   * band, which it will.
+   */
+  const track = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ pointer: number; startX: number; startFrom: number } | null>(null);
+
+  const msPerPixel = () => {
+    const width = track.current?.clientWidth ?? 0;
+    return width > 0 ? total / width : 0;
+  };
+
+  const onPanStart = (event: React.PointerEvent<HTMLDivElement>) => {
+    const perPixel = msPerPixel();
+    if (perPixel === 0) return;
+    drag.current = { pointer: event.pointerId, startX: event.clientX, startFrom: range.from };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  const onPanMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const state = drag.current;
+    if (!state || state.pointer !== event.pointerId) return;
+    const byMs = (event.clientX - state.startX) * msPerPixel();
+    // Measured from where the drag STARTED, not the last frame, so rounding
+    // cannot accumulate into drift over a long drag.
+    const width = range.to - range.from;
+    onChange(shiftWindow({ from: state.startFrom, to: state.startFrom + width }, byMs, extent));
+    setPicked(null);
+  };
+
+  const onPanEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (drag.current?.pointer === event.pointerId) drag.current = null;
+  };
+
   const shown = placed.filter((p) => isWithin(p.instant, range)).length;
   const cropped = placed.length - shown;
   const showingWholeFolder = extent.from <= bounds.from && extent.to >= bounds.to;
@@ -197,7 +237,7 @@ export function TimeWindowSlider({
         </div>
       )}
 
-      <div className="window__track">
+      <div className="window__track" ref={track}>
         <div className="window__bars" aria-hidden="true">
           {counts.map((count, i) => {
             const binStart = extent.from + (total * i) / counts.length;
@@ -220,7 +260,12 @@ export function TimeWindowSlider({
         <div
           className="window__selection"
           style={{ left: `${clamp01(ratio(range.from))}%`, right: `${clamp01(100 - ratio(range.to))}%` }}
-          aria-hidden="true"
+          onPointerDown={onPanStart}
+          onPointerMove={onPanMove}
+          onPointerUp={onPanEnd}
+          onPointerCancel={onPanEnd}
+          role="presentation"
+          title="Drag to move the whole range"
         />
 
         <input

@@ -1,29 +1,24 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import type { MediaStore } from './store.ts';
 
 /**
- * The media store, plus whichever clip is playing.
+ * The media store, reachable from any tile without threading it through
+ * every view.
  *
- * Playback is tracked centrally for one reason: **only one video plays at a
- * time.** A grid of clips that all start together is unusable, and on a phone
- * it is a good way to run out of decoders.
+ * It used to also track which clip was playing, because a grid of videos all
+ * starting at once is unusable. The lightbox made that unnecessary: playback
+ * only happens there, and there is only ever one of it. Enforcing an
+ * invariant by construction beats enforcing it with state.
  */
 
 interface MediaContextValue {
   store: MediaStore | null;
-  playingId: string | null;
-  setPlayingId: (id: string | null) => void;
 }
 
-const MediaContext = createContext<MediaContextValue>({
-  store: null,
-  playingId: null,
-  setPlayingId: () => {},
-});
+const MediaContext = createContext<MediaContextValue>({ store: null });
 
 export function MediaProvider({ store, children }: { store: MediaStore | null; children: ReactNode }) {
-  const [playingId, setPlayingId] = useState<string | null>(null);
-  const value = useMemo(() => ({ store, playingId, setPlayingId }), [store, playingId]);
+  const value = useMemo(() => ({ store }), [store]);
   return <MediaContext.Provider value={value}>{children}</MediaContext.Provider>;
 }
 

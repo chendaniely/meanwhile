@@ -201,5 +201,5 @@ function SourceBreakdown({ summary }: { summary: IngestSummary }) {
 function visibleItems(manifest: Manifest, range?: TimeWindow) {
   const { placed, unplaced } = placeItems(manifest);
   const inside = range ? placed.filter((p) => isWithin(p.instant, range)) : placed;
-  return [...inside.map((p) => p.item), ...unplaced];
+  return [...inside.map((p) => p.item), ...unplaced.map((u) => u.item)];
 }

@@ -11,6 +11,7 @@
  * where too much happened at once.
  */
 
+import { diagnoseMissingTime } from './metadata.ts';
 import type { Item, Manifest } from './schema.ts';
 import { resolveItemInstant, type Instant } from './time.ts';
 
@@ -24,11 +25,17 @@ export interface PlacedItem {
   instant: Instant;
 }
 
+export interface UnplacedItem {
+  item: Item;
+  /** What to do about it, not just what went wrong. */
+  reason: string;
+}
+
 export interface PlacementResult {
   /** Items with a resolvable instant, in time order. */
   placed: PlacedItem[];
-  /** Items with no usable time. These go to the unplaced tray. */
-  unplaced: Item[];
+  /** Items with no usable time, each with a reason worth acting on. */
+  unplaced: UnplacedItem[];
 }
 
 /**
@@ -40,12 +47,24 @@ export interface PlacementResult {
 export function placeItems(manifest: Manifest): PlacementResult {
   const peopleById = new Map(manifest.people.map((p) => [p.id, p]));
   const placed: PlacedItem[] = [];
-  const unplaced: Item[] = [];
+  const unplaced: UnplacedItem[] = [];
 
   for (const item of manifest.items) {
     const resolved = resolveItemInstant(item, peopleById.get(item.person), manifest.event);
-    if (resolved.instant === null) unplaced.push(item);
-    else placed.push({ item, instant: resolved.instant });
+    if (resolved.instant !== null) {
+      placed.push({ item, instant: resolved.instant });
+      continue;
+    }
+    // A file with a time we cannot interpret is a different problem from one
+    // with no time at all, and the fix is different: set a timezone versus
+    // go and ask someone for the original.
+    unplaced.push({
+      item,
+      reason:
+        item.timeSource === 'none'
+          ? diagnoseMissingTime(item.src)
+          : (resolved.reason ?? 'Its timestamp could not be interpreted.'),
+    });
   }
 
   placed.sort((a, b) => a.instant - b.instant);
@@ -164,6 +183,25 @@ export function isWithin(instant: Instant, w: TimeWindow): boolean {
 
 export function itemsInWindow(placed: readonly PlacedItem[], w: TimeWindow): PlacedItem[] {
   return placed.filter((p) => isWithin(p.instant, w));
+}
+
+/**
+ * Slide a window along without changing how wide it is.
+ *
+ * Distinct from `clampWindow` on purpose. That one keeps a window legal after
+ * an edge moves, and will happily narrow it at a boundary. Panning must NOT
+ * narrow: dragging the selected range up against the end of the data should
+ * stop it, not squash it.
+ */
+export function shiftWindow(w: TimeWindow, byMs: number, bounds: TimeWindow): TimeWindow {
+  const width = w.to - w.from;
+  // A window wider than the data cannot move at all; pin it and keep its size.
+  if (width >= bounds.to - bounds.from) return { from: bounds.from, to: bounds.from + width };
+
+  let from = w.from + byMs;
+  if (from < bounds.from) from = bounds.from;
+  if (from + width > bounds.to) from = bounds.to - width;
+  return { from, to: from + width };
 }
 
 /** Keep a window inside the data's bounds, and never inverted or zero-width. */

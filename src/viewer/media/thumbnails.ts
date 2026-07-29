@@ -92,7 +92,11 @@ export async function decodeVideoPoster(
   const video = document.createElement('video');
   video.muted = true;
   video.playsInline = true;
-  video.preload = 'metadata';
+  // 'auto', not 'metadata'. With 'metadata' the browser is entitled to stop
+  // before it has a decoded frame, so `loadeddata` may never fire and the
+  // poster times out into a false "cannot display this file". The source is a
+  // local blob, so there is no bandwidth argument for holding back.
+  video.preload = 'auto';
   video.src = url;
 
   try {
@@ -121,32 +125,52 @@ export async function decodeVideoPoster(
   }
 }
 
-/** Resolves once a frame is actually painted, or null if the seek never lands. */
+/**
+ * Resolves once a frame is actually painted, or false if it never arrives.
+ *
+ * Deliberately belt-and-braces. A codec the browser cannot handle never fires
+ * `seeked` at all, so events alone can hang forever; but a timeout alone
+ * turns any slow decode into a false "cannot display this file", which is a
+ * lie about the user's video. So: several ready signals, a generous deadline,
+ * and success as soon as there is a frame to draw.
+ */
 function seekToFrame(video: HTMLVideoElement, duration?: number): Promise<boolean> {
   return new Promise((resolve) => {
-    // A codec the browser cannot handle simply never fires `seeked`, so this
-    // cannot rely on events alone.
-    const timer = setTimeout(() => finish(false), 5000);
+    let settled = false;
+    const timer = setTimeout(() => finish(false), 10_000);
 
     const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      video.removeEventListener('seeked', onSeeked);
-      video.removeEventListener('loadeddata', onLoaded);
-      video.removeEventListener('error', onError);
+      for (const [event, handler] of listeners) video.removeEventListener(event, handler);
       resolve(ok);
     };
 
-    const onLoaded = () => {
+    const seek = () => {
       const length = duration ?? video.duration;
+      // A little way in: the first frame of a phone recording is often black
+      // or mid-autoexposure. Never past the halfway point of a short clip.
       const target = Number.isFinite(length) && length > 0 ? Math.min(0.15, length / 2) : 0;
-      if (target === 0) finish(true);
-      else video.currentTime = target;
+      if (target <= 0) finish(readyToDraw());
+      else if (Math.abs(video.currentTime - target) > 0.001) video.currentTime = target;
+      else finish(readyToDraw());
     };
-    const onSeeked = () => finish(true);
-    const onError = () => finish(false);
 
-    video.addEventListener('loadeddata', onLoaded, { once: true });
-    video.addEventListener('seeked', onSeeked, { once: true });
-    video.addEventListener('error', onError, { once: true });
+    // HAVE_CURRENT_DATA or better means there is something on the frame.
+    const readyToDraw = () => video.readyState >= 2 && video.videoWidth > 0;
+
+    const listeners: Array<[string, () => void]> = [
+      // Any of these can be the first to indicate a decodable frame; which one
+      // arrives first varies by container and by browser.
+      ['loadeddata', seek],
+      ['canplay', seek],
+      ['seeked', () => finish(readyToDraw())],
+      ['error', () => finish(false)],
+    ];
+    for (const [event, handler] of listeners) video.addEventListener(event, handler);
+
+    // Already buffered — the events above may have fired before we attached.
+    if (readyToDraw()) seek();
   });
 }
