@@ -4,16 +4,16 @@
 
 As of 2026-07-28 the repo builds, tests, and serves an empty shell.
 
-**Built:** the whole ingest path. Scaffold, brand tokens,
+**Built:** ingest, the time window, and the feed — you can load a folder and
+look at the race. Scaffold, brand tokens,
 `tests/core-purity.test.ts`, `Makefile`. Kernel: `schema.ts`, `time.ts`,
 `bytes.ts`, `exif.ts`, `isobmff.ts`, `metadata.ts`, `assemble.ts`,
 `palette.ts`. Viewer: folder/file picking, metadata extraction, an ingest
 report, and manifest export. Plus `scripts/inspect-media.ts`
 (`make inspect DIR=...`). 138 tests pass.
 
-**Not built:** every view (feed, swimlanes, grid, map), the media/blob
-pipeline, app state and URL sync, the unplaced tray, notes, the course spine.
-Loading a folder gets you a report and a `manifest.json` — no timeline yet.
+**Not built:** swimlanes, moment grid, map. App state and URL sync, the
+unplaced tray, notes, the course spine.
 
 **Do not describe anything below as implemented unless it is in the "Built"
 list.** Check before you cite.
@@ -265,6 +265,32 @@ Folders still win when they exist: the author put them there on purpose.
 
 Result on the real folder: 1 useless lane → 4 correct ones, with 17 of 231
 files resting on the weakest signal and the report saying so.
+
+### Every object URL in the app comes from MediaStore *(M4)*
+
+`URL.createObjectURL` pins its blob until `revokeObjectURL` is called.
+Nothing collects it — not GC, not removing the `<img>`. One per tile while
+scrolling 2,000 files and the tab grows until it dies. So
+`src/viewer/media/store.ts` is the ONLY place that creates or revokes them,
+and `tests/media-store.test.ts` fails if any URL is created and not revoked.
+
+- **Thumbnails are refcounted and byte-budgeted.** Never evicted while a tile
+  shows one (revoking under a live `<img>` blanks it); kept after release
+  until the budget bites, because scrolling back up should not re-decode.
+- **Originals are revoked the moment the last holder lets go.** One
+  multi-gigabyte clip pinned in memory is a different order of problem.
+- **Nothing is ever handed to an `<img>` at full size.** A 12MP photo decodes
+  to ~48MB of RGBA regardless of file size; fifty is 2.4GB.
+  `createImageBitmap(file, { resizeWidth })` resizes DURING decode on a worker
+  thread, so the full-size buffer never exists on the main thread. Call
+  `.close()` right after drawing — GC is far too late at 2,000 files.
+- **`imageOrientation: 'from-image'`** applies EXIF rotation during decode.
+  Tile aspect ratios must account for orientations 5–8 swapping width and
+  height, or every portrait photo reserves a landscape box.
+- **Video posters seek ~0.15s in, not to 0.** The first frame of a phone
+  recording is usually black or mid-autoexposure. A codec the browser cannot
+  handle never fires `seeked`, so the wait needs a timeout, not just events.
+- **Only one video plays at a time**, tracked in `MediaContext`.
 
 ### The time window *(built after the owner asked for it)*
 

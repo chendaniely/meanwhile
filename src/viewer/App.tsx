@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GroupingInfo } from '../core/assemble.ts';
 import type { Manifest } from '../core/schema.ts';
 import {
@@ -8,9 +8,12 @@ import {
   placeItems,
   type TimeWindow,
 } from '../core/window.ts';
+import { Feed } from './components/Feed.tsx';
 import { FilePicker, FolderPicker } from './components/FolderPicker.tsx';
 import { IngestReport } from './components/IngestReport.tsx';
 import { TimeWindowSlider } from './components/TimeWindowSlider.tsx';
+import { MediaProvider } from './media/MediaContext.tsx';
+import { MediaStore } from './media/store.ts';
 import type { PickedFile } from './media/folder.ts';
 import { downloadManifest, ingestFolder, type IngestProgress } from './media/ingest.ts';
 import './App.css';
@@ -47,12 +50,22 @@ export function App() {
   // and hand-placed times rather than starting over.
   const previous = useRef<Manifest | null>(null);
 
+  /**
+   * The actual File handles, kept for as long as the folder is loaded.
+   *
+   * Ingest only reads a few kilobytes of metadata per file; showing the
+   * pictures needs the files themselves. Nothing is copied — a File is a
+   * handle to bytes on disk, and they are only read when a tile asks.
+   */
+  const [files, setFiles] = useState<ReadonlyMap<string, File> | null>(null);
+
   const handlePicked = useCallback(
-    async (files: PickedFile[]) => {
+    async (picked: PickedFile[]) => {
       setError(null);
-      setStage({ name: 'reading', progress: { done: 0, total: files.length, current: '' } });
+      setFiles(new Map(picked.map((f) => [f.path, f.file])));
+      setStage({ name: 'reading', progress: { done: 0, total: picked.length, current: '' } });
       try {
-        const { manifest, grouping } = await ingestFolder(files, {
+        const { manifest, grouping } = await ingestFolder(picked, {
           title,
           timezone,
           ...(previous.current
@@ -110,6 +123,15 @@ export function App() {
   };
 
   const manifest = stage.name === 'loaded' ? stage.manifest : null;
+
+  /**
+   * One store per folder, and the old one is disposed when it is replaced.
+   *
+   * Skipping that disposal would leak every object URL from the previous
+   * folder — nothing else revokes them.
+   */
+  const store = useMemo(() => (files ? new MediaStore(files) : null), [files]);
+  useEffect(() => () => store?.dispose(), [store]);
 
   // One resolution pass per manifest, shared by the slider and the report, so
   // every part of the screen agrees about where things sit.
@@ -250,6 +272,12 @@ export function App() {
               onReset={() => setWindow(null)}
               {...(stage.manifest.event.timezone ? { timezone: stage.manifest.event.timezone } : {})}
             />
+          )}
+
+          {placement && range && store && (
+            <MediaProvider store={store}>
+              <Feed manifest={stage.manifest} placed={placement.placed} range={range} />
+            </MediaProvider>
           )}
 
           <IngestReport

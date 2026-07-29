@@ -1,11 +1,17 @@
 {
   "$comment": [
     "Tooling code: the test suite and the Vite config. These legitimately run",
-    "on Node, so they get Node types. Nothing under src/ is included here."
+    "on Node, so they get Node types. Nothing under src/ is listed here,",
+    "though TypeScript follows imports into it.",
+    "",
+    "DOM is in `lib` because tests exercise browser modules — the media store",
+    "and its object-URL lifecycle, for instance. That does NOT weaken the",
+    "split: the direction that matters is app code never seeing Node types,",
+    "which tsconfig.app.json enforces with `types: []`."
   ],
   "compilerOptions": {
     "target": "ES2023",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["node"],
     "module": "ESNext",
     "moduleResolution": "bundler",

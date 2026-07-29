@@ -520,3 +520,200 @@
   border-color: var(--mw-fg-faint);
   color: var(--mw-fg);
 }
+
+/* ---- feed -------------------------------------------------------------- */
+
+.feed {
+  margin: var(--mw-space-8) 0;
+}
+
+.feed__day {
+  font-size: var(--mw-text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mw-fg-muted);
+  border-bottom: 1px solid var(--mw-border);
+  padding-bottom: var(--mw-space-2);
+  margin: var(--mw-space-8) 0 var(--mw-space-4);
+  position: sticky;
+  top: 0;
+  background: var(--mw-bg);
+  z-index: 2;
+}
+
+.moment {
+  margin-bottom: var(--mw-space-6);
+}
+
+.moment__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--mw-space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--mw-space-2);
+}
+
+.moment__time {
+  font-weight: 700;
+  font-size: var(--mw-text-sm);
+}
+
+.moment__who {
+  display: flex;
+  gap: var(--mw-space-3);
+  flex-wrap: wrap;
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-muted);
+}
+
+.moment__person {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mw-space-1);
+}
+
+.moment__swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+/* Two lanes in one moment is the thing this app exists to show, so it gets
+   said in words rather than left for the reader to infer from swatches. */
+.moment__together {
+  font-size: var(--mw-text-xs);
+  color: var(--mw-accent);
+  border: 1px solid var(--mw-accent);
+  border-radius: 999px;
+  padding: 0 var(--mw-space-2);
+}
+
+.moment__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--mw-space-2);
+  /* Rows start at the top rather than stretching, so a clamped-portrait tile
+     sits beside a landscape one without dragging the whole row taller. */
+  align-items: start;
+}
+
+/* ---- media tile -------------------------------------------------------- */
+
+.tile {
+  margin: 0;
+  min-width: 0;
+}
+
+.tile__frame {
+  position: relative;
+  background: var(--mw-surface);
+  border-radius: var(--mw-radius);
+  overflow: hidden;
+}
+
+.tile__image,
+.tile__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Deliberately plain: a spinner per tile in a grid of hundreds is visual
+   noise, and the frame already reserves the right shape. */
+.tile__pending {
+  position: absolute;
+  inset: 0;
+  background: var(--mw-surface);
+}
+
+.tile__undecodable {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--mw-space-2);
+  padding: var(--mw-space-3);
+  text-align: center;
+  background: var(--mw-surface);
+  border: 1px dashed var(--mw-border);
+  border-radius: var(--mw-radius);
+}
+
+.tile__undecodable-kind {
+  font-weight: 700;
+  color: var(--mw-fg-muted);
+  letter-spacing: 0.08em;
+}
+
+.tile__undecodable-note {
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-faint);
+  line-height: 1.35;
+}
+
+/* The lane color rides on the picture, so identity travels with the image
+   instead of needing a heading above every tile. */
+.tile__lane {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 3px;
+}
+
+.tile__play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--mw-space-2);
+  background: rgb(23 21 18 / 25%);
+  border: none;
+}
+
+.tile__play:hover {
+  background: rgb(23 21 18 / 10%);
+}
+
+.tile__play-glyph {
+  font-size: 1.5rem;
+  color: var(--brand-warm-white);
+  text-shadow: 0 1px 4px rgb(0 0 0 / 60%);
+}
+
+.tile__duration {
+  position: absolute;
+  right: var(--mw-space-2);
+  bottom: var(--mw-space-2);
+  font-size: var(--mw-text-xs);
+  color: var(--brand-warm-white);
+  background: rgb(23 21 18 / 70%);
+  border-radius: var(--mw-radius);
+  padding: 0 var(--mw-space-1);
+}
+
+.tile__open {
+  position: absolute;
+  inset: 0;
+  background: none;
+  border: none;
+}
+
+.tile__caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 3px;
+  padding: var(--mw-space-2) var(--mw-space-1) 2px;
+  font-size: var(--mw-text-xs);
+  color: var(--brand-warm-white);
+  text-align: center;
+  /* A gradient rather than a solid bar: the time stays readable over a bright
+     sky or a dark night shot without boxing in the photograph. */
+  background: linear-gradient(to top, rgb(23 21 18 / 78%), rgb(23 21 18 / 0%));
+  pointer-events: none;
+}

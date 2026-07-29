@@ -119,8 +119,12 @@ Also working: the manifest format and validation, all the clock-offset and
 timezone handling, metadata reading for JPEG, HEIC, MOV, and MP4, and
 `make inspect` (below) for checking a folder from the terminal.
 
-**There's no way to *see* a timeline yet** — no swimlanes, no feed, no photos
-on screen. That's next.
+**You can see the timeline.** Photos and video appear in a chronological
+feed, grouped into moments, each tagged with who shot it. When two people
+were shooting at the same time, the moment says so — which is the whole point
+of the thing.
+
+Still missing: the swimlane view, the moment grid, and the map.
 
 ### How to arrange your folder
 
