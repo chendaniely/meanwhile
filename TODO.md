@@ -191,3 +191,35 @@ The options that actually fit "no commercial use":
 
 Worth deciding before anyone else is invited to contribute, because
 relicensing later needs every contributor's agreement.
+
+## Telling two people apart when they carry the same phone *(parked 2026-07-29)*
+
+> "in larger events or events where people have the same device, is there a way
+> to see from a photo if it's different people using the same make+model of
+> phone?"
+
+**Not reliably, and the honest move is to say so rather than guess.** Grouping
+by device works today only because the three phones happen to differ.
+
+| Signal | Separates two identical phones? |
+|---|---|
+| `BodySerialNumber` (EXIF 0xA431) | Would be definitive — **phones do not write it.** Cameras do. |
+| iPhone `IMG_1234` counters | **Yes, well.** Each phone has its own counter, so two occupy non-overlapping ranges. Useless on Android, whose filenames are timestamps. |
+| `Software` (EXIF 0x0131) | Sometimes — only when the two are on different OS or camera-app builds. Free to read; not read today. |
+| Clock offset | Sometimes. Every phone drifts differently, and per-person `clockOffset` already exists. Subtle, and needs many photos. |
+| Sensor noise, PRNU | Genuinely identifies a physical unit; it is what forensics uses. Needs hundreds of full-size decodes. Out of scope. |
+
+What to build instead, in order:
+
+1. **Warn rather than merge.** When two people could be sharing a make and
+   model, the ingest report should say the lane is uncertain. Silently
+   collapsing two people into one lane is the failure this project cares most
+   about avoiding.
+2. **Bulk reassign.** Select a stretch of photos and give them to a person.
+   This is the reliable fix and it needs no cleverness.
+3. **Read `Software`** as an extra grouping signal — cheap, occasionally
+   decisive, never harmful.
+
+Folders remain the reliable separator, and the roster lives in the manifest as
+deliberate metadata precisely so notes can reference people by name rather than
+by phone.
