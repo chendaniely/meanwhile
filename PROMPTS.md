@@ -620,3 +620,23 @@ choose.
 On the real folder the photographs cluster at 0, 31, 72, 107, 132 and 168 km —
 the crew-accessible aid stations — so the gaps between them are exactly where
 this earns its place.
+
+
+---
+
+> it's really hard to create a note when using the map. when i mouse over the
+> actaul map i see the elevation and note here. but as soon as i move away to
+> try to click the note disappears. [...] maybe just have a note somewhere that
+> says "click to add note" and it'll pre-populate the note on the bottom right
+> [...] this will limit the entry points and splits in the website.
+
+A correct diagnosis of a classic trap: the button only existed while hovering,
+and moving the pointer towards it left the element, cleared the focus and
+removed the button. Anything you have to chase is broken.
+
+**DECISION — clicking the course IS the gesture**, on the map and on the
+elevation profile alike, with a permanent line of text saying so rather than
+a control that appears and vanishes. It resolves to a time from the track when
+the track is timed and from the surrounding photographs when it is not, then
+moves the shared cursor and opens the one composer in the corner. One entry
+point, as asked.

@@ -248,10 +248,12 @@ Run `make dev`, click **Open a folder**, and:
    than a moment, and can belong to one person, which is what lets a note
    explain a gap in their lane.
 13. **Point at the course and write about it.** Hovering a photo's dot on the
-   map shows the photo. And pointing anywhere on the elevation profile offers
-   **Note here** with a time worked out from the photographs either side of
-   it &mdash; so a climb you remember but nobody photographed can still be
-   written down. It refuses rather than guesses beyond the outermost photo.
+   map shows the photo. And **clicking anywhere on the course** &mdash; on the
+   map or on the elevation profile &mdash; opens the note box already set to
+   that moment, with the time taken from the track if it has one, or worked
+   out from the photographs either side if it does not. So a climb you
+   remember but nobody photographed can still be written down. It says so
+   rather than guessing when there is nothing to work from.
 14. **Your work comes back.** Export `manifest.json`, and next time drop that
    file into the folder along with the photos — names, roles, captions, the
    crop, and hand-placed times all return. Timestamps are always re-read from

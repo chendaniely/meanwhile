@@ -42,13 +42,8 @@ interface Props {
    * before the reader has scrolled anywhere is simply false.
    */
   unplaceable?: boolean;
-  /**
-   * Turn the point being pointed at into a time, from the surrounding
-   * photographs. Null when it falls outside what they cover — see
-   * `estimateInstant`, which refuses to extrapolate.
-   */
-  onNoteHere?: (() => void) | undefined;
-  noteHereLabel?: string | undefined;
+  /** Clicking the course picks that point — see CourseCharts for why click. */
+  onPick?: ((distance: number) => void) | undefined;
   thumbnails?: {
     acquire: (item: PlacedItem['item']) => Promise<string | null>;
     release: (id: string) => void;
@@ -60,7 +55,7 @@ const STRIP_HEIGHT = 44;
 
 export function CourseRail({
   manifest, course, track, items, focus, onFocus, at, onCursor,
-  unplaceable = false, onNoteHere, noteHereLabel, thumbnails, timezone,
+  unplaceable = false, onPick, thumbnails, timezone,
 }: Props) {
   const profile = useMemo(() => {
     const points = track
@@ -110,6 +105,7 @@ export function CourseRail({
           focus={focus}
           onFocus={onFocus}
           onCursor={onCursor}
+          {...(onPick ? { onPick } : {})}
           {...(thumbnails ? { thumbnails } : {})}
           compact
         />
@@ -139,15 +135,7 @@ export function CourseRail({
           )}
         </div>
 
-        {/* Point at a climb you remember and write about it, even where
-            nobody took a picture. The time comes from the photographs on
-            either side. */}
-        {onNoteHere && (
-          <button type="button" className="rail__note" onClick={onNoteHere}>
-            Note here
-            {noteHereLabel && <span className="rail__note-when mw-mono">{noteHereLabel}</span>}
-          </button>
-        )}
+        {onPick && <span className="rail__note-hint">Click the course to note it</span>}
 
         {profile && (
           <svg
@@ -163,6 +151,13 @@ export function CourseRail({
               onFocus(ratio * course.length);
             }}
             onPointerLeave={() => onFocus(null)}
+            onPointerDown={(e) => {
+              if (!onPick) return;
+              const box = e.currentTarget.getBoundingClientRect();
+              if (box.width === 0) return;
+              const ratio = Math.min(1, Math.max(0, (e.clientX - box.left) / box.width));
+              onPick(ratio * course.length);
+            }}
           >
             <path d={profile.d} fill="none" stroke="#8a8378" strokeWidth="1.5"
                   vectorEffect="non-scaling-stroke" />

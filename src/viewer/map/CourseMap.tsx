@@ -53,6 +53,8 @@ interface Props {
   focus: number | null;
   onFocus: (distance: number | null) => void;
   onCursor: (instant: Instant) => void;
+  /** Clicking the course picks that point — see CourseCharts for why click. */
+  onPick?: ((distance: number) => void) | undefined;
   /**
    * Thumbnails for the photo dots, when a folder is loaded. Optional because
    * the map works with a track and no media at all.
@@ -66,7 +68,7 @@ interface Props {
 }
 
 export function CourseMap({
-  manifest, course, track, items, at, focus, onFocus, onCursor,
+  manifest, course, track, items, at, focus, onFocus, onCursor, onPick,
   thumbnails, compact = false,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
@@ -78,6 +80,8 @@ export function CourseMap({
   // otherwise close over the first render's props forever.
   const onFocusRef = useRef(onFocus);
   onFocusRef.current = onFocus;
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
   const [layerId, setLayerId] = useState(defaultBasemapId);
   const [relief, setRelief] = useState(false);
 
@@ -219,6 +223,17 @@ export function CourseMap({
     // Clicking the course scrubs time: the map is an input, not just a
     // picture, and it reads back into the same cursor as everything else.
     hit.on('click', (event: L.LeafletMouseEvent) => {
+      // One gesture, one meaning: clicking the course says "here". The app
+      // resolves that to a time — from the track if it is timed, otherwise
+      // from the photographs either side.
+      const pick = onPickRef.current;
+      if (pick) {
+        const metres = nearestDistance(drawn, event.latlng.lat, event.latlng.lng);
+        if (metres !== null) {
+          pick(metres);
+          return;
+        }
+      }
       const nearest = nearestSampleTo(course, event.latlng.lat, event.latlng.lng);
       if (nearest !== null) onCursor(nearest);
     });

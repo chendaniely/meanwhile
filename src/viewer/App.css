@@ -2071,24 +2071,20 @@ button.report__tag--on {
   color: var(--mw-fg);
 }
 
-.rail__note,
-.charts__note {
-  align-self: flex-start;
-  cursor: pointer;
-  font: inherit;
+
+/* Says what a click will do, without appearing only on hover — the version
+   that did was impossible to reach, because moving towards it dismissed it. */
+.charts__note-hint,
+.rail__note-hint {
   font-size: var(--mw-text-xs);
-  color: var(--mw-accent);
-  background: transparent;
-  border: 1px solid var(--mw-accent);
-  border-radius: var(--mw-radius-sm);
-  padding: 2px var(--mw-space-2);
+  color: var(--mw-fg-muted);
 }
 
-.charts__note {
+.charts__note-hint {
   margin-left: var(--mw-space-3);
 }
 
-.rail__note-when {
-  margin-left: var(--mw-space-1);
-  color: var(--mw-fg-muted);
+/* The course reads as clickable in both places. */
+.coursemap__canvas .leaflet-interactive {
+  cursor: pointer;
 }

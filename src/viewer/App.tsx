@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GroupingInfo } from '../core/assemble.ts';
 import {
   anchorItems,
+  atDistance,
   estimateInstant,
   simplify,
   type Anchor,
@@ -501,10 +502,40 @@ export function App() {
 
   rangeRef.current = range;
 
-  /** The estimated time at whatever point on the course is being pointed at. */
-  const estimate = useMemo(
-    () => (focus === null ? null : estimateInstant(timeAnchors, focus, view.cursor ?? undefined)),
-    [focus, timeAnchors, view.cursor],
+  /** Why a click on the course could not be turned into a time. */
+  const [pickFailed, setPickFailed] = useState(false);
+
+  /**
+   * Clicking the course means "note something here".
+   *
+   * ONE entry point, deliberately. The first attempt put a "Note here" button
+   * beside the readout while hovering, and moving the pointer towards it left
+   * the plot, cleared the focus and removed the button — you had to chase it.
+   *
+   * The time comes from the track when the track is timed, and from
+   * `estimateInstant` — interpolating between the photographs either side —
+   * when it is not. If neither can answer, that is said rather than guessed.
+   */
+  const pickOnCourse = useCallback(
+    (distance: number) => {
+      const course = stage.name === 'loaded' ? stage.course : null;
+      if (!course) return;
+      setFocus(distance);
+      const fromTrack = course.timed ? (atDistance(course, distance)?.at ?? null) : null;
+      const at =
+        fromTrack ??
+        estimateInstant(timeAnchors, distance, view.cursor ?? undefined)?.at ??
+        null;
+      if (at === null) {
+        setPickFailed(true);
+        return;
+      }
+      setPickFailed(false);
+      // Through the shared cursor, like every other way of choosing a moment.
+      setView({ cursor: Math.round(at) });
+      setNoteOpen(true);
+    },
+    [stage, timeAnchors, view.cursor, setView],
   );
 
   /** Notes inside the crop, so they follow the window like the photos do. */
@@ -762,6 +793,7 @@ export function App() {
                 onFocus={setFocus}
                 onCursor={(cursor) => setView({ cursor })}
                 {...(thumbnails ? { thumbnails } : {})}
+                onPick={pickOnCourse}
               />
               <CourseCharts
                 course={stage.course}
@@ -771,19 +803,7 @@ export function App() {
                 focus={focus}
                 onFocus={setFocus}
                 onCursor={(cursor) => setView({ cursor })}
-                onNoteHere={
-                  estimate
-                    ? () => {
-                        setView({ cursor: Math.round(estimate.at) });
-                        setNoteOpen(true);
-                      }
-                    : undefined
-                }
-                noteHereLabel={
-                  estimate
-                    ? formatClock(estimate.at, stage.manifest.event.timezone)
-                    : undefined
-                }
+                onPick={pickOnCourse}
                 {...(stage.manifest.event.timezone
                   ? { timezone: stage.manifest.event.timezone }
                   : {})}
@@ -806,24 +826,7 @@ export function App() {
               onCursor={(cursor) => setView({ cursor })}
               unplaceable={unplaceable}
               {...(thumbnails ? { thumbnails } : {})}
-              onNoteHere={
-                estimate
-                  ? () => {
-                      // Reuses the one cursor: move it to the estimate and the
-                      // composer picks it up as its default, like any other
-                      // way of choosing a moment.
-                      setView({ cursor: Math.round(estimate.at) });
-                      setNoteOpen(true);
-                    }
-                  : undefined
-              }
-              noteHereLabel={
-                estimate
-                  ? `${formatClock(estimate.at, stage.manifest.event.timezone)}${
-                      estimate.gapSeconds > 1800 ? ' ±' : ''
-                    }`
-                  : undefined
-              }
+              onPick={pickOnCourse}
               {...(stage.manifest.event.timezone
                 ? { timezone: stage.manifest.event.timezone }
                 : {})}
@@ -938,7 +941,14 @@ export function App() {
               open={noteOpen}
               onOpenChange={setNoteOpen}
               notice={
-                noteOutside === null || !range
+                pickFailed
+                  ? {
+                      text: 'No photographs either side of there, so there is no time to place a note at.',
+                      action: 'Dismiss',
+                      onAction: () => setPickFailed(false),
+                      onDismiss: () => setPickFailed(false),
+                    }
+                  : noteOutside === null || !range
                   ? undefined
                   : {
                       text: `Added at ${formatClock(noteOutside, stage.manifest.event.timezone)} — outside the window, so it is not shown.`,

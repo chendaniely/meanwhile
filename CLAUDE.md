@@ -620,9 +620,19 @@ precisely where this is needed. Verified against the real folder: pointing at
 16.83 km gave 05:33 local, which is 52.4% of the way between the 0 km photo at
 11:30Z and the 32.1 km photo at 13:31Z, to the minute.
 
-The result is fed through the SHARED CURSOR rather than a private channel:
-"Note here" moves the cursor and the composer picks it up as its default, the
-same as scrubbing the lanes or scrolling the feed.
+**CLICK, never a button that appears on hover.** The first attempt put a "Note
+here" button beside the readout while hovering. Moving the pointer towards it
+left the plot, which cleared the focus, which removed the button — you had to
+chase it, so it could not be used at all. Clicking the course *is* the gesture
+now, in both the map and the profile, and a permanent line of text says so.
+
+The result is fed through the SHARED CURSOR rather than a private channel: the
+click moves the cursor and the composer picks it up as its default, the same
+as scrubbing the lanes or scrolling the feed. That keeps one entry point for
+writing a note rather than one per view.
+
+When neither the track nor the photographs can date the point, that is said
+rather than guessed.
 
 ### Placing media ON the course: time first, GPS only as a fallback *(M10)*
 
