@@ -199,6 +199,39 @@ export interface Marker {
   atDistance?: number;
 }
 
+/**
+ * Something that happened, written down — with or without a photograph.
+ *
+ * The gap this fills: every other annotation in the app hangs off a file, so
+ * anything nobody photographed could not be recorded at all. An ultra is full
+ * of exactly those things. In the owner's words: *"either because we forgot to
+ * take a photo or it was something that we remembered happening during some
+ * point of time."*
+ *
+ * **A note's time is AUTHORED, so `clockOffset` never applies to it.** The
+ * same reasoning as `timeSource: 'manual'`: the offset exists to correct a
+ * device's clock, and a person typing "3am" is not a device. Correcting it
+ * would introduce the very error the offset removes.
+ *
+ * `person` is optional and does real work. With one, the note sits in that
+ * person's lane, which is what lets a note EXPLAIN A GAP — six hours of empty
+ * lane is the story of the night section, and "asleep in the car at Cottonwood"
+ * is the caption that gap never had. Without one it belongs to the event.
+ *
+ * `until` makes it a span rather than a moment, because crewing is mostly
+ * spans: waiting, driving, sleeping, boiling water.
+ */
+export interface Note {
+  id: string;
+  /** ISO-8601. When it happened. */
+  at: string;
+  /** ISO-8601. End of the span; omit for a moment. */
+  until?: string;
+  text: string;
+  /** Whose lane it belongs in. Omit for an event-level note. */
+  person?: PersonId;
+}
+
 export interface Item {
   id: ItemId;
   person: PersonId;
@@ -243,6 +276,8 @@ export interface Manifest {
   course?: CourseRef;
   people: Person[];
   markers?: Marker[];
+  /** Things that happened, with or without a photograph. */
+  notes?: Note[];
   items: Item[];
 }
 
@@ -422,6 +457,45 @@ export function validateManifest(input: unknown): ValidationResult {
         }
         if (hasDist && typeof m['atDistance'] !== 'number') {
           errors.push(`${at}.atDistance must be a number of metres`);
+        }
+      });
+    }
+  }
+
+  // ---- notes ----
+  const notes = input['notes'];
+  if (notes !== undefined) {
+    if (!Array.isArray(notes)) {
+      errors.push('"notes" must be an array');
+    } else {
+      const noteIds = new Set<string>();
+      notes.forEach((n, i) => {
+        const at = `notes[${i}]`;
+        if (!isObject(n)) return void errors.push(`${at} must be an object`);
+        if (typeof n['id'] !== 'string' || n['id'] === '') {
+          errors.push(`${at}.id must be a non-empty string`);
+        } else if (noteIds.has(n['id'])) {
+          // Ids address a note for editing and deleting; duplicates would
+          // make both operations hit the wrong one.
+          errors.push(`${at}.id "${n['id']}" is used more than once`);
+        } else {
+          noteIds.add(n['id']);
+        }
+        if (typeof n['text'] !== 'string' || n['text'] === '') {
+          errors.push(`${at}.text must be a non-empty string`);
+        }
+        if (!isIsoDateTime(n['at'])) {
+          errors.push(`${at}.at must be an ISO-8601 date-time`);
+        }
+        if (n['until'] !== undefined) {
+          if (!isIsoDateTime(n['until'])) {
+            errors.push(`${at}.until must be an ISO-8601 date-time`);
+          } else if (isIsoDateTime(n['at']) && Date.parse(n['until']) < Date.parse(n['at'])) {
+            errors.push(`${at}.until is before ${at}.at`);
+          }
+        }
+        if (n['person'] !== undefined && typeof n['person'] !== 'string') {
+          errors.push(`${at}.person must be a person id`);
         }
       });
     }

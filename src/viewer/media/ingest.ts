@@ -15,7 +15,13 @@ import {
 } from '../../core/assemble.ts';
 import { parseCourse, type Course } from '../../core/course.ts';
 import { isManifestFile, isTrackFile } from '../../core/metadata.ts';
-import { validateManifest, type Manifest, type Person, type Item } from '../../core/schema.ts';
+import {
+  validateManifest,
+  type Item,
+  type Manifest,
+  type Note,
+  type Person,
+} from '../../core/schema.ts';
 import { extractMetadata } from './extract.ts';
 import type { PickedFile } from './folder.ts';
 
@@ -37,6 +43,12 @@ export interface IngestOptions {
   timezone?: string;
   existingPeople?: readonly Person[];
   existingItems?: readonly Item[];
+  /**
+   * Notes are pure authorship — they belong to no file — so they are carried
+   * across wholesale rather than merged per item. Without this a re-read of
+   * the folder would silently drop every one.
+   */
+  existingNotes?: readonly Note[];
   onProgress?: (progress: IngestProgress) => void;
   signal?: AbortSignal;
 }
@@ -168,6 +180,8 @@ export async function ingestFolder(
   if (imported?.event.range) manifest.event.range = imported.event.range;
   if (imported?.course) manifest.course = imported.course;
   if (imported?.markers) manifest.markers = imported.markers;
+  const notes = imported?.notes ?? opts.existingNotes;
+  if (notes?.length) manifest.notes = [...notes];
 
   return {
     manifest,

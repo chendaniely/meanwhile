@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GroupingInfo } from '../core/assemble.ts';
 import { anchorItems, simplify, type Anchor, type Course } from '../core/course.ts';
-import type { Manifest, PersonId } from '../core/schema.ts';
+import type { Manifest, Note, PersonId } from '../core/schema.ts';
 import { isVisible, toggleVisible, VIEW_NAMES, type ViewName } from '../core/state.ts';
 import type { Instant } from '../core/time.ts';
 import { assignLaneColors } from '../core/palette.ts';
@@ -11,11 +11,13 @@ import {
   fullSpan,
   isWithin,
   placeItems,
+  placeNotes,
   type PlacedItem,
   type TimeWindow,
 } from '../core/window.ts';
 import { CourseCharts } from './components/CourseCharts.tsx';
 import { CourseRail } from './components/CourseRail.tsx';
+import { Notes } from './components/Notes.tsx';
 import { Feed } from './components/Feed.tsx';
 import { Lightbox } from './components/Lightbox.tsx';
 import { Swimlanes } from './components/Swimlanes.tsx';
@@ -115,7 +117,11 @@ export function App() {
           title,
           timezone,
           ...(previous.current
-            ? { existingPeople: previous.current.people, existingItems: previous.current.items }
+            ? {
+                existingPeople: previous.current.people,
+                existingItems: previous.current.items,
+                ...(previous.current.notes ? { existingNotes: previous.current.notes } : {}),
+              }
             : {}),
           onProgress: (progress) => setStage({ name: 'reading', progress }),
         });
@@ -241,6 +247,27 @@ export function App() {
     [editManifest],
   );
 
+  const addNote = useCallback(
+    (note: Note) =>
+      editManifest((m) => ({ ...m, notes: [...(m.notes ?? []), note] })),
+    [editManifest],
+  );
+
+  const editNote = useCallback(
+    (id: string, change: Partial<Note>) =>
+      editManifest((m) => ({
+        ...m,
+        notes: (m.notes ?? []).map((n) => (n.id === id ? { ...n, ...change } : n)),
+      })),
+    [editManifest],
+  );
+
+  const deleteNote = useCallback(
+    (id: string) =>
+      editManifest((m) => ({ ...m, notes: (m.notes ?? []).filter((n) => n.id !== id) })),
+    [editManifest],
+  );
+
   const manifest = stage.name === 'loaded' ? stage.manifest : null;
 
   // Lifecycle lives in the hook, where it is tested under StrictMode. See
@@ -250,6 +277,7 @@ export function App() {
   // One resolution pass per manifest, shared by the slider and the report, so
   // every part of the screen agrees about where things sit.
   const placement = useMemo(() => (manifest ? placeItems(manifest) : null), [manifest]);
+  const notes = useMemo(() => (manifest ? placeNotes(manifest) : []), [manifest]);
   const bounds = useMemo(() => (placement ? fullSpan(placement.placed) : null), [placement]);
 
   /**
@@ -376,6 +404,13 @@ export function App() {
       (entry) => isWithin(entry.instant, range) && isVisible(view, entry.item.person),
     );
   }, [placement, range, view]);
+
+  /** Notes inside the crop, so they follow the window like the photos do. */
+  const visibleNotes = useMemo(
+    () => (range ? notes.filter((n) => isWithin(n.instant, range)) : notes),
+    [notes, range],
+  );
+
 
   // The lightbox belongs to the app, not to a view: you can open a photo from
   // the feed or from the lanes, and stepping through it walks the same list.
@@ -612,6 +647,7 @@ export function App() {
                 <Feed
                   manifest={stage.manifest}
                   items={items}
+                  notes={visibleNotes}
                   onOpen={(entry) => setOpenId(entry.item.id)}
                   {...(stage.course
                     ? {
@@ -651,6 +687,22 @@ export function App() {
                 />
               )}
               <UnplacedTray manifest={stage.manifest} unplaced={placement.unplaced} />
+
+              {/* Below the timeline, not above it: you write a note about
+                  something you just looked at, and the cursor it defaults to
+                  is the one you set up there. */}
+              <Notes
+                manifest={stage.manifest}
+                notes={notes}
+                cursor={view.cursor}
+                onAdd={addNote}
+                onEdit={editNote}
+                onDelete={deleteNote}
+                onGo={(cursor) => setView({ cursor })}
+                {...(stage.manifest.event.timezone
+                  ? { timezone: stage.manifest.event.timezone }
+                  : {})}
+              />
             </MediaProvider>
           )}
 

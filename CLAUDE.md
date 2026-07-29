@@ -542,6 +542,40 @@ Disagreement between the two sources is signal, not noise: an item whose GPS
 is far from where the track says the runner was at that moment is evidence of
 a clock offset, which is the basis of automatic alignment.
 
+### Notes are first-class, and independent of any file *(M9, extended)*
+
+> "i'd like to be able to provide a comment at any arbitrary time ... either
+> because we forgot to take a photo or it was something that we remembered
+> happening during some point of time"
+
+Every other annotation hangs off an item, so before this anything nobody
+photographed could not be recorded at all — and an ultra is mostly those
+things. `Manifest.notes` is a separate array of `{ id, at, until?, text,
+person? }`.
+
+Three decisions worth keeping:
+
+- **A note's time is AUTHORED, so `clockOffset` never applies.** Same rule as
+  `timeSource: 'manual'`: the offset corrects a device's clock, and a person
+  typing "3am" is not a device. `placeNotes()` in `window.ts` does no
+  correction at all, and a test pins that.
+- **`person` is optional and does real work.** With one, the note sits in that
+  person's lane — which is what lets a note EXPLAIN A GAP. Six empty hours is
+  the story of the night section, and "asleep at Cottonwood" is the caption
+  that gap never had.
+- **`until` makes it a span**, because crewing is mostly spans: waiting,
+  driving, sleeping, boiling water. A span ending before it starts is
+  degraded to a moment rather than refused at render, and refused at
+  validation.
+
+**The cursor is the default time** for a new note, which is the whole
+ergonomic trick: scrub to 3am in the lanes, and the compose box is already at
+3am. Typing a timestamp is the fallback, not the path.
+
+Notes are carried across a re-ingest **wholesale**, not merged per item, since
+they belong to no file. `existingNotes` in `ingest.ts` exists for exactly
+that; without it a re-read of the folder silently dropped every one.
+
 ### Media with no usable timestamp goes to an unplaced tray *(session 2)*
 
 `timeSource: 'none'`, no `at`. Visible in a holding area, draggable onto the

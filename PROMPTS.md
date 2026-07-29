@@ -511,3 +511,46 @@ only quantity an untimed course has, so metres is what crosses the component
 boundary; a timed course converts at the edges. The map's course also got an
 invisible 18px-wide hit line under the visible 3px one, because pixel-hunting a
 thin line across a switchbacking mountain course is miserable.
+
+---
+
+> okay let's just continue with the milestone apps
+
+**M9 completed.** The kernel already preserved captions, renames and manual
+placements across a re-ingest; three user-facing pieces were missing. People
+are now renamable in place — the report had been *instructing* the author to
+rename devices while offering no control, which is worse than saying nothing.
+The runner badge became a toggle, since `role` carries behaviour. Captions
+are written in the lightbox.
+
+The real gap was the round trip: export wrote a manifest nothing could read
+back, so closing the tab lost the work. Dropping the exported `manifest.json`
+into the folder now restores names, roles, captions, the crop and hand-placed
+times — while automatic timestamps are always re-read, because those are facts
+about the bytes and a stale copy would be worse than none.
+
+---
+
+> i'd like to be able to provide a comment at any arbitrary time. in this case,
+> when the runner is running or when the crew is setting things up, we can
+> still provide comments about something that has happened if it is not
+> directly associated with a photo. either because we forgot to take a photo or
+> it was something that we remembered happening during some point of time.
+
+**DECISION — notes become first-class, independent of any file.** Until now
+every annotation hung off an item, so anything nobody photographed could not
+be recorded at all, and an ultra is mostly those things.
+
+`Manifest.notes` holds `{ id, at, until?, text, person? }`. Three choices
+carry weight: a note's time is **authored, so `clockOffset` never applies** to
+it (same rule as a hand-placed photo — an author is not a device); `person` is
+optional and puts the note in that lane, which is what lets one **explain a
+gap**, since six empty hours is the story of the night section; and `until`
+makes it a span, because crewing is mostly spans — waiting, driving, sleeping.
+
+**The cursor is the default time.** Scrub to 3am, and the compose box is
+already at 3am. Typing a timestamp is the fallback, not the path.
+
+Notes interleave with the photographs in the feed rather than living in their
+own list, because the feed's whole job is reading the event in the order it
+happened.

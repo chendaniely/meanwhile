@@ -12,7 +12,7 @@
  */
 
 import { diagnoseMissingTime } from './metadata.ts';
-import type { Item, Manifest } from './schema.ts';
+import type { Item, Manifest, Note } from './schema.ts';
 import { resolveItemInstant, type Instant } from './time.ts';
 
 export interface TimeWindow {
@@ -244,4 +244,41 @@ export function histogram(
     counts[index] = (counts[index] as number) + 1;
   }
   return counts;
+}
+
+/** A note resolved onto the timeline. */
+export interface PlacedNote {
+  note: Note;
+  instant: Instant;
+  /** End of the span, for a note that covers a stretch of time. */
+  until?: Instant;
+}
+
+/**
+ * Resolve notes onto the timeline, in order.
+ *
+ * Deliberately much simpler than `placeItems`: a note carries a real ISO
+ * instant because a person typed it, so there is no timezone to apply, no
+ * source to rank, and — importantly — **no `clockOffset`**. The offset exists
+ * to correct a device's clock; an author is not a device, and correcting them
+ * would introduce the error the offset removes.
+ *
+ * A note whose timestamp will not parse is dropped rather than placed at the
+ * epoch, which would put it an eternity from the race.
+ */
+export function placeNotes(manifest: Manifest): PlacedNote[] {
+  const out: PlacedNote[] = [];
+  for (const note of manifest.notes ?? []) {
+    const instant = Date.parse(note.at);
+    if (Number.isNaN(instant)) continue;
+    const placed: PlacedNote = { note, instant };
+    if (note.until !== undefined) {
+      const end = Date.parse(note.until);
+      // A span that ends before it starts is not a span. Keep the moment.
+      if (!Number.isNaN(end) && end > instant) placed.until = end;
+    }
+    out.push(placed);
+  }
+  out.sort((a, b) => a.instant - b.instant);
+  return out;
 }

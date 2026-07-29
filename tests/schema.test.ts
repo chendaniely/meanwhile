@@ -247,3 +247,63 @@ describe('TIME_SOURCE_RANK', () => {
     expect(TIME_SOURCE_RANK.at(-1)).toBe('none');
   });
 });
+
+describe('notes in the manifest', () => {
+  const withNotes = (notes: unknown) => ({
+    schema: 1,
+    event: { title: 'Race' },
+    people: [{ id: 'p', name: 'Priya' }],
+    items: [],
+    notes,
+  });
+
+  it('accepts a note at a moment', () => {
+    const r = validateManifest(withNotes([{ id: 'n', at: '2026-07-25T21:45:00Z', text: 'wrong turn' }]));
+    expect(r.ok).toBe(true);
+  });
+
+  it('accepts a note that spans time, which is most of crewing', () => {
+    const r = validateManifest(
+      withNotes([
+        { id: 'n', at: '2026-07-26T09:00:00Z', until: '2026-07-26T12:00:00Z', text: 'asleep in the car', person: 'p' },
+      ]),
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it('refuses a note with no text', () => {
+    const r = validateManifest(withNotes([{ id: 'n', at: '2026-07-25T21:45:00Z', text: '' }]));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join(' ')).toMatch(/text/);
+  });
+
+  it('refuses a note with an unparseable time', () => {
+    const r = validateManifest(withNotes([{ id: 'n', at: 'tuesday-ish', text: 'x' }]));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join(' ')).toMatch(/ISO-8601/);
+  });
+
+  it('refuses a span that ends before it starts', () => {
+    const r = validateManifest(
+      withNotes([{ id: 'n', at: '2026-07-26T12:00:00Z', until: '2026-07-26T09:00:00Z', text: 'x' }]),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join(' ')).toMatch(/before/);
+  });
+
+  it('refuses duplicate ids, which edit and delete address by', () => {
+    const r = validateManifest(
+      withNotes([
+        { id: 'same', at: '2026-07-25T21:45:00Z', text: 'one' },
+        { id: 'same', at: '2026-07-25T21:46:00Z', text: 'two' },
+      ]),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join(' ')).toMatch(/more than once/);
+  });
+
+  it('accepts a manifest with no notes at all', () => {
+    const r = validateManifest(withNotes(undefined));
+    expect(r.ok).toBe(true);
+  });
+});

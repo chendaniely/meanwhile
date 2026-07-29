@@ -1607,3 +1607,179 @@ button.report__tag--on {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* ---------------------------------------------------------------------------
+   Notes: things that happened, with or without a photograph.
+   --------------------------------------------------------------------------- */
+
+.notes {
+  margin: var(--mw-space-5) 0 var(--mw-space-4);
+  padding-top: var(--mw-space-4);
+  border-top: 1px solid var(--mw-border);
+}
+
+.notes__heading {
+  font-size: var(--mw-text-md);
+  margin: 0 0 var(--mw-space-1);
+}
+
+.notes__lead,
+.notes__empty {
+  color: var(--mw-fg-muted);
+  font-size: var(--mw-text-sm);
+  margin: 0 0 var(--mw-space-3);
+}
+
+.notes__compose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mw-space-2);
+  margin-bottom: var(--mw-space-4);
+}
+
+.notes__text {
+  width: 100%;
+  font: inherit;
+  color: var(--mw-fg);
+  background: var(--mw-surface);
+  border: 1px solid var(--mw-border);
+  border-radius: var(--mw-radius-md);
+  padding: var(--mw-space-2);
+  resize: vertical;
+}
+
+.notes__text:focus-visible,
+.notes__edit:focus-visible {
+  border-color: var(--mw-accent);
+  outline: none;
+}
+
+.notes__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mw-space-3);
+  align-items: flex-end;
+}
+
+.notes__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-muted);
+}
+
+.notes__field input,
+.notes__field select {
+  font: inherit;
+  color: var(--mw-fg);
+  background: var(--mw-surface);
+  border: 1px solid var(--mw-border);
+  border-radius: var(--mw-radius-sm);
+  padding: var(--mw-space-1) var(--mw-space-2);
+  /* Chrome renders the date picker's icon dark-on-dark otherwise. */
+  color-scheme: dark;
+}
+
+.notes__hint {
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-muted);
+  margin: 0;
+}
+
+.notes__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.notes__row {
+  display: flex;
+  align-items: center;
+  gap: var(--mw-space-2);
+  padding: var(--mw-space-1) 0;
+  border-bottom: 1px solid var(--mw-border);
+}
+
+.notes__when {
+  flex: none;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--mw-link);
+  font-size: var(--mw-text-xs);
+}
+
+.notes__person {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-muted);
+}
+
+.notes__swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.notes__edit {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--mw-fg);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--mw-radius-sm);
+  padding: 2px var(--mw-space-1);
+}
+
+.notes__edit:hover {
+  border-color: var(--mw-border);
+}
+
+.notes__delete {
+  flex: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--mw-fg-muted);
+  font-size: var(--mw-text-md);
+  line-height: 1;
+  padding: 0 var(--mw-space-1);
+}
+
+.notes__delete:hover {
+  color: var(--mw-danger);
+}
+
+/* A note in the feed. Deliberately quieter than a moment — it is a caption on
+   the event, not a photograph — but on the same left edge so the chronology
+   reads as one column. */
+.feed__note {
+  margin: var(--mw-space-3) 0;
+  padding-left: var(--mw-space-3);
+  border-left: 2px solid var(--mw-accent);
+}
+
+.feed__note-head {
+  display: flex;
+  align-items: center;
+  gap: var(--mw-space-2);
+  flex-wrap: wrap;
+}
+
+.feed__note-until {
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-muted);
+}
+
+.feed__note-text {
+  margin: var(--mw-space-1) 0 0;
+  color: var(--mw-fg);
+}

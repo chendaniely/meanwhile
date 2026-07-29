@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { assignLaneColors } from '../../core/palette.ts';
 import type { Manifest, PersonId } from '../../core/schema.ts';
 import { formatClock, formatDateTime } from '../../core/time.ts';
-import type { PlacedItem } from '../../core/window.ts';
+import type { PlacedItem, PlacedNote } from '../../core/window.ts';
 import { MediaTile } from './MediaTile.tsx';
 
 /**
@@ -33,6 +33,12 @@ interface Props {
    * follow the scroll. Optional: the feed is perfectly useful without one.
    */
   onActive?: (moment: readonly PlacedItem[]) => void;
+  /**
+   * Notes fall in the same chronological stream as the photographs. Keeping
+   * them in a separate list would break the one thing the feed is for —
+   * reading the event in the order it happened.
+   */
+  notes?: readonly PlacedNote[];
 }
 
 /** Gap that separates one moment from the next. */
@@ -58,7 +64,7 @@ function toMoments(placed: readonly PlacedItem[]): Moment[] {
   return out;
 }
 
-export function Feed({ manifest, items, onOpen, onActive }: Props) {
+export function Feed({ manifest, items, onOpen, onActive, notes = [] }: Props) {
   const zone = manifest.event.timezone;
   const colors = useMemo(() => assignLaneColors(manifest.people), [manifest.people]);
   const names = useMemo(
@@ -124,52 +130,95 @@ export function Feed({ manifest, items, onOpen, onActive }: Props) {
 
   let lastDay = '';
 
+  // One stream, ordered by time. A note between two moments reads as part of
+  // the story rather than as an aside.
+  type Entry =
+    | { kind: 'moment'; at: number; moment: Moment }
+    | { kind: 'note'; at: number; placed: PlacedNote };
+  const stream: Entry[] = [
+    ...moments.map((moment): Entry => ({ kind: 'moment', at: moment.at, moment })),
+    ...notes.map((placed): Entry => ({ kind: 'note', at: placed.instant, placed })),
+  ].sort((a, b) => a.at - b.at);
+
   return (
     <div className="feed">
-      {moments.map((moment) => {
-        const day = formatDateTime(moment.at, zone).replace(/,.*$/, '');
+      {stream.map((entry) => {
+        const day = formatDateTime(entry.at, zone).replace(/,.*$/, '');
         const newDay = day !== lastDay;
         lastDay = day;
 
-        return (
-          <section key={moment.at} className="moment" ref={(node) => stamp(node, moment)}>
-            {newDay && <h2 className="feed__day">{day}</h2>}
-
-            <header className="moment__head">
-              <time className="moment__time mw-mono">{formatClock(moment.at, zone)}</time>
-              <span className="moment__who">
-                {[...moment.people].map((id) => (
-                  <span key={id} className="moment__person">
+        if (entry.kind === 'note') {
+          const { note, instant, until } = entry.placed;
+          return (
+            <section key={note.id} className="feed__note">
+              {newDay && <h2 className="feed__day">{day}</h2>}
+              <header className="feed__note-head">
+                <time className="moment__time mw-mono">{formatClock(instant, zone)}</time>
+                {until !== undefined && (
+                  <span className="feed__note-until mw-mono">
+                    &rarr; {formatClock(until, zone)}
+                  </span>
+                )}
+                {note.person && (
+                  <span className="moment__person">
                     <span
                       className="moment__swatch"
-                      style={{ background: colors.get(id) }}
+                      style={{ background: colors.get(note.person) }}
                       aria-hidden="true"
                     />
-                    {names.get(id) ?? id}
+                    {names.get(note.person) ?? note.person}
                   </span>
-                ))}
-              </span>
-              {/* The whole point, stated: two lanes in one moment means two
-                  people were doing something at the same time. */}
-              {moment.people.size > 1 && (
-                <span className="moment__together">{moment.people.size} at once</span>
-              )}
-            </header>
+                )}
+              </header>
+              <p className="feed__note-text">{note.text}</p>
+            </section>
+          );
+        }
 
-            <div className="moment__grid">
-              {moment.items.map(({ item, instant }) => (
-                <MediaTile
-                  key={item.id}
-                  item={item}
-                  {...(colors.get(item.person) ? { color: colors.get(item.person) as string } : {})}
-                  caption={formatClock(instant, zone)}
-                  onOpen={() => onOpen({ item, instant })}
-                />
-              ))}
-            </div>
-          </section>
-        );
+        const moment = entry.moment;
+        return renderMoment(moment, newDay, day);
       })}
     </div>
   );
+
+  function renderMoment(moment: Moment, newDay: boolean, day: string) {
+    return (
+      <section key={moment.at} className="moment" ref={(node) => stamp(node, moment)}>
+        {newDay && <h2 className="feed__day">{day}</h2>}
+
+        <header className="moment__head">
+          <time className="moment__time mw-mono">{formatClock(moment.at, zone)}</time>
+          <span className="moment__who">
+            {[...moment.people].map((id) => (
+              <span key={id} className="moment__person">
+                <span
+                  className="moment__swatch"
+                  style={{ background: colors.get(id) }}
+                  aria-hidden="true"
+                />
+                {names.get(id) ?? id}
+              </span>
+            ))}
+          </span>
+          {/* The whole point, stated: two lanes in one moment means two
+              people were doing something at the same time. */}
+          {moment.people.size > 1 && (
+            <span className="moment__together">{moment.people.size} at once</span>
+          )}
+        </header>
+
+        <div className="moment__grid">
+          {moment.items.map(({ item, instant }) => (
+            <MediaTile
+              key={item.id}
+              item={item}
+              {...(colors.get(item.person) ? { color: colors.get(item.person) as string } : {})}
+              caption={formatClock(instant, zone)}
+              onOpen={() => onOpen({ item, instant })}
+            />
+          ))}
+        </div>
+      </section>
+    );
+  }
 }

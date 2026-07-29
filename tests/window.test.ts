@@ -10,6 +10,7 @@ import {
   isWithin,
   itemsInWindow,
   placeItems,
+  placeNotes,
   shiftWindow,
   unionSpan,
   windowFromCourse,
@@ -316,5 +317,65 @@ describe('histogram', () => {
 
   it('survives a zero-width window', () => {
     expect(histogram(at(0), { from: 0, to: 0 }, 4)).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe('placeNotes', () => {
+  const base = (notes: unknown): Manifest =>
+    ({
+      schema: 1,
+      event: { title: 'Race', timezone: 'America/Denver' },
+      people: [{ id: 'p', name: 'Priya' }],
+      items: [],
+      notes,
+    }) as unknown as Manifest;
+
+  it('places a note at the instant it was written for', () => {
+    const placed = placeNotes(base([{ id: 'n1', at: '2026-07-25T09:00:00Z', text: 'left the trailhead' }]));
+    expect(placed).toHaveLength(1);
+    expect(placed[0]?.instant).toBe(Date.UTC(2026, 6, 25, 9));
+  });
+
+  it('sorts notes into timeline order', () => {
+    const placed = placeNotes(
+      base([
+        { id: 'b', at: '2026-07-25T12:00:00Z', text: 'second' },
+        { id: 'a', at: '2026-07-25T09:00:00Z', text: 'first' },
+      ]),
+    );
+    expect(placed.map((p) => p.note.id)).toEqual(['a', 'b']);
+  });
+
+  it('keeps a span', () => {
+    const placed = placeNotes(
+      base([
+        { id: 'n', at: '2026-07-26T09:00:00Z', until: '2026-07-26T12:30:00Z', text: 'asleep in the car' },
+      ]),
+    );
+    expect(placed[0]?.until).toBe(Date.UTC(2026, 6, 26, 12, 30));
+  });
+
+  it('drops a span that ends before it starts, keeping the moment', () => {
+    const placed = placeNotes(
+      base([{ id: 'n', at: '2026-07-26T12:00:00Z', until: '2026-07-26T09:00:00Z', text: 'muddled' }]),
+    );
+    expect(placed[0]?.until).toBeUndefined();
+    expect(placed[0]?.instant).toBe(Date.UTC(2026, 6, 26, 12));
+  });
+
+  it('drops an unparseable time rather than placing it at the epoch', () => {
+    // 1970 would put the note an eternity from the race and drag the whole
+    // timeline with it.
+    expect(placeNotes(base([{ id: 'n', at: 'sometime tuesday', text: 'x' }]))).toHaveLength(0);
+  });
+
+  it('does NOT apply a clock offset — an author is not a device', () => {
+    const manifest = base([{ id: 'n', at: '2026-07-25T09:00:00Z', text: 'x', person: 'p' }]);
+    (manifest.people[0] as { clockOffset?: string }).clockOffset = 'PT1H';
+    expect(placeNotes(manifest)[0]?.instant).toBe(Date.UTC(2026, 6, 25, 9));
+  });
+
+  it('is empty when there are no notes at all', () => {
+    expect(placeNotes(base(undefined))).toEqual([]);
   });
 });

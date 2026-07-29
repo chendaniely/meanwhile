@@ -241,7 +241,13 @@ Run `make dev`, click **Open a folder**, and:
    named after the phones that shot them; rename each one in the report.
    Marking someone the runner pins their lane to the top. Any photo can be
    captioned from the lightbox.
-12. **Your work comes back.** Export `manifest.json`, and next time drop that
+12. **Write a note at any time, with or without a photo.** Something happened
+   that nobody photographed &mdash; a wrong turn, a nap in the car, a rough
+   patch at 3am. Add it under the timeline and it appears in the feed in
+   order, alongside the photographs. It can cover a stretch of time rather
+   than a moment, and can belong to one person, which is what lets a note
+   explain a gap in their lane.
+13. **Your work comes back.** Export `manifest.json`, and next time drop that
    file into the folder along with the photos — names, roles, captions, the
    crop, and hand-placed times all return. Timestamps are always re-read from
    the files themselves, so a stale copy can never override what the photo
