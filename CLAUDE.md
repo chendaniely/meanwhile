@@ -991,9 +991,30 @@ structure, or behavior MUST update the affected docs in the SAME commit:
   the decisions made. Every session, append.
 - `TODO.md` — anything deliberately deferred.
 - `TODO-completed.md` — move items here when done, with the commit hash.
-- `CHANGELOG.md` — on every release, pair what changed with the owner's
-  guiding prompt(s), quoted verbatim from `PROMPTS.md`. The point is to show
-  the project is human-guided, not blindly vibe-coded. Keep that framing.
+- `CHANGELOG.md` — pair what changed with the owner's guiding prompt(s),
+  quoted verbatim from `PROMPTS.md`. The point is to show the project is
+  human-guided, not blindly vibe-coded. Keep that framing.
+
+  **Write into the unreleased entry as you go, not at release time.** The
+  0.1.0 entry was drafted at M11 and was stale two commits later; anything
+  reconstructed afterwards from `git log` loses exactly the reasoning the file
+  exists to keep.
+
+### Releases: three things that must agree
+
+`CHANGELOG.md`, the `version` in `package.json`, and the git tag. **`make
+release VERSION=x.y.z` refuses unless they do** — no changelog entry, a
+mismatched version, a dirty tree or an existing tag all stop it, and it runs
+`make check` before tagging. It deliberately fixes nothing up: a tag pointing
+at a version the changelog does not describe is worse than no tag.
+
+Tags are `vX.Y.Z`; the changelog heading is `## X.Y.Z — YYYY-MM-DD — title`.
+The target only tags. Pushing stays a deliberate act:
+
+```sh
+make release VERSION=0.1.0
+git push origin main && git push origin v0.1.0
+```
 - The spec in `docs/superpowers/specs/` — update if the design changes.
 
 ## Aesthetic — RESOLVED *(session 2)*

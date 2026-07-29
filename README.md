@@ -195,6 +195,7 @@ Other commands:
 | `make build` | Produce the publishable site in `dist/` |
 | `make preview` | Serve `dist/` so you can check it before publishing |
 | `make clean` | Delete `dist/` and the installed packages |
+| `make release VERSION=0.1.0` | Check the changelog, version and tag agree, then tag |
 
 **Your photos never go in this repo.** `data/` is ignored by git, and so are
 media files anywhere in the folder. This is deliberate: a 24-hour race across

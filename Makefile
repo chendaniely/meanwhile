@@ -41,3 +41,21 @@ check: typecheck test ## Everything CI would run
 
 clean: ## Remove build output and installed packages
 	rm -rf dist node_modules
+
+# Deliberately refuses rather than fixing anything up. CHANGELOG.md,
+# package.json and the tags drift apart silently otherwise, and a tag pointing
+# at a version the changelog does not describe is worse than no tag at all.
+release: ## Tag a release: make release VERSION=0.1.0
+	@test -n "$(VERSION)" || { echo "usage: make release VERSION=0.1.0"; exit 1; }
+	@grep -q "^## $(VERSION) " CHANGELOG.md \
+		|| { echo "CHANGELOG.md has no '## $(VERSION) ...' entry"; exit 1; }
+	@node -e 'const v=require("./package.json").version; if (v!==process.argv[1]) { console.error(`package.json says ${v}, not ${process.argv[1]}`); process.exit(1); }' $(VERSION)
+	@git diff --quiet && git diff --cached --quiet \
+		|| { echo "working tree is dirty — commit first"; exit 1; }
+	@git rev-parse "v$(VERSION)" >/dev/null 2>&1 \
+		&& { echo "tag v$(VERSION) already exists"; exit 1; } || true
+	$(MAKE) check
+	git tag -a "v$(VERSION)" -m "$(VERSION)"
+	@echo
+	@echo "Tagged v$(VERSION). To publish it:"
+	@echo "  git push origin main && git push origin v$(VERSION)"

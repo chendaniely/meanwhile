@@ -6,7 +6,7 @@ owner, and the record of who asked for what is part of the project rather than
 a footnote to it — several of the decisions below reversed something Claude had
 already built, and the reasons are worth keeping.
 
-## 0.1.0 — first working viewer
+## 0.1.0 — 2026-07-29 — first working viewer
 
 Point the site at a folder of photographs and look at the race. Nothing is
 uploaded; the site ships no media and no event data.
@@ -84,6 +84,33 @@ and interpolated between the surrounding photographs when it does not.
 Notes are first-class and belong to no file. They can span time, can belong to
 one person — which is what lets a note explain a six-hour gap in someone's lane
 — and interleave with the photographs in the feed.
+
+### Getting the interface out of the way
+
+> "after i upload 200+ images all the things on the bottom of the site are
+> really hard to notice"
+
+Structural, not cosmetic: the feed is unbounded, and the export button, people
+list, unplaced tray and note composer all rendered *after* it. Things are now
+placed by how often they are used — a sticky top bar for what must always be
+reachable, the note composer floating within reach of whatever you are
+reading, and the reference material collapsed above the views.
+
+> "the click on the swim lane is a toggle"
+
+Hovering the lanes previews a moment; clicking pins it so the strip holds
+still while you reach for a photograph, and clicking again lets go. The wheel
+zooms the time window. The moment strip is a fixed height, because tiles that
+wrapped made the page bounce as you scrubbed — including the photographs you
+were reaching for.
+
+> "loop through the site to make sure everythign is consistant and no
+> conflicts"
+
+One action, one name, one control. "Save manifest" and "Export manifest.json"
+were the same thing twice; the verb now carries the meaning, so *Open* always
+replaces and *Add* always merges. Stacking became a named scale after the note
+dock was found floating over the lightbox.
 
 ### Getting it back
 
