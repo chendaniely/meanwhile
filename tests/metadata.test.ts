@@ -5,6 +5,8 @@ import { locateBox, type RangeReader } from '../src/core/isobmff.ts';
 import {
   classify,
   extensionOf,
+  isNotesFile,
+  isPeopleFile,
   parseFilenameTime,
   photoMetadata,
   resolvePhotoTime,
@@ -267,5 +269,24 @@ describe('locateBox', () => {
     const bytes = new Uint8Array([0, 0, 0, 3, 0x6d, 0x6f, 0x6f, 0x76, 0, 0, 0, 0, 0, 0, 0, 0]);
     const { read } = readerFor(bytes);
     expect(await locateBox(read, bytes.byteLength, 'moov')).toBeNull();
+  });
+});
+
+describe('recognising the metadata files', () => {
+  it('accepts any notes file, however it was named', () => {
+    for (const n of ['notes.csv', 'notes-priya.csv', 'notes_dan.csv', 'sub/notes.csv']) {
+      expect(isNotesFile(n)).toBe(true);
+    }
+  });
+
+  it('does not sweep in an unrelated spreadsheet', () => {
+    for (const n of ['budget.csv', 'my-notes-draft.txt', 'notes.txt']) {
+      expect(isNotesFile(n)).toBe(false);
+    }
+  });
+
+  it('recognises the roster', () => {
+    expect(isPeopleFile('people.csv')).toBe(true);
+    expect(isPeopleFile('peoples.csv')).toBe(false);
   });
 });

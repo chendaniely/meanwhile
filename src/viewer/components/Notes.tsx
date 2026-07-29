@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { assignLaneColors } from '../../core/palette.ts';
+import { resolvePersonNames } from '../../core/people-csv.ts';
 import type { Manifest, Note, PersonId } from '../../core/schema.ts';
 import { formatDateTime, type Instant } from '../../core/time.ts';
 import type { PlacedNote } from '../../core/window.ts';
@@ -214,49 +215,64 @@ export function NoteList({ manifest, notes, timezone, onEdit, onDelete, onGo }: 
 
   return (
     <ul className="notes__list">
-      {notes.map(({ note, instant, until }) => (
-        <li key={note.id} className="notes__row">
-          <button
-            type="button"
-            className="notes__when mw-mono"
-            onClick={() => onGo(instant)}
-            title="Jump the timeline here"
-          >
-            {formatDateTime(instant, timezone)}
-            {until !== undefined && ' →'}
-          </button>
-          {note.person && (
-            <span className="notes__person">
-              <span
-                className="notes__swatch"
-                style={{ background: colors.get(note.person) }}
-                aria-hidden="true"
-              />
-              {names.get(note.person) ?? note.person}
-            </span>
-          )}
-          <input
-            className="notes__edit"
-            defaultValue={note.text}
-            aria-label="Note text"
-            onBlur={(e) => {
-              const next = e.target.value.trim();
-              // Clearing the text deletes it: an empty note is not a note, and
-              // this is more discoverable than hunting for a Remove button.
-              if (!next) onDelete(note.id);
-              else if (next !== note.text) onEdit(note.id, { text: next });
-            }}
-          />
-          <button
-            type="button"
-            className="notes__delete"
-            onClick={() => onDelete(note.id)}
-            aria-label={`Delete note: ${note.text}`}
-          >
-            ×
-          </button>
-        </li>
-      ))}
+      {notes.map(({ note, instant, until }) => {
+        // `note.people` is names, not ids — matched back against the roster
+        // so a recognised one still gets its lane color; an unrecognised
+        // name (a typo, or someone not yet in people.csv) is shown plainly
+        // rather than dropped.
+        const { ids: knownIds, unknown: unknownNames } = resolvePersonNames(note.people, manifest.people);
+        return (
+          <li key={note.id} className="notes__row">
+            <button
+              type="button"
+              className="notes__when mw-mono"
+              onClick={() => onGo(instant)}
+              title="Jump the timeline here"
+            >
+              {formatDateTime(instant, timezone)}
+              {until !== undefined && ' →'}
+            </button>
+            {(knownIds.length > 0 || unknownNames.length > 0) && (
+              <span className="notes__person">
+                {knownIds.map((id) => (
+                  <span key={id}>
+                    <span
+                      className="notes__swatch"
+                      style={{ background: colors.get(id) }}
+                      aria-hidden="true"
+                    />
+                    {names.get(id) ?? id}
+                  </span>
+                ))}
+                {unknownNames.map((name) => (
+                  <span key={name}>{name}</span>
+                ))}
+              </span>
+            )}
+            <input
+              className="notes__edit"
+              defaultValue={note.text}
+              aria-label="Note text"
+              onBlur={(e) => {
+                const next = e.target.value.trim();
+                // Clearing the text deletes it: an empty note is not a note,
+                // and this is more discoverable than hunting for a Remove
+                // button.
+                if (!next) onDelete(note.id);
+                else if (next !== note.text) onEdit(note.id, { text: next });
+              }}
+            />
+            <button
+              type="button"
+              className="notes__delete"
+              onClick={() => onDelete(note.id)}
+              aria-label={`Delete note: ${note.text}`}
+            >
+              ×
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -9,7 +9,8 @@ import {
   type Course,
   type TimeAnchor,
 } from '../core/course.ts';
-import type { Manifest, Note, PersonId } from '../core/schema.ts';
+import type { Note } from '../core/notes.ts';
+import type { Manifest, Note as LegacyNote, PersonId } from '../core/schema.ts';
 import { isVisible, toggleVisible, VIEW_NAMES, type ViewName } from '../core/state.ts';
 import { formatClock, type Instant } from '../core/time.ts';
 import { assignLaneColors } from '../core/palette.ts';
@@ -41,7 +42,12 @@ import { MediaProvider } from './media/MediaContext.tsx';
 import { useMediaStore } from './media/useMediaStore.ts';
 import { useAppState } from './hooks/useAppState.ts';
 import type { PickedFile } from './media/folder.ts';
-import { downloadManifest, ingestFolder, type IngestProgress } from './media/ingest.ts';
+import {
+  downloadManifest,
+  ingestFolder,
+  legacyNoteToNote,
+  type IngestProgress,
+} from './media/ingest.ts';
 import './App.css';
 
 /** The browser's own zone is right far more often than not — it is where the
@@ -74,6 +80,8 @@ type Stage =
       /** A manifest.json found in the folder, whose author work was merged in. */
       importedFrom: string | null;
       importError: string | null;
+      /** A notes*.csv or people.csv row that could not be read. Shown, never swallowed. */
+      noteProblems: string[];
     };
 
 export function App() {
@@ -97,6 +105,20 @@ export function App() {
    * handle to bytes on disk, and they are only read when a tile asks.
    */
   const [files, setFiles] = useState<ReadonlyMap<string, File> | null>(null);
+
+  /**
+   * Notes merged from `notes*.csv`, plus whatever a legacy manifest's
+   * `notes[]` and captions migrate into (see `legacyNoteToNote` and
+   * `ingestFolder`).
+   *
+   * A state of its own rather than derived from `manifest` on every render,
+   * because the composer below still writes a legacy-shape note into
+   * `manifest.notes` for now (the composer itself moves to the new shape in
+   * a later task) — re-deriving from the manifest on every change would
+   * double up whatever was migrated at the last ingest. `addNote`/`editNote`/
+   * `deleteNote` keep this and `manifest.notes` in step by hand instead.
+   */
+  const [notes, setNotes] = useState<Note[]>([]);
 
   /**
    * Read a set of files into the app.
@@ -123,6 +145,7 @@ export function App() {
       try {
         const {
           manifest, grouping, course, courseFile, importedFrom, importError,
+          notes: loadedNotes, noteProblems,
         } = await ingestFolder(all, {
           title,
           timezone,
@@ -140,9 +163,10 @@ export function App() {
         // either would immediately overwrite what was just loaded.
         setTitle(manifest.event.title);
         if (manifest.event.timezone) setTimezone(manifest.event.timezone);
+        setNotes(loadedNotes);
         setStage({
           name: 'loaded', manifest, grouping, course, courseFile,
-          importedFrom, importError,
+          importedFrom, importError, noteProblems,
         });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Something went wrong reading that folder.');
@@ -263,9 +287,21 @@ export function App() {
   const [noteOpen, setNoteOpen] = useState(false);
   const rangeRef = useRef<TimeWindow | null>(null);
 
+  /*
+   * The composer still produces the LEGACY note shape (Task 8 moves it to
+   * the new one), and `manifest.notes` is still the only thing `downloadManifest`
+   * exports — so these keep writing there. They also mirror the change into
+   * the live `notes` state, converted with the same `legacyNoteToNote` ingest
+   * uses, so a note just added, edited, or deleted shows up immediately
+   * rather than waiting for the next folder read.
+   */
   const addNote = useCallback(
-    (note: Note) => {
+    (note: LegacyNote) => {
       editManifest((m) => ({ ...m, notes: [...(m.notes ?? []), note] }));
+      setNotes((prev) => [
+        ...prev,
+        legacyNoteToNote(note, stage.name === 'loaded' ? stage.manifest.people : []),
+      ]);
       const at = Date.parse(note.at);
       // The crop hides photos from outside the event, and notes follow it for
       // consistency — but a note you JUST wrote disappearing is indefensible.
@@ -273,21 +309,30 @@ export function App() {
       const crop = rangeRef.current;
       setNoteOutside(!Number.isNaN(at) && crop && !isWithin(at, crop) ? at : null);
     },
-    [editManifest],
+    [editManifest, stage],
   );
 
   const editNote = useCallback(
-    (id: string, change: Partial<Note>) =>
+    (id: string, change: Partial<LegacyNote>) => {
       editManifest((m) => ({
         ...m,
         notes: (m.notes ?? []).map((n) => (n.id === id ? { ...n, ...change } : n)),
-      })),
+      }));
+      // Only `text` is ever sent by the note list; the field is shared by
+      // both shapes, so applying it directly is exact rather than a guess.
+      if (change.text !== undefined) {
+        const text = change.text;
+        setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, text } : n)));
+      }
+    },
     [editManifest],
   );
 
   const deleteNote = useCallback(
-    (id: string) =>
-      editManifest((m) => ({ ...m, notes: (m.notes ?? []).filter((n) => n.id !== id) })),
+    (id: string) => {
+      editManifest((m) => ({ ...m, notes: (m.notes ?? []).filter((n) => n.id !== id) }));
+      setNotes((prev) => prev.filter((n) => n.id !== id));
+    },
     [editManifest],
   );
 
@@ -313,7 +358,7 @@ export function App() {
   // One resolution pass per manifest, shared by the slider and the report, so
   // every part of the screen agrees about where things sit.
   const placement = useMemo(() => (manifest ? placeItems(manifest) : null), [manifest]);
-  const notes = useMemo(() => (manifest ? placeNotes(manifest) : []), [manifest]);
+  const placedNotes = useMemo(() => placeNotes(notes), [notes]);
 
   /**
    * The outer limit of the timeline — what the slider can reach.
@@ -326,16 +371,16 @@ export function App() {
   const bounds = useMemo(() => {
     if (!placement) return null;
     const span = fullSpan(placement.placed);
-    if (notes.length === 0) return span;
+    if (placedNotes.length === 0) return span;
     let from = span?.from ?? Number.POSITIVE_INFINITY;
     let to = span?.to ?? Number.NEGATIVE_INFINITY;
-    for (const n of notes) {
+    for (const n of placedNotes) {
       if (n.instant < from) from = n.instant;
       const end = n.until ?? n.instant;
       if (end > to) to = end;
     }
     return Number.isFinite(from) && Number.isFinite(to) ? { from, to } : span;
-  }, [placement, notes]);
+  }, [placement, placedNotes]);
 
   /**
    * The track thinned once, for both the map and the charts.
@@ -498,7 +543,9 @@ export function App() {
           ? `${placement.unplaced.length.toLocaleString()} unplaced`
           : null,
         `${manifest?.people.length ?? 0} ${manifest?.people.length === 1 ? 'person' : 'people'}`,
-        notes.length > 0 ? `${notes.length} ${notes.length === 1 ? 'note' : 'notes'}` : null,
+        placedNotes.length > 0
+          ? `${placedNotes.length} ${placedNotes.length === 1 ? 'note' : 'notes'}`
+          : null,
       ]
         .filter(Boolean)
         .join(' · ')
@@ -544,8 +591,8 @@ export function App() {
 
   /** Notes inside the crop, so they follow the window like the photos do. */
   const visibleNotes = useMemo(
-    () => (range ? notes.filter((n) => isWithin(n.instant, range)) : notes),
-    [notes, range],
+    () => (range ? placedNotes.filter((n) => isWithin(n.instant, range)) : placedNotes),
+    [placedNotes, range],
   );
 
 
@@ -730,7 +777,7 @@ export function App() {
                 <h2 className="notes__heading">Notes</h2>
                 <NoteList
                   manifest={stage.manifest}
-                  notes={notes}
+                  notes={placedNotes}
                   onEdit={editNote}
                   onDelete={deleteNote}
                   onGo={(cursor) => setView({ cursor })}
@@ -746,6 +793,13 @@ export function App() {
             <p className="callout callout--warn">
               A manifest was found but could not be used, so nothing from it was
               applied: {stage.importError}
+            </p>
+          )}
+          {stage.noteProblems.length > 0 && (
+            <p className="callout callout--warn">
+              {stage.noteProblems.length === 1 ? 'A row' : `${stage.noteProblems.length} rows`} in
+              notes.csv or people.csv could not be read, so {stage.noteProblems.length === 1 ? 'it was' : 'they were'} skipped
+              rather than guessed at: {stage.noteProblems.join('; ')}
             </p>
           )}
           {stage.importedFrom && (
@@ -948,7 +1002,7 @@ export function App() {
               manifest={stage.manifest}
               cursor={view.cursor}
               onAdd={addNote}
-              count={notes.length}
+              count={placedNotes.length}
               open={noteOpen}
               onOpenChange={setNoteOpen}
               notice={

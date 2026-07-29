@@ -104,6 +104,22 @@ export function isTrackFile(filename: string): boolean {
   return ext === 'gpx' || ext === 'tcx';
 }
 
+/**
+ * Any `notes*.csv`, however a person named their own file.
+ *
+ * Several people keep their own file — `notes-priya.csv`, `notes_dan.csv` —
+ * and all of them merge, so the match is deliberately loose: no naming rule
+ * to explain, just "starts with notes and ends in .csv".
+ */
+export function isNotesFile(filename: string): boolean {
+  return /(^|\/)notes[^/]*\.csv$/i.test(filename);
+}
+
+/** The people roster, exactly `people.csv`. One file, unlike notes. */
+export function isPeopleFile(filename: string): boolean {
+  return /(^|\/)people\.csv$/i.test(filename);
+}
+
 export function classify(filename: string): MediaKind | null {
   const ext = extensionOf(filename);
   if (PHOTO_EXTENSIONS.has(ext)) return 'photo';

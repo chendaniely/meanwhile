@@ -12,8 +12,9 @@
  */
 
 import { diagnoseMissingTime } from './metadata.ts';
-import type { Item, Manifest, Note } from './schema.ts';
-import { resolveItemInstant, type Instant } from './time.ts';
+import type { Note } from './notes.ts';
+import type { Item, Manifest } from './schema.ts';
+import { parseDuration, resolveItemInstant, type Instant } from './time.ts';
 
 export interface TimeWindow {
   from: Instant;
@@ -265,17 +266,22 @@ export interface PlacedNote {
  *
  * A note whose timestamp will not parse is dropped rather than placed at the
  * epoch, which would put it an eternity from the race.
+ *
+ * Takes the notes list directly rather than a `Manifest` — notes now live in
+ * `notes*.csv` files merged by `mergeNotes`, not in `manifest.notes`. See
+ * `ingestFolder` for where a legacy manifest's notes (and captions) are
+ * migrated into this shape.
  */
-export function placeNotes(manifest: Manifest): PlacedNote[] {
+export function placeNotes(notes: readonly Note[]): PlacedNote[] {
   const out: PlacedNote[] = [];
-  for (const note of manifest.notes ?? []) {
+  for (const note of notes) {
     const instant = Date.parse(note.at);
     if (Number.isNaN(instant)) continue;
     const placed: PlacedNote = { note, instant };
-    if (note.until !== undefined) {
-      const end = Date.parse(note.until);
+    if (note.duration !== undefined) {
+      const span = parseDuration(note.duration);
       // A span that ends before it starts is not a span. Keep the moment.
-      if (!Number.isNaN(end) && end > instant) placed.until = end;
+      if (span !== null && span > 0) placed.until = instant + span;
     }
     out.push(placed);
   }

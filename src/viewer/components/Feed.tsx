@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { assignLaneColors } from '../../core/palette.ts';
+import { resolvePersonNames } from '../../core/people-csv.ts';
 import type { Manifest, PersonId } from '../../core/schema.ts';
 import { formatClock, formatDateTime } from '../../core/time.ts';
 import type { PlacedItem, PlacedNote } from '../../core/window.ts';
@@ -199,6 +200,13 @@ export function Feed({ manifest, items, onOpen, onActive, notes = [] }: Props) {
 
         if (entry.kind === 'note') {
           const { note, instant, until } = entry.placed;
+          // `note.people` is names, not ids — resolved against the roster so
+          // a recognised one still carries its lane color; an unrecognised
+          // name is shown plainly rather than dropped.
+          const { ids: knownIds, unknown: unknownNames } = resolvePersonNames(
+            note.people,
+            manifest.people,
+          );
           return (
             <section key={note.id} className="feed__note">
               {newDay && <h2 className="feed__day">{day}</h2>}
@@ -209,14 +217,21 @@ export function Feed({ manifest, items, onOpen, onActive, notes = [] }: Props) {
                     &rarr; {formatClock(until, zone)}
                   </span>
                 )}
-                {note.person && (
-                  <span className="moment__person">
-                    <span
-                      className="moment__swatch"
-                      style={{ background: colors.get(note.person) }}
-                      aria-hidden="true"
-                    />
-                    {names.get(note.person) ?? note.person}
+                {(knownIds.length > 0 || unknownNames.length > 0) && (
+                  <span className="moment__who">
+                    {knownIds.map((id) => (
+                      <span key={id} className="moment__person">
+                        <span
+                          className="moment__swatch"
+                          style={{ background: colors.get(id) }}
+                          aria-hidden="true"
+                        />
+                        {names.get(id) ?? id}
+                      </span>
+                    ))}
+                    {unknownNames.map((name) => (
+                      <span key={name} className="moment__person">{name}</span>
+                    ))}
                   </span>
                 )}
               </header>
