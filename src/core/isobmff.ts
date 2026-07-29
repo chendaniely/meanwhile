@@ -385,6 +385,20 @@ export function isHeic(r: Reader): boolean {
  * says where in the file that item's bytes are.
  */
 export function findHeicExif(r: Reader): Reader | null {
+  const at = locateHeicExif(r);
+  if (!at) return null;
+  const payload = r.slice(at.offset, at.length);
+  return payload ? exifFromHeicItem(payload) : null;
+}
+
+/**
+ * Where the EXIF item's bytes are, without needing them in hand.
+ *
+ * Split out from `findHeicExif` so a caller reading off disk can fetch just
+ * that range. `meta` sits at the head of the file but `iloc` may point
+ * anywhere, so "read a big head and hope" is both wasteful and unreliable.
+ */
+export function locateHeicExif(r: Reader): { offset: number; length: number } | null {
   const meta = findPath(r, ['meta']);
   if (!meta) return null;
   const childrenAt = metaChildrenStart(r, meta);
@@ -400,17 +414,22 @@ export function findHeicExif(r: Reader): Reader | null {
   const exifItemId = findExifItemId(r, iinf);
   if (exifItemId === null) return null;
 
-  const extent = findItemExtent(r, iloc, exifItemId);
-  if (!extent) return null;
+  return findItemExtent(r, iloc, exifItemId);
+}
 
-  // The item payload begins with a 4-byte offset to the TIFF header, which is
-  // almost always 0 but is not guaranteed to be.
-  const skip = r.u32(extent.offset);
+/**
+ * The TIFF block inside a HEIC EXIF item.
+ *
+ * The payload begins with a 4-byte offset to the TIFF header, which is almost
+ * always 0 but is not guaranteed to be.
+ */
+export function exifFromHeicItem(payload: Reader): Reader | null {
+  const skip = payload.u32(0);
   if (skip === null) return null;
-  const tiffAt = extent.offset + 4 + skip;
-  const tiffLength = extent.length - 4 - skip;
+  const tiffAt = 4 + skip;
+  const tiffLength = payload.length - tiffAt;
   if (tiffLength <= 8) return null;
-  return r.slice(tiffAt, tiffLength);
+  return payload.slice(tiffAt, tiffLength);
 }
 
 function findExifItemId(r: Reader, iinf: Box): number | null {

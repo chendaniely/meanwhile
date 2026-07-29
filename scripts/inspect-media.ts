@@ -19,7 +19,14 @@ import { open, readdir, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { Reader } from '../src/core/bytes.ts';
 import { parseJpegExif, parseTiffExif } from '../src/core/exif.ts';
-import { findHeicExif, isHeic, locateBox, parseVideoMeta, type RangeReader } from '../src/core/isobmff.ts';
+import {
+  exifFromHeicItem,
+  isHeic,
+  locateBox,
+  locateHeicExif,
+  parseVideoMeta,
+  type RangeReader,
+} from '../src/core/isobmff.ts';
 import {
   classify,
   hasExifContainer,
@@ -30,8 +37,9 @@ import {
 } from '../src/core/metadata.ts';
 import type { TimeSource } from '../src/core/schema.ts';
 
-/** Enough for any EXIF block, and for the `meta` box at the head of a HEIC. */
-const HEAD_BYTES = 4 * 1024 * 1024;
+/** See the note in src/viewer/media/extract.ts: EXIF cannot exceed ~64KB. */
+const JPEG_HEAD_BYTES = 128 * 1024;
+const HEIC_HEAD_BYTES = 256 * 1024;
 
 async function walk(dir: string, out: string[] = []): Promise<string[]> {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -66,12 +74,16 @@ async function inspect(path: string): Promise<ExtractedMetadata | null> {
       if (!hasExifContainer(path) && !hasIsobmffContainer(path)) {
         return photoMetadata(null, path, CTX); // e.g. PNG: no metadata to read
       }
-      const head = await read(0, Math.min(HEAD_BYTES, size));
+      const isobmff = hasIsobmffContainer(path);
+      const head = await read(0, Math.min(isobmff ? HEIC_HEAD_BYTES : JPEG_HEAD_BYTES, size));
       if (!head) return photoMetadata(null, path, CTX);
       const r = new Reader(head);
 
-      if (hasIsobmffContainer(path) && isHeic(r)) {
-        const tiff = findHeicExif(r);
+      if (isobmff && isHeic(r)) {
+        const at = locateHeicExif(r);
+        if (!at) return photoMetadata(null, path, CTX);
+        const payload = await read(at.offset, at.length);
+        const tiff = payload ? exifFromHeicItem(new Reader(payload)) : null;
         return photoMetadata(tiff ? parseTiffExif(tiff) : null, path, CTX);
       }
       return photoMetadata(parseJpegExif(r), path, CTX);

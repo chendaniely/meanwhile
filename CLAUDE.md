@@ -304,6 +304,29 @@ code, and an hour was lost to that. **Check `document.visibilityState`
 first.** Screenshots still work on a hidden tab, which makes it more
 confusing, not less.
 
+### Read as little of each file as possible *(measured)*
+
+Ingest reads **metadata only**, and the sizes are chosen against the format,
+not guessed:
+
+- **JPEG: 128KB.** EXIF sits in an APP1 segment right after the two-byte SOI,
+  and that segment's length field is 16-bit — so EXIF cannot exceed ~64KB
+  however large the photo.
+- **HEIC: 256KB head, then a second read of exactly the EXIF extent.** The
+  item table is at the head but `iloc` can point the payload anywhere, so
+  "read a big head and hope" is both wasteful and unreliable.
+- **Video: `locateBox` hops top-level headers 16 bytes at a time**, then reads
+  just the `moov` box. `moov` sits at 100% into every phone recording checked.
+
+This was 4MB per photo until it was measured. On the real 2GB folder:
+
+| | before | after |
+|---|---|---|
+| bytes read | 518 MB (25.5%) | **26.6 MB (1.3%)** |
+| wall time | 409 ms | **101 ms** |
+
+Every file resolved to the same time from the same source, verified by diff.
+
 ### Two StrictMode hazards, both found the hard way
 
 React runs every effect mount → cleanup → mount in development. Two patterns
@@ -496,6 +519,7 @@ Installed and why:
 | `d3-scale`, `d3-time` | axis tick math only — no D3 selections, no D3 DOM |
 | `vite`, `@vitejs/plugin-react`, `typescript`, `vitest` | build and test |
 | `@types/react`, `@types/react-dom`, `@types/d3-*` | types for the above |
+| `jsdom` | **dev-only.** React lifecycle bugs can only be caught by mounting — the store was fine in isolation, its lifecycle was not, and that shipped a screen where every photo read "cannot display this file". See `tests/media-store-lifecycle.test.tsx`. Vitest still defaults to the `node` environment; files opt in with a `// @vitest-environment jsdom` docblock. |
 | `@types/node` | **dev-only, and confined to `tsconfig.node.json`.** The test suite reads files off disk and `vite.config.ts` reads `process.env`. `tsconfig.app.json` sets `"types": []` so it cannot leak into `src/` — that line is load-bearing. |
 
 **Not installed, deliberately:**

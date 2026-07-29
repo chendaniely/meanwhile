@@ -4,10 +4,11 @@
     "on Node, so they get Node types. Nothing under src/ is listed here,",
     "though TypeScript follows imports into it.",
     "",
-    "DOM is in `lib` because tests exercise browser modules — the media store",
-    "and its object-URL lifecycle, for instance. That does NOT weaken the",
-    "split: the direction that matters is app code never seeing Node types,",
-    "which tsconfig.app.json enforces with `types: []`."
+    "DOM is in `lib`, and `jsx` is set, because tests exercise browser modules",
+    "and render React — the media store's lifecycle can only be checked by",
+    "mounting it. That does NOT weaken the split: the direction that matters is",
+    "app code never seeing Node types, which tsconfig.app.json enforces with",
+    "`types: []`."
   ],
   "compilerOptions": {
     "target": "ES2023",
@@ -20,6 +21,7 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "noEmit": true,
+    "jsx": "react-jsx",
     "skipLibCheck": true,
 
     "strict": true,

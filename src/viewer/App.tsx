@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { GroupingInfo } from '../core/assemble.ts';
 import type { Manifest } from '../core/schema.ts';
 import {
@@ -15,7 +15,7 @@ import { TimeWindowSlider } from './components/TimeWindowSlider.tsx';
 import { TimezoneField } from './components/TimezoneField.tsx';
 import { UnplacedTray } from './components/UnplacedTray.tsx';
 import { MediaProvider } from './media/MediaContext.tsx';
-import { MediaStore } from './media/store.ts';
+import { useMediaStore } from './media/useMediaStore.ts';
 import type { PickedFile } from './media/folder.ts';
 import { downloadManifest, ingestFolder, type IngestProgress } from './media/ingest.ts';
 import './App.css';
@@ -126,37 +126,9 @@ export function App() {
 
   const manifest = stage.name === 'loaded' ? stage.manifest : null;
 
-  /**
-   * One store per folder, created and disposed together.
-   *
-   * Both halves have to live in the SAME effect. Two wrong versions of this
-   * were shipped before it was right, and each broke differently:
-   *
-   *   - Create in `useMemo`, dispose in an effect cleanup. StrictMode runs
-   *     effect cleanups on mount, so the store that was just created got
-   *     disposed and every thumbnail came back null.
-   *   - Create in `useMemo`, dispose the previous one inside the same
-   *     factory. Worse: StrictMode double-invokes memo factories precisely to
-   *     surface impurity, so the second invocation disposed the store the
-   *     first had just made — and every tile read "cannot display this file".
-   *
-   * An effect keyed on `files` is the only shape that survives, because
-   * create and dispose are then always paired on the same instance.
-   */
-  const [store, setStore] = useState<MediaStore | null>(null);
-  useEffect(() => {
-    if (!files) {
-      setStore(null);
-      return;
-    }
-    const next = new MediaStore(files);
-    setStore(next);
-    return () => {
-      // Nothing else revokes this folder's object URLs.
-      next.dispose();
-      setStore(null);
-    };
-  }, [files]);
+  // Lifecycle lives in the hook, where it is tested under StrictMode. See
+  // tests/media-store-lifecycle.test.tsx for why that matters.
+  const store = useMediaStore(files);
 
   // One resolution pass per manifest, shared by the slider and the report, so
   // every part of the screen agrees about where things sit.

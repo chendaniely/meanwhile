@@ -12,7 +12,13 @@
 
 import { Reader } from '../../core/bytes.ts';
 import { parseJpegExif, parseTiffExif } from '../../core/exif.ts';
-import { findHeicExif, isHeic, locateBox, parseVideoMeta } from '../../core/isobmff.ts';
+import {
+  exifFromHeicItem,
+  isHeic,
+  locateBox,
+  locateHeicExif,
+  parseVideoMeta,
+} from '../../core/isobmff.ts';
 import type { RangeReader } from '../../core/isobmff.ts';
 import {
   classify,
@@ -25,10 +31,24 @@ import {
 } from '../../core/metadata.ts';
 
 /**
- * Enough for any EXIF block and for the `meta` box at the head of a HEIC.
- * `File.slice()` is lazy, so this reads 4MB at most, not the whole file.
+ * How much of the front of a file to read.
+ *
+ * A JPEG's EXIF lives in an APP1 segment right after the two-byte SOI, and
+ * that segment's length field is 16-bit — so EXIF cannot extend beyond about
+ * 64KB no matter how large the photo. 128KB is generous.
+ *
+ * This used to be 4MB, which read a quarter of a 2GB folder to find a few
+ * kilobytes of metadata per file. Measured on the real race folder: 518MB
+ * read, for about 3MB of actual metadata.
  */
-const HEAD_BYTES = 4 * 1024 * 1024;
+const JPEG_HEAD_BYTES = 128 * 1024;
+
+/**
+ * HEIC needs more of the head, because its `meta` box carries the item table
+ * rather than the data. The EXIF payload itself is fetched separately, at
+ * whatever offset `iloc` gives.
+ */
+const HEIC_HEAD_BYTES = 256 * 1024;
 
 function rangeReaderFor(file: File): RangeReader {
   return async (offset, length) => {
@@ -56,12 +76,20 @@ export async function extractMetadata(
     if (!hasExifContainer(path) && !hasIsobmffContainer(path)) {
       return photoMetadata(null, path, ctx);
     }
-    const head = await read(0, Math.min(HEAD_BYTES, file.size));
+    const isobmff = hasIsobmffContainer(path);
+    const headSize = Math.min(isobmff ? HEIC_HEAD_BYTES : JPEG_HEAD_BYTES, file.size);
+    const head = await read(0, headSize);
     if (!head) return photoMetadata(null, path, ctx);
     const r = new Reader(head);
 
-    if (hasIsobmffContainer(path) && isHeic(r)) {
-      const tiff = findHeicExif(r);
+    if (isobmff && isHeic(r)) {
+      // Two-phase: the item table is at the head, but it can point the EXIF
+      // payload anywhere in the file. Fetch exactly that range rather than
+      // reading a large head and hoping it landed inside.
+      const at = locateHeicExif(r);
+      if (!at) return photoMetadata(null, path, ctx);
+      const payload = await read(at.offset, at.length);
+      const tiff = payload ? exifFromHeicItem(new Reader(payload)) : null;
       return photoMetadata(tiff ? parseTiffExif(tiff) : null, path, ctx);
     }
     return photoMetadata(parseJpegExif(r), path, ctx);

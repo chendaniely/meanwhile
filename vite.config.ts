@@ -14,7 +14,10 @@ export default defineConfig({
     assetsInlineLimit: 0,
   },
   test: {
+    // Node by default — the kernel needs no DOM, and keeping it that way is
+    // the point. Files that genuinely exercise React opt in with a
+    // `// @vitest-environment jsdom` docblock.
     environment: 'node',
-    include: ['tests/**/*.test.ts'],
+    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
   },
 });
