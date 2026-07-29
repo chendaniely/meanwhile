@@ -1,5 +1,5 @@
 import { scaleTime } from 'd3-scale';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { assignLaneColors, orderPeople } from '../../core/palette.ts';
 import type { Manifest, PersonId } from '../../core/schema.ts';
 import { isVisible, type AppState } from '../../core/state.ts';
@@ -26,6 +26,12 @@ import { MomentStrip, momentRadius } from './MomentStrip.tsx';
  * drawing goes through it.
  */
 
+/** How much one wheel notch changes the span. Gentle enough to aim with. */
+const ZOOM_STEP = 1.2;
+
+/** Zooming in past ten seconds shows one instant and no context. */
+const MIN_SPAN_MS = 10_000;
+
 interface Props {
   manifest: Manifest;
   placed: readonly PlacedItem[];
@@ -34,6 +40,10 @@ interface Props {
   onCursor: (instant: Instant | null) => void;
   onTogglePerson: (person: PersonId) => void;
   onOpen?: (entry: PlacedItem) => void;
+  /** The whole timeline, so zooming out cannot go past the data. */
+  bounds?: TimeWindow;
+  /** Zooming the lanes changes the crop everything else is showing. */
+  onRange?: (next: TimeWindow) => void;
 }
 
 const LANE_HEIGHT = 44;
@@ -48,6 +58,8 @@ export function Swimlanes({
   onCursor,
   onTogglePerson,
   onOpen,
+  bounds,
+  onRange,
 }: Props) {
   const zone = manifest.event.timezone;
   const track = useRef<HTMLDivElement>(null);
@@ -70,7 +82,12 @@ export function Swimlanes({
    * then start moving down to click one of its photographs, and the pointer
    * crosses the track on the way — dragging the moment somewhere else before
    * you arrive. Clicking pins it, so the strip below holds still while you
-   * reach for it. Clicking again re-pins somewhere new; Escape releases.
+   * reach for it.
+   *
+   * **The click is a TOGGLE**, so the same gesture that pinned it releases it.
+   * That gives two ways out — the chip in the strip, or clicking the lanes
+   * again — and they are the same state rather than two modes. Escape works
+   * too.
    */
   const [locked, setLocked] = useState(false);
 
@@ -101,6 +118,57 @@ export function Swimlanes({
     const ratio = Math.min(1, Math.max(0, (clientX - box.left) / box.width));
     return range.from + ratio * total;
   };
+
+  /**
+   * The wheel zooms the crop, about whatever the pointer is over.
+   *
+   * Anchored on the pointer, like a map: the instant under the cursor stays
+   * put, so you zoom into the thing you are looking at rather than into the
+   * middle. It writes the shared range, which is why the slider at the top
+   * follows — there is one crop, not one per view.
+   *
+   * Bound with `passive: false` on the element, because React's `onWheel` is
+   * registered passively at the root and `preventDefault` there is ignored:
+   * the page would scroll away underneath the zoom.
+   */
+  useEffect(() => {
+    const node = track.current;
+    if (!node || !onRange) return;
+
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY === 0) return;
+      event.preventDefault();
+
+      const box = node.getBoundingClientRect();
+      if (box.width === 0) return;
+      const ratio = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width));
+      const span = range.to - range.from;
+      const anchor = range.from + ratio * span;
+
+      const factor = event.deltaY > 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+      const limit = bounds ? bounds.to - bounds.from : span * 64;
+      const next = Math.min(limit, Math.max(MIN_SPAN_MS, span * factor));
+
+      let from = anchor - ratio * next;
+      let to = from + next;
+      // Slide back inside the data rather than clamping the ends, which would
+      // silently change the zoom you asked for.
+      if (bounds) {
+        if (from < bounds.from) {
+          from = bounds.from;
+          to = from + next;
+        }
+        if (to > bounds.to) {
+          to = bounds.to;
+          from = to - next;
+        }
+      }
+      onRange({ from, to });
+    };
+
+    node.addEventListener('wheel', onWheel, { passive: false });
+    return () => node.removeEventListener('wheel', onWheel);
+  }, [range, bounds, onRange]);
 
   const at = scrub ?? state.cursor;
   const radius = momentRadius(total);
@@ -168,7 +236,7 @@ export function Swimlanes({
         </div>
 
         <div
-          className="lanes__track"
+          className={locked ? 'lanes__track lanes__track--pinned' : 'lanes__track'}
           ref={track}
           onPointerMove={(e) => {
             setOverTrack(true);
@@ -180,7 +248,9 @@ export function Swimlanes({
             const next = instantAt(e.clientX);
             setScrub(next);
             onCursor(next);
-            setLocked(true);
+            // A toggle, not a latch: clicking the lanes again lets go, which
+            // is the same thing the chip in the strip does.
+            setLocked((was) => !was);
           }}
           onKeyDown={(e) => {
             if (e.key === 'Escape') setLocked(false);
@@ -258,7 +328,7 @@ export function Swimlanes({
       {at !== null && (
         <MomentStrip
           locked={locked}
-          onUnlock={() => setLocked(false)}
+          onToggleLock={() => setLocked((was) => !was)}
           people={shown}
           colors={colors}
           placed={placed}

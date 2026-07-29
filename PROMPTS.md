@@ -665,3 +665,27 @@ photographs sit below the track, because reaching for one means crossing the
 track. Clicking pins the moment so the strip holds still; the state is named
 on screen, since a strip that has quietly stopped following the pointer just
 looks broken.
+
+
+---
+
+> i like the button that sigals if it's pinned or not. let's build on that ui a
+> bit more. the click on the swim lane is a toggle. so if i were to click again,
+> the button will also turn 'off' and it's in follow mode again. this way
+> there's 2 ways of getting the same behaviour
+
+Done. The chip became a real two-state control — `following` / `pinned`, with
+`aria-pressed` — and the lanes toggle the same state rather than latching it.
+Lit only when pinned: the normal case needs no attention, and the pinned one
+has to explain why the strip stopped moving.
+
+---
+
+> i'd also like the scroll wheel to zoom in/out of the swim lane, which then
+> also modifies the filter range on the top
+
+Anchored on the pointer, like the map, so you zoom into what you are looking at
+rather than the middle. It writes the shared range, so the slider at the top
+follows for free — there is one crop, not one per view. The listener is bound
+with `passive: false` directly on the element, because React registers
+`onWheel` passively at the root and `preventDefault` is ignored there.

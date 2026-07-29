@@ -2127,13 +2127,48 @@ button.report__tag--on {
   cursor: pointer;
 }
 
+/* One control, two states. Quiet while following — the normal case needs no
+   attention — and lit when pinned, because that is the state that explains
+   why the strip has stopped moving. */
 .moment-strip__lock {
   cursor: pointer;
   font: inherit;
   font-size: var(--mw-text-xs);
-  color: var(--mw-accent);
+  color: var(--mw-fg-muted);
   background: transparent;
-  border: 1px solid var(--mw-accent);
-  border-radius: var(--mw-radius-sm);
+  border: 1px solid var(--mw-border);
+  border-radius: 999px;
   padding: 0 var(--mw-space-2);
+}
+
+.moment-strip__lock::before {
+  content: '○ ';
+}
+
+.moment-strip__lock--on {
+  color: var(--mw-accent);
+  border-color: var(--mw-accent);
+}
+
+.moment-strip__lock--on::before {
+  content: '● ';
+}
+
+.moment-strip__lock:hover {
+  color: var(--mw-fg);
+  border-color: var(--mw-fg-muted);
+}
+
+.moment-strip__lock--on:hover {
+  color: var(--mw-accent);
+  border-color: var(--mw-accent);
+}
+
+/* The track says which gesture it is offering. */
+.lanes__track {
+  cursor: crosshair;
+}
+
+.lanes__track--pinned {
+  cursor: pointer;
 }

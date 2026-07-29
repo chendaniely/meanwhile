@@ -31,7 +31,7 @@ interface Props {
   onOpen?: (item: PlacedItem) => void;
   /** Pinned, so the strip stops following the pointer. See Swimlanes. */
   locked?: boolean;
-  onUnlock?: () => void;
+  onToggleLock?: () => void;
 }
 
 export function MomentStrip({
@@ -43,7 +43,7 @@ export function MomentStrip({
   timezone,
   onOpen,
   locked = false,
-  onUnlock,
+  onToggleLock,
 }: Props) {
   const rows = useMemo(() => {
     const near = placed.filter((entry) => Math.abs(entry.instant - at) <= radiusMs);
@@ -62,13 +62,21 @@ export function MomentStrip({
         <span className="moment-strip__window mw-mono">±{formatSpan(radiusMs)}</span>
         {/* Says which mode you are in, and gets you out. Without this, a pinned
             strip that stops following the pointer just looks broken. */}
-        {locked ? (
-          <button type="button" className="moment-strip__lock" onClick={onUnlock}>
-            pinned &mdash; click to follow again
-          </button>
-        ) : (
-          <span className="moment-strip__hint">click the lanes to pin</span>
-        )}
+        {/* One control showing one state, pressed or not. The lanes toggle the
+            same thing, so this is a readout as much as a button. */}
+        <button
+          type="button"
+          className={locked ? 'moment-strip__lock moment-strip__lock--on' : 'moment-strip__lock'}
+          aria-pressed={locked}
+          title={
+            locked
+              ? 'Following is paused. Click here, or the lanes again, to resume.'
+              : 'Pin this moment so it holds still while you reach for a photo.'
+          }
+          onClick={onToggleLock}
+        >
+          {locked ? 'pinned' : 'following'}
+        </button>
         {active > 1 ? (
           <span className="moment__together">{active} people at once</span>
         ) : (

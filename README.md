@@ -215,8 +215,11 @@ Run `make dev`, click **Open a folder**, and:
 4. **It shows you the timeline**, two ways. The **feed** is a chronological
    scroll grouped into moments — when two people were shooting at the same
    time, the moment says so. The **swimlanes** put one lane per person on a
-   shared clock, so you can see who was and wasn't shooting, and when. Click
-   anywhere on the lanes to drop a cursor.
+   shared clock, so you can see who was and wasn't shooting, and when. Moving
+   across them shows what everyone was looking at; **clicking pins that
+   moment** so it holds still while you reach for a photo, and clicking again
+   lets it follow the pointer once more. The **scroll wheel zooms** the time
+   range, which is the same range the slider at the top controls.
 5. **Click any photo or video** to see it full size; video plays there.
 6. **The address bar follows you.** View, cursor, crop, and hidden lanes all
    live in the URL, so any moment is a link you can send to someone.

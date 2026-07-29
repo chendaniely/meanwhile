@@ -852,6 +852,8 @@ export function App() {
                     })
                   }
                   onOpen={(entry) => setOpenId(entry.item.id)}
+                  {...(bounds ? { bounds } : {})}
+                  onRange={setWindow}
                 />
               )}
               {view.view === 'lanes' && (

@@ -463,9 +463,19 @@ one means crossing the track, which moved the moment before you arrived. The
 scrub not being cleared on pointer-leave (M7) was half the fix; the other half
 is that **clicking pins it**. A pinned strip holds still while you reach.
 
-The state is named on screen — "pinned — click to follow again" — because a
-strip that has silently stopped following the pointer just looks broken.
-Escape releases it too.
+**The click is a TOGGLE**, at the owner's suggestion: the gesture that pinned
+it releases it. So there are two ways out — the chip, or the lanes again — and
+they drive one state rather than being two modes. The chip is a readout as
+much as a button: `following` / `pinned`, `aria-pressed`, lit only when
+pinned, because the normal case needs no attention and the pinned one has to
+explain why the strip has stopped moving. Escape releases it too.
+
+**The wheel zooms the crop**, anchored on the pointer like a map, so you zoom
+into what you are looking at rather than the middle. It writes the SHARED
+range, which is why the slider at the top follows — one crop, not one per
+view. Bound with `passive: false` on the element: React registers `onWheel`
+passively at the root, so `preventDefault` there is ignored and the page
+scrolls out from under the zoom.
 
 ### Swimlanes: the gaps are the encoding *(M7)*
 
