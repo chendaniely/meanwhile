@@ -3,10 +3,10 @@
 *Many people's photos, one shared timeline. See what everyone was doing in
 relation to everyone else.*
 
-> **Status: early. The scaffolding and the timeline maths are built; none of
-> the views are.**
-> You can run it, but right now it shows an empty page. See
-> [Running it](#running-it) below.
+> **Status: working, but not finished.**
+> Point it at a folder and you get a chronological feed of everyone's photos
+> and video, croppable to the part of the event you care about. The swimlane,
+> grid, and map views aren't built yet. See [Running it](#running-it).
 
 ## The idea
 
@@ -109,20 +109,24 @@ even after you delete it.
 
 ## What works today
 
-**You can load a folder and get a manifest out of it.** Run `make dev`, click
-**Open a folder**, and meanwhile reads every photo and video in it, works out
-when each one was taken, and shows you a report: how many landed on the
-timeline, how many didn't, who shot what, and how much to trust the times.
-Then **Export manifest.json** saves it.
+Run `make dev`, click **Open a folder**, and:
 
-Also working: the manifest format and validation, all the clock-offset and
-timezone handling, metadata reading for JPEG, HEIC, MOV, and MP4, and
-`make inspect` (below) for checking a folder from the terminal.
+1. **It reads every photo and video** and works out when each was taken —
+   JPEG, HEIC, MOV, and MP4.
+2. **It works out who's who**, from folder names or from the phones
+   themselves.
+3. **It crops to the event.** A folder usually holds far more than the day
+   itself; meanwhile finds the stretch where the photos actually cluster and
+   opens on that. Drag the handles, or click the date chips, to change it.
+4. **It shows you the timeline** — a chronological feed of everyone's media,
+   grouped into moments and tagged with who shot it. When two people were
+   shooting at the same time, the moment says so. That is the whole point of
+   the thing.
+5. **Export manifest.json** saves the lot, including your crop and any names
+   you've corrected.
 
-**You can see the timeline.** Photos and video appear in a chronological
-feed, grouped into moments, each tagged with who shot it. When two people
-were shooting at the same time, the moment says so — which is the whole point
-of the thing.
+There's also a report of how much to trust the times, and `make inspect`
+(below) for checking a folder from the terminal.
 
 Still missing: the swimlane view, the moment grid, and the map.
 
@@ -177,14 +181,22 @@ from**, best to worst:
 
 | Source | Means |
 |---|---|
-| `gps` | From satellites. Correct even if the camera's clock is wrong. |
-| `exif-offset` / `qt-offset` | The device's clock, and it knew its timezone. |
-| `exif-naive` / `qt-naive` | The device's clock, but no timezone recorded. |
+| `exif-offset` / `qt-offset` | The moment the shutter fired, and the device knew its timezone. Best. |
+| `exif-naive` / `qt-naive` | The shutter, but no timezone recorded — needs the event timezone set. |
+| `gps` | From satellites. Immune to a wrong camera clock, but see below. |
 | `filename` | Recovered from the filename after the metadata was stripped. |
 | `mvhd` | Last resort, from a video's header. **May be off by hours** — see below. |
 | `none` | No timestamp. Goes to the unplaced tray for you to place by hand. |
 
-Two things worth knowing:
+Three things worth knowing:
+
+- **`gps` is ranked below the shutter, which is counter-intuitive.** GPS time
+  comes from satellites, so it looks like it should win. But it records when
+  the *last position fix* happened, not when you pressed the button — on your
+  race photos it lagged by 11 seconds on average and by as much as 15 minutes.
+  Worse, it lagged *unevenly*, so photos taken seconds apart collapsed onto
+  the same timestamp and lost their order. A timezone that's wrong at least
+  shifts everything by the same amount.
 
 - **A lot of `none` means something stripped your files in transit** —
   usually iMessage or WhatsApp. Get the originals.
