@@ -1,0 +1,403 @@
+import { describe, expect, it } from 'vitest';
+import {
+  atDistance,
+  atTime,
+  haversine,
+  nearestDistance,
+  parseCourse,
+  simplify,
+  type Course,
+  type CoursePoint,
+  type Sample,
+} from '../src/core/course.ts';
+
+/**
+ * Fixtures are shaped like the real exports, namespace prefixes and all,
+ * because the prefixes are exactly what a naive tag match gets wrong.
+ */
+
+const T0 = Date.UTC(2026, 6, 24, 12, 0, 0);
+const iso = (offsetSeconds: number) => new Date(T0 + offsetSeconds * 1000).toISOString();
+
+function gpx(points: Array<{ lat: number; lon: number; t: number; ele?: number; hr?: number }>): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx creator="StravaGPX" xmlns="http://www.topografix.com/GPX/1/1"
+     xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
+ <trk><name>Morning Run</name><trkseg>
+${points
+  .map(
+    (p) => `  <trkpt lat="${p.lat}" lon="${p.lon}">
+   ${p.ele === undefined ? '' : `<ele>${p.ele}</ele>`}
+   <time>${iso(p.t)}</time>
+   ${
+     p.hr === undefined
+       ? ''
+       : `<extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>${p.hr}</gpxtpx:hr><gpxtpx:cad>84</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions>`
+   }
+  </trkpt>`,
+  )
+  .join('\n')}
+ </trkseg></trk>
+</gpx>`;
+}
+
+function tcx(
+  points: Array<{ lat: number; lon: number; t: number; ele?: number; hr?: number; cad?: number; dist?: number }>,
+): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"
+  xmlns:ns3="http://www.garmin.com/xmlschemas/ActivityExtension/v2">
+ <Activities><Activity Sport="Running"><Lap><Track>
+${points
+  .map(
+    (p) => `  <Trackpoint>
+   <Time>${iso(p.t)}</Time>
+   <Position><LatitudeDegrees>${p.lat}</LatitudeDegrees><LongitudeDegrees>${p.lon}</LongitudeDegrees></Position>
+   ${p.ele === undefined ? '' : `<AltitudeMeters>${p.ele}</AltitudeMeters>`}
+   ${p.dist === undefined ? '' : `<DistanceMeters>${p.dist}</DistanceMeters>`}
+   ${p.hr === undefined ? '' : `<HeartRateBpm><Value>${p.hr}</Value></HeartRateBpm>`}
+   ${p.cad === undefined ? '' : `<Extensions><ns3:TPX><ns3:RunCadence>${p.cad}</ns3:RunCadence></ns3:TPX></Extensions>`}
+  </Trackpoint>`,
+  )
+  .join('\n')}
+ </Track></Lap></Activity></Activities>
+</TrainingCenterDatabase>`;
+}
+
+const LINE = [
+  { lat: 45.8, lon: -110.5, t: 0, ele: 1500 },
+  { lat: 45.81, lon: -110.5, t: 600, ele: 1600 },
+  { lat: 45.82, lon: -110.5, t: 1200, ele: 1550 },
+];
+
+describe('parsing a GPX', () => {
+  it('reads position, elevation and time through the namespace prefixes', () => {
+    const course = parseCourse(gpx(LINE));
+    expect(course).not.toBeNull();
+    expect(course?.samples).toHaveLength(3);
+    expect(course?.samples[0]?.lat).toBeCloseTo(45.8, 6);
+    expect(course?.samples[0]?.ele).toBe(1500);
+    expect(course?.from).toBe(T0);
+    expect(course?.to).toBe(T0 + 1_200_000);
+  });
+
+  it('says plainly that a Strava GPX has no heart rate', () => {
+    // The reason the README tells people to ask for a TCX instead.
+    const course = parseCourse(gpx(LINE));
+    expect(course?.has).toEqual({ elevation: true, hr: false, cadence: false });
+  });
+
+  it('does read heart rate when a Garmin extension carries it', () => {
+    // Strava strips it on export, but Garmin Connect and most other tools
+    // write gpxtpx:hr — free to support, since the parser is here anyway.
+    const course = parseCourse(gpx(LINE.map((p) => ({ ...p, hr: 150 }))));
+    expect(course?.has.hr).toBe(true);
+    expect(course?.samples[0]?.hr).toBe(150);
+  });
+
+  it('computes distance from positions, since GPX does not record it', () => {
+    const course = parseCourse(gpx(LINE));
+    // A hundredth of a degree of latitude is about 1.11km.
+    expect(course?.length).toBeGreaterThan(2000);
+    expect(course?.length).toBeLessThan(2400);
+  });
+});
+
+describe('parsing a TCX', () => {
+  const RICH = LINE.map((p, i) => ({ ...p, hr: 140 + i * 5, cad: 80 + i, dist: i * 1000 }));
+
+  it('reads the series a GPX cannot carry', () => {
+    const course = parseCourse(tcx(RICH));
+    expect(course?.has).toEqual({ elevation: true, hr: true, cadence: true });
+    expect(course?.samples[1]?.hr).toBe(145);
+    expect(course?.samples[1]?.cadence).toBe(81);
+  });
+
+  it("prefers the watch's own distance over recomputing it", () => {
+    // The device's figure is smoothed; summing raw GPS points turns scatter
+    // into kilometres that were never run.
+    const course = parseCourse(tcx(RICH));
+    expect(course?.length).toBe(2000);
+  });
+
+  it('falls back to computing distance when the file omits it', () => {
+    const course = parseCourse(tcx(RICH.map(({ dist: _drop, ...rest }) => rest)));
+    expect(course?.length).toBeGreaterThan(2000);
+  });
+
+  it('reads plain <Cadence> as well as the running extension', () => {
+    const xml = tcx(RICH).replace(/<Extensions>[\s\S]*?<\/Extensions>/g, '<Cadence>77</Cadence>');
+    expect(parseCourse(xml)?.samples[0]?.cadence).toBe(77);
+  });
+});
+
+describe('rejecting what cannot be used', () => {
+  it('returns null for a track with fewer than two points', () => {
+    expect(parseCourse(gpx([LINE[0] as never]))).toBeNull();
+  });
+
+  it('returns null for something that is not a track at all', () => {
+    expect(parseCourse('<html><body>not a track</body></html>')).toBeNull();
+    expect(parseCourse('')).toBeNull();
+  });
+
+  it('never places a point with no time at the epoch', () => {
+    const broken = gpx(LINE).replace(/<time>[^<]*<\/time>/, '');
+    const course = parseCourse(broken) as Course;
+    // Whichever way the timed/untimed call goes, 1970 must never appear: that
+    // was the original bug, and it puts a photo an eternity from the race.
+    for (const sample of course.samples) {
+      if (sample.at !== undefined) expect(sample.at).toBeGreaterThan(Date.UTC(2000, 0, 1));
+    }
+  });
+});
+
+describe('a track with no timestamps at all', () => {
+  // The shape of a real Strava GPX export: 120k points of lat/lon/ele, and not
+  // one <time>. This is a course, not a run.
+  const untimed = () =>
+    `<?xml version="1.0"?><gpx creator="StravaGPX"><trk><name>Route</name><trkseg>${LINE.map(
+      (p) => `<trkpt lat="${p.lat}" lon="${p.lon}"><ele>${p.ele}</ele></trkpt>`,
+    ).join('')}</trkseg></trk></gpx>`;
+
+  it('parses, rather than being rejected as broken', () => {
+    const course = parseCourse(untimed());
+    expect(course).not.toBeNull();
+    expect((course as Course).samples).toHaveLength(LINE.length);
+  });
+
+  it('reports itself as untimed, with no from/to to mislead anyone', () => {
+    const course = parseCourse(untimed()) as Course;
+    expect(course.timed).toBe(false);
+    expect(course.from).toBeNull();
+    expect(course.to).toBeNull();
+  });
+
+  it('still measures distance and climb, which need no clock', () => {
+    const course = parseCourse(untimed()) as Course;
+    expect(course.length).toBeGreaterThan(0);
+    expect(course.has.elevation).toBe(true);
+  });
+
+  it('refuses to invent a position at a time', () => {
+    const course = parseCourse(untimed()) as Course;
+    // The whole point: no fabricated marker. A wrong position is worse than
+    // an absent one.
+    expect(atTime(course, Date.UTC(2026, 6, 24, 12))).toBeNull();
+  });
+
+  it('still answers position by distance, which is what it does have', () => {
+    const course = parseCourse(untimed()) as Course;
+    const point = atDistance(course, course.length / 2);
+    expect(point).not.toBeNull();
+    expect((point as CoursePoint).at).toBeUndefined();
+    expect((point as CoursePoint).lat).toBeGreaterThan(0);
+  });
+
+  it('keeps file order, since that is the route order', () => {
+    const course = parseCourse(untimed()) as Course;
+    expect(course.samples.map((s) => s.lat)).toEqual(LINE.map((p) => p.lat));
+  });
+});
+
+describe('simplify', () => {
+  it('drops points that do not change the line', () => {
+    // A dead-straight run of points: everything between the ends is redundant.
+    const straight: Sample[] = Array.from({ length: 50 }, (_, i) => ({
+      lat: 45 + i * 0.0001,
+      lon: -110,
+      distance: i * 11.1,
+    }));
+    expect(simplify(straight, 5)).toHaveLength(2);
+  });
+
+  it('keeps a corner that a straight line would cut', () => {
+    const corner: Sample[] = [
+      { lat: 45, lon: -110, distance: 0 },
+      { lat: 45.01, lon: -110, distance: 1113 },
+      { lat: 45.01, lon: -110.01, distance: 1900 },
+    ];
+    expect(simplify(corner, 5)).toHaveLength(3);
+  });
+
+  it('keeps both ends, always', () => {
+    const line: Sample[] = Array.from({ length: 20 }, (_, i) => ({
+      lat: 45 + i * 0.00001,
+      lon: -110,
+      distance: i,
+    }));
+    const out = simplify(line, 100);
+    expect(out[0]).toEqual(line[0]);
+    expect(out[out.length - 1]).toEqual(line[line.length - 1]);
+  });
+
+  it('does not treat the far leg of an out-and-back as redundant', () => {
+    // Distance to the SEGMENT, not the infinite line. Unclamped, the return
+    // leg lies along the outbound line and would be discarded entirely.
+    const there: Sample[] = Array.from({ length: 20 }, (_, i) => ({
+      lat: 45 + i * 0.001, lon: -110, distance: i * 111,
+    }));
+    const back: Sample[] = Array.from({ length: 20 }, (_, i) => ({
+      lat: 45.019 - i * 0.001, lon: -110, distance: 2109 + i * 111,
+    }));
+    const out = simplify([...there, ...back], 5);
+    expect(out.length).toBeGreaterThanOrEqual(3);
+    // The turnaround must survive, or the map shows a course half as long.
+    expect(Math.max(...out.map((s) => s.lat))).toBeCloseTo(45.019, 3);
+  });
+
+  it('handles a track far larger than the call-stack argument limit', () => {
+    // 120,909 points is the real file. Anything using Math.min(...array) or
+    // recursion dies here.
+    const huge: Sample[] = Array.from({ length: 120_909 }, (_, i) => ({
+      lat: 45 + Math.sin(i / 500) * 0.05,
+      lon: -110 + i * 0.000001,
+      distance: i * 2,
+    }));
+    const out = simplify(huge, 8);
+    expect(out.length).toBeGreaterThan(2);
+    expect(out.length).toBeLessThan(huge.length / 10);
+  });
+});
+
+describe('ascent', () => {
+  it('ignores altimeter wobble', () => {
+    // A barometric altimeter drifts a metre or two constantly. Summing every
+    // rise turns that noise into thousands of phantom feet of climb.
+    const jittery = Array.from({ length: 200 }, (_, i) => ({
+      lat: 45.8 + i * 0.0001,
+      lon: -110.5,
+      t: i * 10,
+      ele: 1500 + (i % 2 === 0 ? 1 : -1),
+    }));
+    expect(parseCourse(gpx(jittery))?.ascent).toBe(0);
+  });
+
+  it('counts a real climb', () => {
+    const climb = Array.from({ length: 100 }, (_, i) => ({
+      lat: 45.8 + i * 0.0001,
+      lon: -110.5,
+      t: i * 10,
+      ele: 1500 + i * 10,
+    }));
+    expect(parseCourse(gpx(climb))?.ascent).toBeCloseTo(990, -1);
+  });
+});
+
+describe('looking up a moment', () => {
+  const course = parseCourse(tcx(LINE.map((p, i) => ({ ...p, hr: 140 + i * 10, dist: i * 1000 }))));
+
+  it('interpolates between samples', () => {
+    // Halfway between the first two points in time.
+    const point = atTime(course as never, T0 + 300_000);
+    expect(point?.distance).toBeCloseTo(500, 0);
+    expect(point?.ele).toBeCloseTo(1550, 0);
+    expect(point?.hr).toBeCloseTo(145, 0);
+  });
+
+  it('derives pace and grade, which no file stores', () => {
+    const point = atTime(course as never, T0 + 300_000);
+    // 1000m in 600s is 600 s/km.
+    expect(point?.pace).toBeCloseTo(600, 0);
+    // 100m up over 1000m along is 10%.
+    expect(point?.grade).toBeCloseTo(10, 1);
+  });
+
+  it('answers at the exact endpoints', () => {
+    expect(atTime(course as never, T0)?.distance).toBe(0);
+    expect(atTime(course as never, T0 + 1_200_000)?.distance).toBeCloseTo(2000, 0);
+  });
+
+  it('returns null outside the track', () => {
+    expect(atTime(course as never, T0 - 1000)).toBeNull();
+    expect(atTime(course as never, T0 + 9_999_999)).toBeNull();
+  });
+});
+
+describe('looking up a distance', () => {
+  const course = parseCourse(tcx(LINE.map((p, i) => ({ ...p, dist: i * 1000 }))));
+
+  it('maps distance back to a time and a place', () => {
+    const point = atDistance(course as never, 1500);
+    expect(point?.at).toBeCloseTo(T0 + 900_000, -2);
+    expect(point?.lat).toBeCloseTo(45.815, 4);
+  });
+
+  it('returns null off either end', () => {
+    expect(atDistance(course as never, -1)).toBeNull();
+    expect(atDistance(course as never, 99_999)).toBeNull();
+  });
+});
+
+describe('haversine', () => {
+  it('measures a known distance', () => {
+    // One degree of latitude is about 111km anywhere on earth.
+    expect(haversine(45, -110, 46, -110)).toBeCloseTo(111_195, -2);
+  });
+
+  it('is zero for the same point', () => {
+    expect(haversine(45.8, -110.5, 45.8, -110.5)).toBe(0);
+  });
+});
+
+describe('distance and time round-trip', () => {
+  // The map and the elevation profile talk to each other in METRES, because
+  // an untimed course has no clock to share. On a timed course that means
+  // converting time -> distance -> time, and if that drifts, hovering the map
+  // moves the profile's crosshair to the wrong place (and vice versa).
+  it('returns to the same instant it started from', () => {
+    const course = parseCourse(gpx(LINE)) as Course;
+    const from = course.from as number;
+    const to = course.to as number;
+    for (let i = 1; i < 10; i++) {
+      const instant = from + ((to - from) * i) / 10;
+      const metres = (atTime(course, instant) as CoursePoint).distance;
+      const back = (atDistance(course, metres) as CoursePoint).at as number;
+      // Within a second: the two interpolations walk the same segments.
+      expect(Math.abs(back - instant)).toBeLessThan(1000);
+    }
+  });
+
+  it('on an untimed course, distance is its own round-trip', () => {
+    const xml = `<?xml version="1.0"?><gpx><trk><trkseg>${LINE.map(
+      (p) => `<trkpt lat="${p.lat}" lon="${p.lon}"><ele>${p.ele}</ele></trkpt>`,
+    ).join('')}</trkseg></trk></gpx>`;
+    const course = parseCourse(xml) as Course;
+    const metres = course.length / 3;
+    expect((atDistance(course, metres) as CoursePoint).distance).toBeCloseTo(metres, 3);
+  });
+});
+
+describe('nearestDistance', () => {
+  // Hovering the map reads back a distance, which drives the profile's
+  // crosshair. If this picks the wrong point the two views disagree.
+  const samples: Sample[] = [
+    { lat: 45.0, lon: -110.0, distance: 0 },
+    { lat: 45.1, lon: -110.0, distance: 1000 },
+    { lat: 45.2, lon: -110.0, distance: 2000 },
+  ];
+
+  it('finds the nearest point, not the first or last', () => {
+    expect(nearestDistance(samples, 45.11, -110.001)).toBe(1000);
+  });
+
+  it('snaps to an end when the pointer is past it', () => {
+    expect(nearestDistance(samples, 44.0, -110.0)).toBe(0);
+    expect(nearestDistance(samples, 46.0, -110.0)).toBe(2000);
+  });
+
+  it('returns null for an empty track rather than a misleading zero', () => {
+    // Zero is a real position — the start line — so it must not double as
+    // "no answer".
+    expect(nearestDistance([], 45, -110)).toBeNull();
+  });
+
+  it('agrees with what the profile would look up at that distance', () => {
+    const course = parseCourse(gpx(LINE)) as Course;
+    const target = course.samples[1] as Sample;
+    const metres = nearestDistance(course.samples, target.lat, target.lon) as number;
+    const point = atDistance(course, metres) as CoursePoint;
+    expect(point.lat).toBeCloseTo(target.lat, 5);
+    expect(point.lon).toBeCloseTo(target.lon, 5);
+  });
+});

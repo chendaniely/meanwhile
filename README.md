@@ -114,6 +114,38 @@ Either way it's the athlete's own file, so there are no API terms or fees —
 and Garmin, COROS and the rest all export the same formats, so none of this
 depends on Strava.
 
+### Check the file has times in it
+
+There is a third possibility, and it is the one that actually turned up first:
+**a GPX with no `<time>` in it at all.** Strava writes one of these when you
+export a *route* rather than an *activity* — same `.gpx` extension, same
+`creator="StravaGPX"`, 120,000 points of latitude, longitude and elevation, and
+not a single timestamp.
+
+meanwhile opens it and tells you so rather than failing. You still get:
+
+- the map, the course line, start and finish
+- the elevation profile, total distance and total climb
+- the crosshair, reading out elevation and gradient at any point
+
+What needs times, and so is missing:
+
+- the runner's marker moving with the timeline cursor
+- pace
+- automatic clock alignment
+
+To check before you send it on, open the file in any text editor and search for
+`<time>`. No matches means it is a route. The fix is to export from the
+**activity** page — the one with the date and the elapsed time on it — not from
+a route or a segment.
+
+meanwhile never guesses the missing times. It would be easy to spread the
+race's start and finish evenly across the course, and it would be wrong
+everywhere: a hundred-miler's pace varies several-fold between the first climb
+and four in the morning, so the marker would sit confidently in the wrong
+place. A missing feature is honest. A fabricated one quietly ruins the thing
+you came here to see.
+
 **Pace and grade aren't in any track file**, and don't need to be: they're
 worked out from the distance and time between points.
 
@@ -191,12 +223,21 @@ Run `make dev`, click **Open a folder**, and:
 7. **Export manifest.json** saves the lot, including your crop and any names
    you've corrected.
 
+8. **Drop a GPX or TCX in the folder** and a **Course** view appears: the
+   route on a real topographic map, with terrain shading, satellite and
+   street basemaps to switch between, and the elevation profile underneath.
+   Heart rate, cadence and pace charts appear too, if the file carries them
+   (a TCX does; a GPX doesn't).
+9. **The map and the profile follow each other.** Run the pointer along the
+   elevation profile and a marker tracks it around the map; run it along the
+   course on the map and the profile's crosshair follows, reading out
+   elevation and gradient at that point.
+
 There's also a report of how much to trust the times, an expandable list of
 any files that arrived without a timestamp (with who to ask for the
 originals), and `make inspect` for checking a folder from the terminal.
 
-Still missing: the moment grid, the map, and the course elevation profile —
-all three of which want the GPX.
+Still missing: the moment grid, and in-viewer captions.
 
 ## Why it's fast, and why nothing is uploaded
 

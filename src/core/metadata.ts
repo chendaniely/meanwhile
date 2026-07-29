@@ -81,6 +81,18 @@ export function extensionOf(filename: string): string {
   return dot === -1 ? '' : base.slice(dot + 1).toLowerCase();
 }
 
+/**
+ * A GPS track exported from a watch: the course spine.
+ *
+ * Not media, so it is deliberately not part of `classify` — but the folder
+ * walker must pick it up, because dropping the file in with the photos is far
+ * kinder than asking for it separately.
+ */
+export function isTrackFile(filename: string): boolean {
+  const ext = extensionOf(filename);
+  return ext === 'gpx' || ext === 'tcx';
+}
+
 export function classify(filename: string): MediaKind | null {
   const ext = extensionOf(filename);
   if (PHOTO_EXTENSIONS.has(ext)) return 'photo';

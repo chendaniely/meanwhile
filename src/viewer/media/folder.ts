@@ -13,7 +13,7 @@
  * a completely private session.
  */
 
-import { classify } from '../../core/metadata.ts';
+import { classify, isTrackFile } from '../../core/metadata.ts';
 
 export interface PickedFile {
   /** Path relative to the granted folder root, e.g. "sam/IMG_4417.jpg". */
@@ -52,7 +52,7 @@ async function walk(dir: DirectoryHandle, prefix: string, out: PickedFile[]): Pr
     const path = prefix ? `${prefix}/${name}` : name;
     if (handle.kind === 'directory') {
       await walk(handle as DirectoryHandle, path, out);
-    } else if (classify(name)) {
+    } else if (classify(name) || isTrackFile(name)) {
       out.push({ path, file: await (handle as FileHandle).getFile() });
     }
   }
@@ -95,7 +95,7 @@ export function filesFromInput(list: FileList | null): PickedFile[] {
     const relative = file.webkitRelativePath || file.name;
     const path = relative.includes('/') ? relative.slice(relative.indexOf('/') + 1) : relative;
     if (path.split('/').some(isJunk)) continue;
-    if (!classify(file.name)) continue;
+    if (!classify(file.name) && !isTrackFile(file.name)) continue;
     out.push({ path, file });
   }
   return sortByPath(out);

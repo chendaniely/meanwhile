@@ -16,9 +16,9 @@ import type { PersonId } from './schema.ts';
 import type { Instant } from './time.ts';
 import type { TimeWindow } from './window.ts';
 
-export type ViewName = 'feed' | 'lanes';
+export type ViewName = 'feed' | 'lanes' | 'course';
 
-export const VIEW_NAMES: readonly ViewName[] = ['feed', 'lanes'];
+export const VIEW_NAMES: readonly ViewName[] = ['feed', 'lanes', 'course'];
 
 export interface AppState {
   view: ViewName;

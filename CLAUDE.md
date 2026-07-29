@@ -1,31 +1,32 @@
 # CLAUDE.md — working rules and context for `meanwhile`
 
-## STATUS: M0 + M1 done. Kernel exists; no views yet.
+## STATUS: M0-M8 and M10 done. The course view exists.
 
-As of 2026-07-28 the repo builds, tests, and serves an empty shell.
+As of 2026-07-29 you can point the site at a folder and at a GPX/TCX and look
+at the race. **286 tests pass** (`make check`).
 
-**Built:** ingest, the time window, and the feed — you can load a folder and
-look at the race. Scaffold, brand tokens,
-`tests/core-purity.test.ts`, `Makefile`. Kernel: `schema.ts`, `time.ts`,
-`bytes.ts`, `exif.ts`, `isobmff.ts`, `metadata.ts`, `assemble.ts`,
-`palette.ts`. Viewer: folder/file picking, metadata extraction, an ingest
-report, and manifest export. Plus `scripts/inspect-media.ts`
-(`make inspect DIR=...`). 138 tests pass.
+**Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
+Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
+`metadata.ts`, `assemble.ts`, `palette.ts`, `window.ts`, `state.ts`,
+`course.ts`. Viewer: folder/file picking, ingest report, manifest export, the
+media pipeline, the two-handle time window with density histogram, the feed,
+the swimlanes with a moment strip, the lightbox, the unplaced tray, and the
+**course view** — Leaflet map with terrain basemaps, elevation/HR/cadence/pace
+charts, and a shared distance focus linking the two. Plus
+`scripts/inspect-media.ts` (`make inspect DIR=...`).
 
-**Not built:** moment grid, map, in-viewer notes, the course spine.
+**Not built:** in-viewer notes/captions, automatic clock alignment (blocked —
+needs a timed track, see below), Strava embed rendering, Pages deploy.
 
-**Do not describe anything below as implemented unless it is in the "Built"
-list.** Check before you cite.
+**Do not describe anything as implemented unless it is in the "Built" list.**
+Check before you cite.
 
-## START HERE: the plan
+## START HERE
 
-The v1 plan is 12 milestones, M0-M11, each independently verifiable. The full
-plan with per-milestone verification criteria is in the session plan file; the
-milestone list also lives in the task list. Current position: **M4 (the media
-pipeline: blob lifecycle, downscale-on-decode, lazy loading, video posters)
-is next.**
+Remaining work: **M9** (in-viewer notes) and **M11** (Strava embed fallback,
+GitHub Pages deploy with a `VITE_THUNDERFOREST_KEY` secret). Open questions
+still unanswered: whether the repo is public from day one, and the license.
 
-Build order is not arbitrary — see "The course spine is built LAST" below.
 
 ---
 
@@ -549,6 +550,9 @@ a future session will be tempted to assume works. It does not.
 | **Photos → Drive copy** | No real path. Auto-sync died July 2019; the Drive desktop app stops accepting new backup folders 2026-06-15 and stops syncing existing ones 2026-08-10. Only "Upload from Drive" *into* Photos survives. Drive is a **collection point**, not a waystation. |
 | **Strava GPX vs TCX** | **A GPX carries NO heart rate and NO cadence** — per Strava's own docs it has GPS, elevation, time, and power only from a real power meter. **TCX has heart rate, cadence and watts**, via `https://www.strava.com/activities/{ID}/export_tcx`. Both are XML, so both parse without a dependency. Ask for TCX. `Export Original` is a binary FIT and stays deferred. Pace and grade are in neither and are derived. |
 | **Strava API** | **Forbidden for this use case.** The agreement (2024-11-11) bars third-party apps from displaying a user's activity data to anyone other than that user — exactly what meanwhile does. Plus $11.99/mo for Standard tier from June 2026. **Take a GPX export instead**, which also works for Garmin/COROS/any watch. |
+| **Strava GPX export** | **May contain NO `<time>` elements whatsoever.** The owner's real file is 120,909 points of lat/lon/ele and not one timestamp — a *route* export rather than an *activity* export, though the extension, the `creator="StravaGPX"` attribute and the filename are identical. Always check before assuming a track is timed. `Course.timed` carries the answer. |
+| **Interpolating missing times** | **Forbidden.** Spreading a known start and finish evenly over an untimed course puts the runner's marker confidently in the wrong place for most of a hundred-miler, whose pace varies several-fold between the first climb and 4am. An absent feature is honest; a fabricated one corrupts the simultaneity the app exists to show. |
+| **Real track sizes** | 120k points is normal, not pathological. `Math.min(...array)` **throws `RangeError`** at that length — every argument becomes a stack slot. Accumulate in a loop. Polylines and SVG paths need `simplify()` (Ramer–Douglas–Peucker) before rendering; uniform decimation rounds off the switchbacks that make a mountain course recognisable. |
 | **`showDirectoryPicker()`** | Chrome/Edge/Opera only. **Not Safari on macOS or iOS. Not Firefox.** `<input type="file" webkitdirectory>` is the fallback. Hence: local mode is for desktop authoring, remote URLs are the shareable artifact for phones. |
 | **Strava embeds** *(v2)* | Embed URL is `.../activities/{ID}/embed/{CODE}`. `{CODE}` comes from Strava's share dialog and **cannot be derived from an activity URL.** The embed is an opaque iframe — it cannot sync to our cursor and yields no position-at-time. |
 | **Apple `mvhd` timestamps** *(v2)* | MP4/MOV `mvhd` creation_time is nominally UTC, but **Apple writes LOCAL time there with no zone.** Trusting it shifts clips by hours with no error. Prefer `com.apple.quicktime.creationdate`, which carries a real UTC offset. |
@@ -586,9 +590,19 @@ a future session will be tempted to assume works. It does not.
 ## Deliberate YAGNI — do NOT add these "helpfully"
 
 No backend. No user accounts. No state-management library. No router (single
-page). No CSS framework. No map library or tile provider (the course spine
-makes an SVG polyline sufficient). No runtime dependency on the Google Photos
-or Strava APIs.
+page). No CSS framework. No runtime dependency on the Google Photos or Strava
+APIs.
+
+~~No map library or tile provider.~~ **Reversed 2026-07-29 by the owner**, who
+asked to "re-create bits of the strava/garmin interface" and then said: *"i like
+maplibre/leaflet ... for a mountain trail race, if there are tiles in
+openstreetmap that can overlay to make the terrain nicer, please add those in;
+i'm less worried about large external dependencies (we need the maps)."* The
+original reasoning was that the course spine makes a bare SVG polyline
+sufficient. That is true for *where the line goes* and false for *where the line
+is* — a naked polyline of a mountain race shows no ridges, no valleys, no
+switchbacks, and no aid-station roads, so it cannot answer the question the map
+exists to answer. See the dependency budget for what was chosen and why.
 
 ## Dependency budget
 
@@ -604,6 +618,7 @@ Installed and why:
 | `@types/react`, `@types/react-dom`, `@types/d3-*` | types for the above |
 | `jsdom` | **dev-only.** React lifecycle bugs can only be caught by mounting — the store was fine in isolation, its lifecycle was not, and that shipped a screen where every photo read "cannot display this file". See `tests/media-store-lifecycle.test.tsx`. Vitest still defaults to the `node` environment; files opt in with a `// @vitest-environment jsdom` docblock. |
 | `@types/node` | **dev-only, and confined to `tsconfig.node.json`.** The test suite reads files off disk and `vite.config.ts` reads `process.env`. `tsconfig.app.json` sets `"types": []` so it cannot leak into `src/` — that line is load-bearing. |
+| `leaflet`, `@types/leaflet` | **The map.** Chosen over MapLibre: MapLibre renders vector tiles, and every hosted vector-tile source worth using needs an API key, so it would have made the map *fail closed* without one. Leaflet draws raster tiles, and raster terrain sources exist that need no key at all — so the map works the instant you open the page. It is also ~42KB gzipped against MapLibre's ~200KB. **`leaflet` is the only viewer-side runtime dependency that touches the network**, and only for tiles. It stays out of `src/core/` — the purity test enforces that. |
 
 **Not installed, deliberately:**
 

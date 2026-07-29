@@ -1309,3 +1309,150 @@
 .lanes__cursor--live {
   opacity: 0.75;
 }
+
+/* ---- course map -------------------------------------------------------- */
+
+.coursemap {
+  margin: var(--mw-space-4) 0;
+}
+
+.coursemap__controls {
+  display: flex;
+  gap: var(--mw-space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--mw-space-2);
+}
+
+.coursemap__canvas {
+  height: 460px;
+  border-radius: var(--mw-radius-lg);
+  border: 1px solid var(--mw-border);
+  overflow: hidden;
+  background: var(--mw-surface);
+}
+
+/* Leaflet ships a light theme. These few overrides keep its chrome from
+   glowing white against a dark page; the tiles themselves are left alone. */
+.leaflet-container {
+  background: var(--mw-surface);
+  font-family: var(--mw-font);
+}
+
+.leaflet-control-attribution {
+  background: rgb(23 21 18 / 82%) !important;
+  color: var(--mw-fg-muted) !important;
+  font-size: 10px;
+}
+
+.leaflet-control-attribution a {
+  color: var(--mw-link) !important;
+}
+
+.leaflet-bar a {
+  background: var(--mw-surface) !important;
+  color: var(--mw-fg) !important;
+  border-color: var(--mw-border) !important;
+}
+
+.leaflet-bar a:hover {
+  background: var(--mw-surface-raised) !important;
+}
+
+.leaflet-tooltip {
+  background: var(--mw-bg);
+  color: var(--mw-fg);
+  border: 1px solid var(--mw-border);
+  font-size: var(--mw-text-xs);
+}
+
+.leaflet-tooltip-top::before {
+  border-top-color: var(--mw-border);
+}
+
+/* ---- course charts ----------------------------------------------------- */
+
+.charts {
+  margin: var(--mw-space-4) 0;
+}
+
+/* A real grid, so the plot column is a column the crosshair can be placed
+   inside. The old flex layout positioned the crosshair as a percentage of the
+   FULL width and then nudged it right by a hard-coded label width, which put
+   it under the pointer at only one point on the axis. */
+.charts__body {
+  /* One source of truth for the label column, used by the grid AND by the
+     overlay below, so the crosshair cannot drift out of step with the plots. */
+  --chart-label: 10rem;
+  --chart-gap: var(--mw-space-3);
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--chart-label) 1fr;
+  column-gap: var(--chart-gap);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.chart__label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.15;
+  padding: var(--mw-space-2) 0;
+  border-bottom: 1px solid var(--mw-border);
+}
+
+/* Covers exactly the plot column, so a percentage inside it is a percentage
+   of the plotted area — which is what the x-scale means.
+
+   Absolutely positioned rather than a grid item: as a grid item spanning
+   `grid-row: 1 / -1` it occupied the whole of column 2, leaving auto-placement
+   nowhere to put the plots, and every chart collapsed into the label column. */
+.charts__overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--chart-label) + var(--chart-gap));
+  right: 0;
+  pointer-events: none;
+}
+
+.chart__name {
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-muted);
+}
+
+.chart__value {
+  font-size: var(--mw-text-sm);
+  font-weight: 700;
+}
+
+.chart__plot {
+  min-width: 0;
+  width: 100%;
+  height: 56px;
+  display: block;
+  border-bottom: 1px solid var(--mw-border);
+}
+
+.charts__crosshair {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--mw-accent);
+  pointer-events: none;
+}
+
+.charts__foot {
+  display: flex;
+  gap: var(--mw-space-4);
+  flex-wrap: wrap;
+  margin-top: var(--mw-space-2);
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-muted);
+}
+
+.charts__total {
+  margin-left: auto;
+  color: var(--mw-fg);
+}

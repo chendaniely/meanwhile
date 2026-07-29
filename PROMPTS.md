@@ -374,3 +374,140 @@ Dan was at the aid station" is seen rather than inferred. Empty rows say
 This also folded the moment grid (M8) into the swimlanes rather than leaving
 it a separate view — better than the original design, which would have made
 you switch views to answer "what was happening here".
+
+---
+
+> should note on the front page that if everything is 1 folder, it will break
+> down by device. should also note not to use whatsapp images or anything that
+> removes the EXIF data from photos (provide more examples if needed)
+
+Added to the README and to the in-app empty state. The list of offenders was
+widened beyond WhatsApp: iMessage, Messenger, Instagram, Slack, Discord, and
+"right-click → save" out of the Google Photos web viewer, which silently
+returns a re-encoded copy with the metadata stripped.
+
+---
+
+> we should write a test to make sure those images looking broken doesn't
+> happen
+
+`tests/media-store-lifecycle.test.tsx` mounts the store under StrictMode,
+which is the only way to catch the class of bug that caused it (an effect
+disposing what a double-invoked memo had just created). Verified to fail —
+4 of 5 tests — with the bug reinstated.
+
+---
+
+> before we push to github let's make sure there's no private information in
+> the project and git commit history. before we do gpx, are we able to pass in
+> a strava url for you to read the pace, heartrate, cadence, elevation
+> information? i can export you the gpx from strava, but i'm not sure i'll have
+> their running stats in it.
+
+Audit done: no media, manifest or track file was ever committed; no keys, no
+activity IDs. The friend's name was redacted from all thirteen commits with
+`git filter-repo`.
+
+On the Strava URL: **no.** The API is contractually barred from this use case
+(displaying an athlete's data to anyone but that athlete), and an activity URL
+is not embeddable without a share token that cannot be derived from it. The
+owner's instinct about the stats was right, and documented: a GPX carries GPS,
+elevation and time; **a TCX carries heart rate and cadence.**
+
+---
+
+> we can implment the GPX, but i'd like to make sure we are able to also
+> display all the other running stats. i almost do want to re-create bits of
+> the strava/garmin interface where we can zoom in to parts of the map and able
+> to link the overover as a reference on where the person is during the race
+
+**DECISION — M10, the course spine.** `src/core/course.ts` parses both GPX and
+TCX with a hand-rolled XML scan (`DOMParser` is a browser global and core must
+run under Node too), and derives what neither format stores: pace and grade.
+
+Stats are stacked one-measure-per-chart sharing an x-axis, **not** overlaid on
+twin y-axes. Two arbitrary scales on one plot make their crossings look like
+findings; they are an artefact of the scaling.
+
+---
+
+> i like maplibre/leaflet, that can work for most things, but for a mountain
+> trail race, if there are tiles in openstreetmap that can overlay to make the
+> terrain nicer, please add those in; i'm less worried about large external
+> dependencies (we need the maps), as long as we can render the site using
+> github pages we're good
+
+**DECISION — this reverses "no map library or tile provider" in CLAUDE.md.**
+Leaflet over MapLibre: MapLibre draws vector tiles and every hosted vector
+source worth using needs a key, so the map would fail closed without one.
+Leaflet draws raster tiles, and keyless raster terrain exists — so the map
+works the instant the page opens. It is also ~42KB gzipped against ~200KB.
+
+Default basemap is OpenTopoMap (contours and hillshading already baked in),
+with Esri satellite, plain OSM, and a hillshade overlay. All four verified by
+hand to return tiles with no key.
+
+---
+
+> i'm okay with providing an API key if its free. i can set that up as a local
+> enviornment variable and as a github actions secret
+
+Wired up as `VITE_THUNDERFOREST_KEY`, which adds Thunderforest Outdoors to the
+basemap list when set and changes nothing when it isn't. **With the caveat
+stated plainly:** this is a static site, so Vite inlines the key into the
+published JavaScript at build time. An Actions secret keeps it out of the
+repository, not out of the page. That is normal for client-side maps, and the
+protection that actually works is an HTTP-referrer restriction on the key.
+
+---
+
+> i do have a gpx file, just without all the running stats parts
+
+**The single most useful sentence of the session, and an understatement.** The
+real file has 120,909 points of latitude, longitude and elevation and **zero
+`<time>` elements** — a Strava *route* export, not an activity export. It is a
+course, not a run.
+
+**DECISION — untimed tracks are a supported mode, not a broken file.**
+`Course.timed` says which kind you have. Untimed keeps the map, the elevation
+profile, distance and climb, and switches the charts' x-axis from time to
+distance; it loses the moving marker, pace, and automatic clock alignment.
+
+**meanwhile does not interpolate the missing times.** Spreading the known start
+and finish evenly over the course would put the marker confidently in the wrong
+place for most of a hundred-miler, whose pace varies several-fold. A missing
+feature is honest; a fabricated one corrupts exactly what the app exists to
+show.
+
+Three real bugs fell out of using the actual file, none of which synthetic
+fixtures would have found:
+
+- `Math.min(...samples.map(...))` throws `RangeError` at 120k points — every
+  argument becomes a stack slot. Replaced with single-pass accumulation.
+- A 120k-point polyline is more path data than the browser will move. Added
+  Ramer–Douglas–Peucker simplification: 120,909 → 2,016 points in 25ms, with
+  the switchbacks intact (uniform decimation would have rounded them off).
+- The view tabs were gated on a time range that only photos produce, so a GPX
+  with no photos yet — exactly this situation — could not be viewed at all.
+
+---
+
+> the line is not alined to where the mouse is on the elevation profile. and
+> i'd like the point on the map to move along as i move along the elevation
+> plot. likewise, i'd like the elevation line to move as i hover over parts of
+> the course on the map
+
+Two things, both right.
+
+The misalignment was real: the crosshair was positioned as a percentage of the
+**whole** row and then nudged right by a hard-coded label width, so it only
+met the pointer at one point on the axis. The row is now a real CSS grid and
+the crosshair sits in an overlay covering exactly the plot column, both driven
+by one `--chart-label` variable. Measured after the fix: pointer at clientX
+790, crosshair at 790.
+
+**DECISION — the two views link through DISTANCE, not time.** Distance is the
+only quantity an untimed course has, so metres is what crosses the component
+boundary; a timed course converts at the edges. The map's course also got an
+invisible 18px-wide hit line under the visible 3px one, because pixel-hunting a
+thin line across a switchbacking mountain course is miserable.

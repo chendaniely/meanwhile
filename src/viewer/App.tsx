@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { GroupingInfo } from '../core/assemble.ts';
+import { simplify, type Course } from '../core/course.ts';
 import type { Manifest, PersonId } from '../core/schema.ts';
 import { isVisible, toggleVisible, VIEW_NAMES } from '../core/state.ts';
 import { assignLaneColors } from '../core/palette.ts';
@@ -12,6 +13,7 @@ import {
   type PlacedItem,
   type TimeWindow,
 } from '../core/window.ts';
+import { CourseCharts } from './components/CourseCharts.tsx';
 import { Feed } from './components/Feed.tsx';
 import { Lightbox } from './components/Lightbox.tsx';
 import { Swimlanes } from './components/Swimlanes.tsx';
@@ -20,6 +22,7 @@ import { IngestReport } from './components/IngestReport.tsx';
 import { TimeWindowSlider } from './components/TimeWindowSlider.tsx';
 import { TimezoneField } from './components/TimezoneField.tsx';
 import { UnplacedTray } from './components/UnplacedTray.tsx';
+import { CourseMap } from './map/CourseMap.tsx';
 import { MediaProvider } from './media/MediaContext.tsx';
 import { useMediaStore } from './media/useMediaStore.ts';
 import { useAppState } from './hooks/useAppState.ts';
@@ -47,7 +50,14 @@ function courseUrlOf(manifest: Manifest): string {
 type Stage =
   | { name: 'empty' }
   | { name: 'reading'; progress: IngestProgress }
-  | { name: 'loaded'; manifest: Manifest; grouping: GroupingInfo };
+  | {
+      name: 'loaded';
+      manifest: Manifest;
+      grouping: GroupingInfo;
+      /** Null until a .gpx or .tcx turns up in the folder. */
+      course: Course | null;
+      courseFile: string | null;
+    };
 
 export function App() {
   const [stage, setStage] = useState<Stage>({ name: 'empty' });
@@ -77,7 +87,7 @@ export function App() {
       setFiles(new Map(picked.map((f) => [f.path, f.file])));
       setStage({ name: 'reading', progress: { done: 0, total: picked.length, current: '' } });
       try {
-        const { manifest, grouping } = await ingestFolder(picked, {
+        const { manifest, grouping, course, courseFile } = await ingestFolder(picked, {
           title,
           timezone,
           ...(previous.current
@@ -86,7 +96,7 @@ export function App() {
           onProgress: (progress) => setStage({ name: 'reading', progress }),
         });
         previous.current = manifest;
-        setStage({ name: 'loaded', manifest, grouping });
+        setStage({ name: 'loaded', manifest, grouping, course, courseFile });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Something went wrong reading that folder.');
         setStage({ name: 'empty' });
@@ -114,7 +124,7 @@ export function App() {
     else delete event.timezone;
     const manifest: Manifest = { ...stage.manifest, event };
     previous.current = manifest;
-    setStage({ name: 'loaded', manifest, grouping: stage.grouping });
+    setStage({ ...stage, manifest });
   };
 
   /**
@@ -131,7 +141,7 @@ export function App() {
     else if (/\/embed\//.test(trimmed)) manifest.course = { kind: 'strava-embed', url: trimmed };
     else manifest.course = { kind: 'strava-link', url: trimmed };
     previous.current = manifest;
-    setStage({ name: 'loaded', manifest, grouping: stage.grouping });
+    setStage({ ...stage, manifest });
   };
 
   const manifest = stage.name === 'loaded' ? stage.manifest : null;
@@ -144,6 +154,26 @@ export function App() {
   // every part of the screen agrees about where things sit.
   const placement = useMemo(() => (manifest ? placeItems(manifest) : null), [manifest]);
   const bounds = useMemo(() => (placement ? fullSpan(placement.placed) : null), [placement]);
+
+  /**
+   * The track thinned once, for both the map and the charts.
+   *
+   * A real Strava export is 120,909 points. Simplified once here rather than
+   * inside each component, so the expensive pass happens a single time and
+   * both views draw exactly the same line. 8 metres is well under what a
+   * screen can resolve at any zoom the whole course fits in.
+   */
+  const course = stage.name === 'loaded' ? stage.course : null;
+  const track = useMemo(() => (course ? simplify(course.samples, 8) : []), [course]);
+
+  /**
+   * Where the reader is pointing along the course, in metres.
+   *
+   * Deliberately NOT in the URL alongside the cursor: a hover is a transient
+   * pointer position, not a place in the event worth sharing, and writing it
+   * to the address bar on every mouse move would be absurd.
+   */
+  const [focus, setFocus] = useState<number | null>(null);
 
   /**
    * The visible range: what the manifest says, or a sensible guess.
@@ -199,7 +229,7 @@ export function App() {
     }
     const updated: Manifest = { ...stage.manifest, event };
     previous.current = updated;
-    setStage({ name: 'loaded', manifest: updated, grouping: stage.grouping });
+    setStage({ ...stage, manifest: updated });
   };
 
   return (
@@ -298,9 +328,12 @@ export function App() {
             />
           )}
 
-          {placement && range && (
+          {/* The course stands on its own: a GPX with no photos yet is a
+              perfectly good thing to look at, and gating the tabs on a time
+              range — which only photos produce — hid it completely. */}
+          {placement && (range || stage.course) && (
             <nav className="views" aria-label="View">
-              {VIEW_NAMES.map((name) => (
+              {VIEW_NAMES.filter((name) => (name === 'course' ? stage.course : range)).map((name) => (
                 <button
                   key={name}
                   type="button"
@@ -308,10 +341,39 @@ export function App() {
                   aria-pressed={view.view === name}
                   onClick={() => setView({ view: name })}
                 >
-                  {name === 'feed' ? 'Feed' : 'Swimlanes'}
+                  {name === 'feed' ? 'Feed' : name === 'lanes' ? 'Swimlanes' : 'Course'}
                 </button>
               ))}
             </nav>
+          )}
+
+          {/* Outside the media gate on purpose: the map and profile need no
+              photos and no time range, only the track. */}
+          {view.view === 'course' && stage.course && (
+            <>
+              <CourseMap
+                manifest={stage.manifest}
+                course={stage.course}
+                track={track}
+                items={items}
+                at={view.cursor}
+                focus={focus}
+                onFocus={setFocus}
+                onCursor={(cursor) => setView({ cursor })}
+              />
+              <CourseCharts
+                course={stage.course}
+                track={track}
+                {...(range ? { range } : {})}
+                at={view.cursor}
+                focus={focus}
+                onFocus={setFocus}
+                onCursor={(cursor) => setView({ cursor })}
+                {...(stage.manifest.event.timezone
+                  ? { timezone: stage.manifest.event.timezone }
+                  : {})}
+              />
+            </>
           )}
 
           {placement && range && store && (
@@ -331,6 +393,7 @@ export function App() {
                   onOpen={(entry) => setOpenId(entry.item.id)}
                 />
               )}
+
               {view.view === 'feed' && (
                 <Feed
                   manifest={stage.manifest}

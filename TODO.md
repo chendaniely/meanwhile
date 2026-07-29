@@ -13,8 +13,12 @@ commit hash when done.
   `media.base`. Cloudflare R2 is the likely target (zero egress).
 - **FIT file support** — binary format, needs a parser dependency. GPX and TCX
   are XML and parse without one, so they come first.
-- **Basemap tiles** under the course polyline. The spine makes a tile-free SVG
-  map sufficient for v1; tiles are a garnish with a real dependency cost.
+- ~~**Basemap tiles** under the course polyline.~~ **Done 2026-07-29.** The
+  original reasoning was that the spine makes a tile-free SVG map sufficient,
+  and tiles are a garnish with a real dependency cost. The owner reversed it
+  for a mountain trail race, where a bare polyline shows no ridges, valleys or
+  switchbacks. Leaflet plus keyless raster sources — OpenTopoMap, Esri imagery,
+  Esri hillshade, OSM.
 - **EXIF write-back** of corrected timestamps into copies of the media, so the
   correction travels with the file into any tool. Deferred, not rejected —
   it has genuine archival appeal. Must never touch originals.
@@ -69,3 +73,15 @@ commit hash when done.
 
 - Choose a license.
 - `CHANGELOG.md` once there is a release to describe.
+
+- **Automatic clock alignment.** Match a photo's GPS position to the point on
+  the track with the same coordinates; the difference between the photo's
+  timestamp and the track's is that device's `clockOffset`. **Needs a timed
+  track**, so it is blocked until an activity export turns up — the route
+  export we have has no timestamps to compare against.
+- **A pace chart without a timed track.** Grade against distance already works
+  and is the useful part of a course profile; pace is genuinely impossible
+  without times and is simply not drawn.
+- **Photo dots on the map when the track is untimed.** They already plot by
+  their own GPS, but there is no cursor linking them to a position on the
+  course, so clicking one cannot scrub anything.
