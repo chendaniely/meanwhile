@@ -403,6 +403,12 @@ crop only refreshed when something else happened to change.
 it says so, with a "Show it" action. Writing something and watching it
 disappear is the one outcome worth spending UI on.
 
+### Leaflet's stacking beats anything under z-index 1000 *(UI pass)*
+
+The note dock was `z-index: 50` and opened UNDERNEATH the map on the course
+page. Leaflet's own panes and controls run up to 1000, so anything meant to
+float over a map has to clear that. The dock is 1200.
+
 ### Nothing persistent may sit after the content *(UI pass)*
 
 > "after i upload 200+ images all the things on the bottom of the site are
@@ -429,6 +435,37 @@ The rule, in priority order by how often a thing is used:
 reason: writing is constant and reading back is reference, so they belong in
 different places. Keeping them one component is what dragged the composer
 below two thousand photographs.
+
+### The moment strip must not change the page's height *(UI pass)*
+
+> "when i hover over the swimlanes and it goes from no image to a few /
+> multiple people, the page is jumping all over the place"
+
+The strip's tiles wrapped, so a person with eight photographs made a row four
+lines tall and one with none made it a single line. Scrubbing therefore
+resized the page continuously and everything below it bounced — **including
+the photographs you were reaching for**, which is what made it unusable rather
+than merely ugly.
+
+A row is now a fixed height that scrolls sideways, so the strip is exactly as
+tall as there are people, whatever the cursor is on. Measured across a full
+sweep: strip 150px and page 1279px at every position. **Any change here must
+preserve that** — check the height at several scrub positions, not just that
+it looks right at one.
+
+### Hovering previews, clicking PINS *(UI pass)*
+
+> "when i hover over a certain location, i will eventually move the mouse to
+> click on an image below. so we need to find a balance"
+
+Hover alone cannot work: the photographs are below the track, so reaching for
+one means crossing the track, which moved the moment before you arrived. The
+scrub not being cleared on pointer-leave (M7) was half the fix; the other half
+is that **clicking pins it**. A pinned strip holds still while you reach.
+
+The state is named on screen — "pinned — click to follow again" — because a
+strip that has silently stopped following the pointer just looks broken.
+Escape releases it too.
 
 ### Swimlanes: the gaps are the encoding *(M7)*
 

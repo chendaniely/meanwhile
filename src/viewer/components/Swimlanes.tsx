@@ -63,6 +63,16 @@ export function Swimlanes({
    */
   const [scrub, setScrub] = useState<Instant | null>(state.cursor);
   const [overTrack, setOverTrack] = useState(false);
+  /**
+   * Whether the moment is pinned.
+   *
+   * Hovering alone was too eager to be usable: you find the moment you want,
+   * then start moving down to click one of its photographs, and the pointer
+   * crosses the track on the way — dragging the moment somewhere else before
+   * you arrive. Clicking pins it, so the strip below holds still while you
+   * reach for it. Clicking again re-pins somewhere new; Escape releases.
+   */
+  const [locked, setLocked] = useState(false);
 
   const people = useMemo(() => orderPeople(manifest.people), [manifest.people]);
   const colors = useMemo(() => assignLaneColors(manifest.people), [manifest.people]);
@@ -162,6 +172,7 @@ export function Swimlanes({
           ref={track}
           onPointerMove={(e) => {
             setOverTrack(true);
+            if (locked) return;
             setScrub(instantAt(e.clientX));
           }}
           onPointerLeave={() => setOverTrack(false)}
@@ -169,6 +180,10 @@ export function Swimlanes({
             const next = instantAt(e.clientX);
             setScrub(next);
             onCursor(next);
+            setLocked(true);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setLocked(false);
           }}
           role="presentation"
         >
@@ -242,6 +257,8 @@ export function Swimlanes({
 
       {at !== null && (
         <MomentStrip
+          locked={locked}
+          onUnlock={() => setLocked(false)}
           people={shown}
           colors={colors}
           placed={placed}

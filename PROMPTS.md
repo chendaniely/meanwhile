@@ -640,3 +640,28 @@ a control that appears and vanishes. It resolves to a time from the track when
 the track is timed and from the surrounding photographs when it is not, then
 moves the shared cursor and opens the one composer in the corner. One entry
 point, as asked.
+
+
+---
+
+> on the course page, when i click the note popup is BELOW the map and plots.
+> it should be above. also the ux in swimlanes is really janky. [...] the page
+> is jumping all over the place because the rows where the images are are
+> expanding in height [...] we need a way to better work with the overover on
+> the swimlane. it's a bit to sensitive [...] find a balance between clicking to
+> lock the location but also ease of scrolling through the timeline
+
+Three fixes. The dock was `z-index: 50` and Leaflet's panes and controls run to
+1000, so the composer opened under the map; it is 1200 now.
+
+The bouncing was the moment strip's tiles wrapping — eight photographs made a
+row four lines tall, none made it one — so scrubbing resized the page and
+everything below it moved, including the photographs being reached for. Rows
+are a fixed height that scrolls sideways: measured at 150px strip and 1279px
+page across a full sweep.
+
+**DECISION — hover previews, click pins.** Hover alone cannot work when the
+photographs sit below the track, because reaching for one means crossing the
+track. Clicking pins the moment so the strip holds still; the state is named
+on screen, since a strip that has quietly stopped following the pointer just
+looks broken.

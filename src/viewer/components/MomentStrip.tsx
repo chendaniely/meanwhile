@@ -29,6 +29,9 @@ interface Props {
   radiusMs: number;
   timezone?: string;
   onOpen?: (item: PlacedItem) => void;
+  /** Pinned, so the strip stops following the pointer. See Swimlanes. */
+  locked?: boolean;
+  onUnlock?: () => void;
 }
 
 export function MomentStrip({
@@ -39,6 +42,8 @@ export function MomentStrip({
   radiusMs,
   timezone,
   onOpen,
+  locked = false,
+  onUnlock,
 }: Props) {
   const rows = useMemo(() => {
     const near = placed.filter((entry) => Math.abs(entry.instant - at) <= radiusMs);
@@ -55,6 +60,15 @@ export function MomentStrip({
       <header className="moment-strip__head">
         <time className="moment-strip__time mw-mono">{formatClock(at, timezone)}</time>
         <span className="moment-strip__window mw-mono">±{formatSpan(radiusMs)}</span>
+        {/* Says which mode you are in, and gets you out. Without this, a pinned
+            strip that stops following the pointer just looks broken. */}
+        {locked ? (
+          <button type="button" className="moment-strip__lock" onClick={onUnlock}>
+            pinned &mdash; click to follow again
+          </button>
+        ) : (
+          <span className="moment-strip__hint">click the lanes to pin</span>
+        )}
         {active > 1 ? (
           <span className="moment__together">{active} people at once</span>
         ) : (

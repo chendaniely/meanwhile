@@ -1292,13 +1292,24 @@
   color: var(--mw-fg-muted);
 }
 
+/*
+ * FIXED HEIGHT, and this is load-bearing rather than cosmetic.
+ *
+ * The tiles used to wrap, so a person with eight photographs made a row four
+ * lines tall and one with none made it a single line. Scrubbing the lanes
+ * therefore changed the height of the page continuously and everything below
+ * bounced — including the photographs you were trying to reach. A row is now
+ * one line that scrolls sideways, so the strip is exactly as tall as there are
+ * people, whatever the cursor is on.
+ */
 .moment-strip__row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--mw-space-3);
   padding: var(--mw-space-2) 0;
   border-bottom: 1px solid var(--mw-border);
-  min-height: 2.5rem;
+  height: 6.5rem;
+  box-sizing: border-box;
 }
 
 .moment-strip__who {
@@ -1325,13 +1336,38 @@
 .moment-strip__tiles {
   display: flex;
   gap: var(--mw-space-2);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
   min-width: 0;
+  flex: 1;
+  height: 100%;
+  align-items: center;
+  /* A burst of thirty photographs scrolls rather than reflowing the page. */
+  scrollbar-width: thin;
 }
 
 .moment-strip__tile {
-  width: 104px;
+  width: 76px;
+  height: 76px;
   flex: none;
+}
+
+/* The tile's own aspect ratio would otherwise set the row's height. */
+.moment-strip__tile .tile__frame {
+  height: 76px;
+  aspect-ratio: auto;
+}
+
+.moment-strip__tile img,
+.moment-strip__tile video {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+}
+
+.moment-strip__who {
+  padding-top: 0;
 }
 
 /* The slice of time the strip is showing, drawn behind the lanes so "here"
@@ -1883,7 +1919,9 @@ button.report__tag--on {
   position: fixed;
   right: var(--mw-space-4);
   bottom: var(--mw-space-4);
-  z-index: 50;
+  /* Above Leaflet, which puts its own controls as high as 1000 — at 50 the
+     composer opened UNDERNEATH the map on the course page. */
+  z-index: 1200;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -2087,4 +2125,15 @@ button.report__tag--on {
 /* The course reads as clickable in both places. */
 .coursemap__canvas .leaflet-interactive {
   cursor: pointer;
+}
+
+.moment-strip__lock {
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--mw-text-xs);
+  color: var(--mw-accent);
+  background: transparent;
+  border: 1px solid var(--mw-accent);
+  border-radius: var(--mw-radius-sm);
+  padding: 0 var(--mw-space-2);
 }
