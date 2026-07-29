@@ -79,25 +79,43 @@ Two ways to use it:
 - **Shared with others.** Publish the description file with links to your
   photos, and anyone you send it to can open the timeline on their phone.
 
-If the runner exports a **GPX track** from their watch, the timeline gets much
-richer: an elevation profile behind the photos, a map of the course, the
-option to lay everything out by mile instead of by hour — and automatic
-correction of the clock differences between everyone's cameras.
+If the runner exports their **track file**, the timeline gets much richer: an
+elevation profile behind the photos, a map of the course, the option to lay
+everything out by mile instead of by hour, his heart rate and cadence through
+the race — and automatic correction of the clock differences between
+everyone's cameras.
 
-### Ask for the GPX, not the Strava link
+### Ask for the TCX, not the GPX — and not the Strava link
 
 A Strava link alone can't do any of that. meanwhile can show one, but it's
 just a link (or at best Strava's own embedded widget, which is a sealed box
 that can't follow your cursor). None of it says *where the runner was at
 2:14am*, which is the whole point.
 
-The file that does is a GPX, and getting it takes about ten seconds:
+**And a GPX won't carry his heart rate or cadence.** Per Strava's own
+documentation, a GPX export contains GPS, elevation and time — but no heart
+rate and no cadence. The format that has them is **TCX**:
 
-> On strava.com, open the activity → the **⋯** menu → **Export GPX**.
+| | Heart rate | Cadence | Power | GPS + elevation |
+|---|---|---|---|---|
+| GPX | ✗ | ✗ | only from a real power meter | ✓ |
+| **TCX** | **✓** | **✓** | ✓ | ✓ |
 
-It's the athlete's own file, so there are no API terms or fees involved — and
-the same export works from Garmin, COROS, or any other watch, so none of this
-depends on Strava at all.
+Getting it takes about ten seconds, and he has to be the one to do it — it
+only works for your own activities:
+
+> Open the activity on strava.com and add **`/export_tcx`** to the address:
+> `https://www.strava.com/activities/<id>/export_tcx`
+>
+> The **⋯ → Export GPX** menu item also works, if you don't need the
+> heart-rate data.
+
+Either way it's the athlete's own file, so there are no API terms or fees —
+and Garmin, COROS and the rest all export the same formats, so none of this
+depends on Strava.
+
+**Pace and grade aren't in any track file**, and don't need to be: they're
+worked out from the distance and time between points.
 
 ## The views
 

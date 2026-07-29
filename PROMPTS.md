@@ -4,6 +4,10 @@ Append-only log of the owner's prompts (verbatim, typos and all) and the
 decisions they made. Someone should be able to re-create this project from
 this file.
 
+*Verbatim except for one thing: names that identify other people are
+redacted, and marked where they were. This repo is public; their photos and
+their names are not the project's to publish.*
+
 ---
 
 ## Session 1 — 2026-07-28 — naming and design
