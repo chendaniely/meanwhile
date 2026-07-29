@@ -48,26 +48,89 @@ thing to explain. `items[].note` disappears.
 ### `notes*.csv`
 
 ```csv
-id,at,until,people,photo,author,text
-n_k3f9x2,2026-07-25T15:45:00-06:00,,Priya,,Dan,wrong turn on the ridge
-n_p1a7m4,2026-07-25T15:53:00-06:00,,Priya;Sam,PXL_20260725_215331309.jpg,Dan,the buckle
-,2026-07-26T03:00:00-06:00,2026-07-26T06:40:00-06:00,Sam,,Dan;Priya,asleep in the car
+id,date,time,until_date,until_time,tz,people,photo,author,text
+n_k3f9x2,2026-07-25,15:45,,,,Priya,,Dan,wrong turn on the ridge
+n_p1a7m4,2026-07-25,15:53,,,,Priya;Sam,PXL_20260725_215331309.jpg,Dan,the buckle
+,2026-07-26,03:00,,06:40,,Sam,,Dan;Priya,asleep in the car
 ```
 
 | Column | Meaning |
 |---|---|
 | `id` | Opaque, stable, machine-written. **May be blank** — see below. |
-| `at` | When it happened. Required. This is what puts the note inline in the timeline. |
-| `until` | End of a span. Blank for a moment. Crewing is mostly spans: waiting, driving, sleeping. |
+| `date` | `YYYY-MM-DD`. Required. |
+| `time` | `HH:MM`, 24-hour. Required. Together these place the note in the timeline. |
+| `until_date` | End of a span. **Blank means the same day as `date`** — only needed when something crosses midnight. |
+| `until_time` | End of a span. Blank for a moment. |
+| `tz` | IANA zone, e.g. `America/Denver`. **Blank means the event's timezone**, which is the normal case. |
 | `people` | Who it is **about**. Semicolon-separated names. |
 | `photo` | Item this is a caption for. Blank for a standalone note. |
 | `author` | Who **wrote** it. Semicolon-separated names, same as `people`. |
-| `text` | The note. |
+| `text` | The note. Free text — see below. |
 
 **Matched by header name, not column position**, so anyone may reorder columns
 or insert their own. **Unknown columns are preserved on write** — if someone
 adds `tags`, it survives the round trip. Losing a column someone typed into
 would be the same class of failure as losing a note.
+
+#### Why the date and the time are separate columns
+
+> "most likely it'll be the same date, but different times and the user might
+> just click drag/copy paste the date. while they are filling out times."
+
+That ergonomic reason is real, and there is a stronger technical one.
+
+**No format is safe from a spreadsheet except plain integers.** `2026-07-25`
+alone in a cell is still a date to Excel, so splitting does not prevent
+mangling. What splitting does is make mangling **recoverable**: Excel rewrites
+a date as a serial number (`45861`) and a time as a fraction of a day
+(`0.65625`). In one combined column a bare number is ambiguous. In separate
+columns **the column says which it is**, so the worst case converts back
+exactly.
+
+Fully splitting into `YYYY,MM,DD,HH,MM` would be the only truly mangle-proof
+option, since integers are never reformatted. It costs ten cells per note once
+`until` is included, and the file stops being readable at a glance. Deferred
+rather than rejected — the reader should be written so that adding those
+columns later is additive.
+
+#### `tz` is an IANA name, not an offset
+
+An offset like `-06:00` is simpler but wrong on either side of a daylight-saving
+change, and it says nothing about where the note was written. A zone name
+resolves correctly whatever the date. Blank is the normal case and means the
+event's timezone, so the column costs no typing until a note genuinely comes
+from somewhere else — a crew member in a different zone, or an event that
+crosses one.
+
+Keeping it also makes the notes file **self-contained**: times stay
+unambiguous when it is read without the manifest beside it.
+
+#### `text` is free input, and is treated as hostile
+
+The last column is whatever someone typed, which raises three separate
+problems.
+
+**Newlines.** Legal inside a quoted CSV field, but they break naive tooling and
+make the file unreadable in a diff. The composer replaces newlines with a
+space on write; the reader accepts a quoted multi-line field and normalises it
+the same way. A note is a sentence.
+
+**Quotes, commas and semicolons.** Handled by RFC 4180 quoting: fields
+containing them are wrapped in double quotes, and embedded quotes are doubled.
+`people` and `author` are semicolon-separated precisely so a comma in a name
+never needs escaping.
+
+**Formula injection.** A cell beginning `=`, `+`, `-` or `@` is executed as a
+formula when the file is opened in Excel or Sheets. These files are meant to be
+passed between people, so this is a live risk rather than a theoretical one.
+Any cell starting with those characters is written with a leading apostrophe,
+which spreadsheets strip on display and which the reader removes.
+
+#### Encoding
+
+Written as **UTF-8 with a byte-order mark**. Without the BOM, Excel on Windows
+misreads UTF-8, and notes are exactly where apostrophes, em dashes and emoji
+turn up. The reader accepts the file with or without one.
 
 ### `people.csv`
 
@@ -118,13 +181,17 @@ Any file matching `notes*.csv` is a notes file — `notes.csv`,
 `notes-priya.csv`, `notes_dan.csv` — which picks up the intended files without
 sweeping in an unrelated spreadsheet.
 
-**Strict on write, forgiving on read.** The site writes ISO-8601 with the
-event's UTC offset. It accepts:
+**Strict on write, forgiving on read.** The site writes `YYYY-MM-DD` and
+`HH:MM`. For `date` it accepts:
 
-- ISO-8601 with an offset, and without one (resolved through `event.timezone`)
-- `2026-07-25 15:45` and `2026-07-25 15:45:00`
-- `7/25/26 15:45` and `7/25/2026 3:45 PM` — what a US-locale Excel writes back
-- Excel serial numbers (`45861.65625`)
+- `2026-07-25`
+- `7/25/26` and `7/25/2026` — what a US-locale Excel writes back
+- `25/07/2026` — and elsewhere
+- a bare integer, read as an Excel serial date
+
+For `time` it accepts `15:45`, `15:45:00`, `3:45 PM`, and a bare fraction read
+as a portion of a day. **A combined `at` column is still accepted** for files
+written before this change, and is split on read.
 
 This is not indulgence. A spreadsheet **will** reformat dates, and a format
 that breaks when it does is not a spreadsheet format. Same principle for
@@ -160,13 +227,19 @@ mapping is part of the format, not an implementation detail:
 
 | Composer field | Column | Change needed |
 |---|---|---|
-| What happened | `text` | — |
-| When | `at` | — |
-| Until (optional) | `until` | — |
+| What happened | `text` | Newlines become spaces on write. |
+| When | `date` + `time` | Split on write; the field stays one box. |
+| Until (optional) | `until_date` + `until_time` | `until_date` written only when it differs from `date`. |
 | Whose | `people` | **Now multi-select.** See below. |
 | Written by | `author` | **New**, also multi-select. See below. |
+| — | `tz` | Written only when it differs from the event's timezone. |
 | — | `photo` | Filled only when captioning from the lightbox. |
 | — | `id` | Minted at creation. Never shown. |
+
+**The composer keeps one box for a time**, not two. `YYYY-MM-DD HH:MM` is what
+a person types in one go; splitting it into two inputs would slow down the very
+path this feature exists to make fast. The split is a property of the file, and
+the file is where drag-fill happens.
 
 ### `people` and `author` are both searchable multi-selects
 
@@ -248,7 +321,16 @@ layout without being asked.
 ## Testing
 
 - `notes.csv` round-trips: write, read, and get identical notes back.
-- Every accepted datetime format parses to the same instant.
+- Every accepted date and time format parses to the same instant, including
+  Excel serial dates and day fractions.
+- A blank `until_date` with a filled `until_time` means the same day; a span
+  crossing midnight needs both and works.
+- A blank `tz` resolves through the event's timezone; a filled one overrides it.
+- Text containing commas, quotes, semicolons and newlines survives a round trip.
+- A note beginning `=`, `+`, `-` or `@` is written escaped and read back
+  unescaped.
+- A file written with a BOM and one without both read correctly.
+- A legacy combined `at` column is split on read.
 - Blank ids are minted; duplicated ids are re-minted; existing ids survive.
 - Row-binding three files yields the union, sorted by `at`.
 - Unknown columns survive a round trip.
