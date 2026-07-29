@@ -908,6 +908,18 @@ a future session will be tempted to assume works. It does not.
 
 ---
 
+## How work gets executed
+
+**Plans are executed subagent-driven, always.** Do not offer the choice.
+
+> "i feel like you should save this in a global state, it should always be
+> subagent driven"
+
+A fresh agent per task, reviewed between tasks. It is why plans in
+`docs/superpowers/plans/` spell out the interfaces between tasks: each
+implementer sees only their own task and has to learn neighbouring names and
+types from the plan rather than from context they do not have.
+
 ## Architecture rules
 
 - `src/core/` is a **pure TypeScript kernel**: schema and validation, clock
