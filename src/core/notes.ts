@@ -122,11 +122,23 @@ function resolveInstant(
   label: string,
 ): Resolved | { error: string } {
   if (row.year !== undefined) {
-    const y = Number(String(row.year ?? '').trim());
-    const mo = Number(String(row.month ?? '').trim());
-    const d = Number(String(row.day ?? '').trim());
-    const h = Number(String(row.hour ?? '').trim());
-    const mi = Number(String(row.minute ?? '').trim());
+    // `Number('')` is 0 — finite, and therefore invisible to an
+    // isFinite-only guard. A blank cell must fail here, per field, before
+    // Number() ever sees it, or a hand-edit slip (one blank minute) silently
+    // resolves to :00 instead of being rejected.
+    const yRaw = String(row.year ?? '').trim();
+    const moRaw = String(row.month ?? '').trim();
+    const dRaw = String(row.day ?? '').trim();
+    const hRaw = String(row.hour ?? '').trim();
+    const miRaw = String(row.minute ?? '').trim();
+    if ([yRaw, moRaw, dRaw, hRaw, miRaw].some((s) => s === '')) {
+      return { error: `note "${label}" has a blank date/time field` };
+    }
+    const y = Number(yRaw);
+    const mo = Number(moRaw);
+    const d = Number(dRaw);
+    const h = Number(hRaw);
+    const mi = Number(miRaw);
     if ([y, mo, d, h, mi].some((n) => !Number.isFinite(n))) {
       return { error: `note "${label}" has a non-numeric date/time field` };
     }

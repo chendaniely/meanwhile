@@ -58,6 +58,39 @@ describe('rowToNote', () => {
     expect(rowToNote(row({ text: '' }), ZONE)).toHaveProperty('error');
   });
 
+  it('rejects a blank numeric field rather than resolving Number("") to 0', () => {
+    expect(rowToNote(row({ minute: '' }), ZONE)).toHaveProperty('error');
+  });
+
+  it('rejects a row with every timestamp field blank', () => {
+    const note = rowToNote(
+      row({ year: '', month: '', day: '', hour: '', minute: '' }),
+      ZONE,
+    );
+    expect(note).toHaveProperty('error');
+  });
+
+  it('reads an Excel serial date onto the same instant as the explicit form', () => {
+    // Days between the Excel epoch (1899-12-30) and 2026-07-25.
+    const serial = String(Math.round((Date.UTC(2026, 6, 25) - Date.UTC(1899, 11, 30)) / 86_400_000));
+    const legacy = { id: 'n_1', date: serial, time: '15:45', text: 'x' };
+    const note = rowToNote(legacy, ZONE) as Note;
+    expect(note.at).toBe(new Date(Date.UTC(2026, 6, 25, 21, 45)).toISOString());
+  });
+
+  it('reads a day-fraction time onto the same instant as the explicit form', () => {
+    // 15:45 as a fraction of a day: (15*60 + 45) / 1440.
+    const legacy = { id: 'n_1', date: '2026-07-25', time: String(945 / 1440), text: 'x' };
+    const note = rowToNote(legacy, ZONE) as Note;
+    expect(note.at).toBe(new Date(Date.UTC(2026, 6, 25, 21, 45)).toISOString());
+  });
+
+  it('reads a 12-hour AM/PM time onto the same instant as the explicit form', () => {
+    const legacy = { id: 'n_1', date: '2026-07-25', time: '3:45 PM', text: 'x' };
+    const note = rowToNote(legacy, ZONE) as Note;
+    expect(note.at).toBe(new Date(Date.UTC(2026, 6, 25, 21, 45)).toISOString());
+  });
+
   it('collapses newlines in the text, which break naive tooling', () => {
     const note = rowToNote(row({ text: 'first\nsecond' }), ZONE) as Note;
     expect(note.text).toBe('first second');
