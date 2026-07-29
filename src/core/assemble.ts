@@ -9,7 +9,8 @@
 import type { ExtractedMetadata } from './metadata.ts';
 import type { Item, Manifest, Person, PersonId } from './schema.ts';
 import { SCHEMA_VERSION } from './schema.ts';
-import { resolveItemInstant, type Instant } from './time.ts';
+import type { Instant } from './time.ts';
+import { placeItems, isWithin, type TimeWindow } from './window.ts';
 
 export interface IngestedFile {
   /** Path relative to the granted folder root, e.g. "sam/IMG_4417.jpg". */
@@ -346,40 +347,43 @@ export function describeGrouping(files: readonly IngestedFile[]): GroupingInfo {
   return { by: 'device', byFamily, byProximity };
 }
 
-/** What to tell the author about what just came in. */
-export function summarize(manifest: Manifest): IngestSummary {
-  const peopleById = new Map(manifest.people.map((p) => [p.id, p]));
+/**
+ * What to tell the author about what just came in.
+ *
+ * When a `range` is given, the counts describe what is INSIDE it — that is
+ * the working set, and reporting the whole folder would contradict what the
+ * views are showing. Unplaced items are never windowed: having no time at all
+ * is not the same as falling outside a range.
+ */
+export function summarize(manifest: Manifest, range?: TimeWindow): IngestSummary {
+  const { placed, unplaced } = placeItems(manifest);
+  const visible = range ? placed.filter((p) => isWithin(p.instant, range)) : placed;
+
   const bySource: Record<string, number> = {};
   let photos = 0;
   let videos = 0;
-  let placed = 0;
   let withGps = 0;
-  let from = Number.POSITIVE_INFINITY;
-  let to = Number.NEGATIVE_INFINITY;
 
-  for (const item of manifest.items) {
+  const counted = [...visible.map((p) => p.item), ...unplaced];
+  for (const item of counted) {
     bySource[item.timeSource] = (bySource[item.timeSource] ?? 0) + 1;
     if (item.type === 'video') videos++;
     else photos++;
     if (item.gps) withGps++;
-
-    const resolved = resolveItemInstant(item, peopleById.get(item.person), manifest.event);
-    if (resolved.instant !== null) {
-      placed++;
-      if (resolved.instant < from) from = resolved.instant;
-      if (resolved.instant > to) to = resolved.instant;
-    }
   }
 
+  const first = visible[0];
+  const last = visible[visible.length - 1];
+
   return {
-    total: manifest.items.length,
+    total: counted.length,
     photos,
     videos,
-    placed,
-    unplaced: manifest.items.length - placed,
+    placed: visible.length,
+    unplaced: unplaced.length,
     withGps,
     bySource,
-    span: placed > 0 ? { from, to } : null,
+    span: first && last ? { from: first.instant, to: last.instant } : null,
     mvhdCount: bySource['mvhd'] ?? 0,
   };
 }

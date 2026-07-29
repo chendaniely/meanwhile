@@ -1,0 +1,222 @@
+import { describe, expect, it } from 'vitest';
+import type { Item, Manifest } from '../src/core/schema.ts';
+import { SCHEMA_VERSION } from '../src/core/schema.ts';
+import {
+  clampWindow,
+  clusters,
+  densestWindow,
+  fullSpan,
+  histogram,
+  isWithin,
+  itemsInWindow,
+  placeItems,
+  windowFromCourse,
+  type PlacedItem,
+} from '../src/core/window.ts';
+
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+
+function manifestOf(items: Array<{ id: string; at?: string; person?: string }>): Manifest {
+  return {
+    schema: SCHEMA_VERSION,
+    event: { title: 'x', timezone: 'UTC' },
+    people: [
+      { id: 'sam', name: 'Sam' },
+      { id: 'dan', name: 'Dan', clockOffset: '-PT47S' },
+    ],
+    items: items.map((i) => ({
+      id: i.id,
+      person: i.person ?? 'sam',
+      type: 'photo' as const,
+      src: i.id,
+      ...(i.at ? { at: i.at, timeSource: 'exif-offset' as const } : { timeSource: 'none' as const }),
+    })) as Item[],
+  };
+}
+
+/** Instants only, for the pure window functions. */
+const at = (...instants: number[]): PlacedItem[] =>
+  instants.map((instant, i) => ({
+    instant,
+    item: { id: `i${i}`, person: 'sam', type: 'photo', src: `i${i}`, timeSource: 'gps' },
+  }));
+
+describe('placeItems', () => {
+  it('separates placed from unplaced and sorts by instant', () => {
+    const { placed, unplaced } = placeItems(
+      manifestOf([
+        { id: 'late', at: '2026-07-24T12:00:00Z' },
+        { id: 'nope' },
+        { id: 'early', at: '2026-07-24T09:00:00Z' },
+      ]),
+    );
+    expect(placed.map((p) => p.item.id)).toEqual(['early', 'late']);
+    expect(unplaced.map((i) => i.id)).toEqual(['nope']);
+  });
+
+  it('applies each person clock offset before ordering', () => {
+    // Dan's camera runs 47s fast, so his 12:00:30 is really 11:59:43 and
+    // belongs BEFORE Sam's 12:00:00. Ordering must reflect the correction.
+    const { placed } = placeItems(
+      manifestOf([
+        { id: 'sam-shot', at: '2026-07-24T12:00:00Z', person: 'sam' },
+        { id: 'dan-shot', at: '2026-07-24T12:00:30Z', person: 'dan' },
+      ]),
+    );
+    expect(placed.map((p) => p.item.id)).toEqual(['dan-shot', 'sam-shot']);
+  });
+});
+
+describe('clusters', () => {
+  it('splits at long quiet stretches', () => {
+    // Two bursts a week apart.
+    const week = 7 * DAY;
+    const found = clusters(at(0, HOUR, 2 * HOUR, week, week + HOUR));
+    expect(found).toHaveLength(2);
+    expect(found[0]?.count).toBe(3);
+    expect(found[1]?.count).toBe(2);
+  });
+
+  it('keeps a continuous run together', () => {
+    expect(clusters(at(0, HOUR, 2 * HOUR, 3 * HOUR))).toHaveLength(1);
+  });
+
+  it('returns nothing for no items', () => {
+    expect(clusters([])).toEqual([]);
+  });
+});
+
+describe('densestWindow', () => {
+  it('finds the event inside a folder that spans weeks', () => {
+    // The real shape: a few planning photos six weeks early, a big cluster
+    // for the race, a few the morning after.
+    const planning = [0, 60_000];
+    const race = Array.from({ length: 40 }, (_, i) => 42 * DAY + i * 20 * 60_000);
+    const after = [45 * DAY, 45 * DAY + 60_000];
+    const w = densestWindow(at(...planning, ...race, ...after));
+
+    expect(w).not.toBeNull();
+    // Covers the race and excludes both the planning photos and the morning
+    // after — which is the whole point of the default.
+    expect(w?.from).toBeLessThanOrEqual(race[0] as number);
+    expect(w?.to).toBeGreaterThanOrEqual(race[race.length - 1] as number);
+    expect(w?.from).toBeGreaterThan(planning[1] as number);
+    expect(w?.to).toBeLessThan(after[0] as number);
+  });
+
+  it('gives a single lonely item some width to show', () => {
+    const w = densestWindow(at(0));
+    expect(w).not.toBeNull();
+    expect((w as { to: number }).to).toBeGreaterThan((w as { from: number }).from);
+  });
+
+  it('returns null when nothing is placed', () => {
+    expect(densestWindow([])).toBeNull();
+  });
+});
+
+describe('windowFromCourse', () => {
+  it('pads the course by ten minutes either side', () => {
+    const w = windowFromCourse({ from: 1000 * HOUR, to: 1030 * HOUR });
+    expect(w.from).toBe(1000 * HOUR - 10 * 60_000);
+    expect(w.to).toBe(1030 * HOUR + 10 * 60_000);
+  });
+
+  it('takes a custom pad', () => {
+    const w = windowFromCourse({ from: 0, to: HOUR }, 5 * 60_000);
+    expect(w.from).toBe(-5 * 60_000);
+  });
+});
+
+describe('itemsInWindow', () => {
+  const placed = at(0, HOUR, 2 * HOUR, 3 * HOUR);
+
+  it('keeps only what falls inside, inclusive of the edges', () => {
+    expect(itemsInWindow(placed, { from: HOUR, to: 2 * HOUR })).toHaveLength(2);
+    expect(isWithin(HOUR, { from: HOUR, to: 2 * HOUR })).toBe(true);
+    expect(isWithin(0, { from: HOUR, to: 2 * HOUR })).toBe(false);
+  });
+
+  it('keeps everything for the full span', () => {
+    expect(itemsInWindow(placed, fullSpan(placed) as never)).toHaveLength(4);
+  });
+});
+
+describe('clampWindow', () => {
+  const bounds = { from: 0, to: 10 * HOUR };
+
+  it('keeps a window inside the data', () => {
+    expect(clampWindow({ from: -HOUR, to: 20 * HOUR }, bounds)).toEqual(bounds);
+  });
+
+  it('un-inverts a dragged-past window', () => {
+    // The two handles can cross when you drag one past the other.
+    const w = clampWindow({ from: 5 * HOUR, to: 2 * HOUR }, bounds);
+    expect(w.from).toBeLessThan(w.to);
+  });
+
+  it('never collapses to zero width', () => {
+    const w = clampWindow({ from: 5 * HOUR, to: 5 * HOUR }, bounds);
+    expect(w.to - w.from).toBeGreaterThan(0);
+  });
+
+  it('handles a window pinned to the far edge', () => {
+    const w = clampWindow({ from: 10 * HOUR, to: 10 * HOUR }, bounds);
+    expect(w.to - w.from).toBeGreaterThan(0);
+    expect(w.to).toBeLessThanOrEqual(bounds.to);
+    expect(w.from).toBeGreaterThanOrEqual(bounds.from);
+  });
+});
+
+describe('dragging a handle', () => {
+  // Exactly what the slider does on each input event: merge one edge into the
+  // current range, clamp, then re-filter. Covered here because the browser
+  // interaction itself is thin wiring over these three calls.
+  const placed = at(0, HOUR, 2 * HOUR, 3 * HOUR, 4 * HOUR);
+  const bounds = fullSpan(placed) as { from: number; to: number };
+  const drag = (range: typeof bounds, edge: Partial<typeof bounds>) =>
+    clampWindow({ ...range, ...edge }, bounds);
+
+  it('narrows the visible set as the end handle moves in', () => {
+    let range = bounds;
+    expect(itemsInWindow(placed, range)).toHaveLength(5);
+
+    range = drag(range, { to: 2 * HOUR });
+    expect(itemsInWindow(placed, range)).toHaveLength(3);
+
+    range = drag(range, { from: HOUR });
+    expect(itemsInWindow(placed, range)).toHaveLength(2);
+  });
+
+  it('survives dragging one handle straight past the other', () => {
+    const range = drag({ from: 3 * HOUR, to: 4 * HOUR }, { to: HOUR });
+    expect(range.from).toBeLessThan(range.to);
+    expect(itemsInWindow(placed, range).length).toBeGreaterThan(0);
+  });
+
+  it('never leaves the data bounds', () => {
+    const range = drag(bounds, { to: 99 * HOUR });
+    expect(range.to).toBeLessThanOrEqual(bounds.to);
+  });
+});
+
+describe('histogram', () => {
+  it('counts items into equal-width bins', () => {
+    const counts = histogram(at(0, 0, 0, 2 * HOUR), { from: 0, to: 4 * HOUR }, 4);
+    expect(counts).toEqual([3, 0, 1, 0]);
+  });
+
+  it('puts an item exactly on the right edge in the last bin', () => {
+    // Otherwise the final photo silently vanishes from the density backdrop.
+    expect(histogram(at(4 * HOUR), { from: 0, to: 4 * HOUR }, 4)).toEqual([0, 0, 0, 1]);
+  });
+
+  it('ignores items outside the window', () => {
+    expect(histogram(at(-HOUR, 10 * HOUR), { from: 0, to: 4 * HOUR }, 4)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('survives a zero-width window', () => {
+    expect(histogram(at(0), { from: 0, to: 0 }, 4)).toEqual([0, 0, 0, 0]);
+  });
+});

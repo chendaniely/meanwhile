@@ -126,6 +126,21 @@ export interface EventInfo {
    * those items cannot be placed.
    */
   timezone?: string;
+  /**
+   * The slice of time the views show, as ISO instants.
+   *
+   * A folder is rarely just the event: the real race folder spanned 46.6 days
+   * for a two-day race, holding planning photos from six weeks earlier and
+   * the morning after. Cropping is therefore authoring intent, not a view
+   * preference, so it lives in the manifest and survives export.
+   *
+   * Absent means "work it out" — from the course when there is one, otherwise
+   * from where the photos actually cluster.
+   *
+   * Named `range` rather than `window` on purpose: `window` shadows a host
+   * global, and the core-purity test rightly refuses it.
+   */
+  range?: { from: string; to: string };
 }
 
 export interface MediaConfig {
@@ -297,6 +312,14 @@ export function validateManifest(input: unknown): ValidationResult {
     }
     if (event['timezone'] !== undefined && typeof event['timezone'] !== 'string') {
       errors.push('"event.timezone" must be an IANA zone string, e.g. "America/Los_Angeles"');
+    }
+    const r = event['range'];
+    if (r !== undefined) {
+      if (!isObject(r) || !isIsoDateTime(r['from']) || !isIsoDateTime(r['to'])) {
+        errors.push('"event.range" must be { "from": <date-time>, "to": <date-time> }');
+      } else if (Date.parse(r['from'] as string) >= Date.parse(r['to'] as string)) {
+        errors.push('"event.range.from" must be before "event.range.to"');
+      }
     }
   }
 

@@ -1,8 +1,16 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { GroupingInfo } from '../core/assemble.ts';
 import type { Manifest } from '../core/schema.ts';
+import {
+  clampWindow,
+  densestWindow,
+  fullSpan,
+  placeItems,
+  type TimeWindow,
+} from '../core/window.ts';
 import { FilePicker, FolderPicker } from './components/FolderPicker.tsx';
 import { IngestReport } from './components/IngestReport.tsx';
+import { TimeWindowSlider } from './components/TimeWindowSlider.tsx';
 import type { PickedFile } from './media/folder.ts';
 import { downloadManifest, ingestFolder, type IngestProgress } from './media/ingest.ts';
 import './App.css';
@@ -101,6 +109,48 @@ export function App() {
     setStage({ name: 'loaded', manifest, grouping: stage.grouping });
   };
 
+  const manifest = stage.name === 'loaded' ? stage.manifest : null;
+
+  // One resolution pass per manifest, shared by the slider and the report, so
+  // every part of the screen agrees about where things sit.
+  const placement = useMemo(() => (manifest ? placeItems(manifest) : null), [manifest]);
+  const bounds = useMemo(() => (placement ? fullSpan(placement.placed) : null), [placement]);
+
+  /**
+   * The visible range: what the manifest says, or a sensible guess.
+   *
+   * The guess matters. A folder is rarely just the event — this one spans 46
+   * days for a two-day race — so opening on the full span would show mostly
+   * empty timeline. Falling back to the densest cluster lands on the race.
+   */
+  const range: TimeWindow | null = useMemo(() => {
+    if (!manifest || !placement || !bounds) return null;
+    const saved = manifest.event.range;
+    if (saved) {
+      const from = Date.parse(saved.from);
+      const to = Date.parse(saved.to);
+      if (!Number.isNaN(from) && !Number.isNaN(to)) return clampWindow({ from, to }, bounds);
+    }
+    return densestWindow(placement.placed) ?? bounds;
+  }, [manifest, placement, bounds]);
+
+  const setWindow = (next: TimeWindow | null) => {
+    if (stage.name !== 'loaded') return;
+    const event = { ...stage.manifest.event };
+    if (next) {
+      event.range = {
+        from: new Date(next.from).toISOString(),
+        to: new Date(next.to).toISOString(),
+      };
+    } else {
+      // Clearing it means "work it out again", not "show everything".
+      delete event.range;
+    }
+    const updated: Manifest = { ...stage.manifest, event };
+    previous.current = updated;
+    setStage({ name: 'loaded', manifest: updated, grouping: stage.grouping });
+  };
+
   return (
     <div className="app">
       <header className="app__header">
@@ -188,12 +238,24 @@ export function App() {
             A Strava link renders as a link and nothing more &mdash; it carries no
             time-and-distance data, so there is no elevation profile, no map, and no automatic
             clock alignment. Those need a <strong>GPX export</strong> from the activity
-            (&ctdot; &rarr; Export GPX), which works the same from Garmin or COROS.
+            (the &hellip; menu &rarr; Export GPX), which works the same from Garmin or COROS.
           </p>
+
+          {placement && bounds && range && placement.placed.length > 0 && (
+            <TimeWindowSlider
+              placed={placement.placed}
+              bounds={bounds}
+              range={range}
+              onChange={setWindow}
+              onReset={() => setWindow(null)}
+              {...(stage.manifest.event.timezone ? { timezone: stage.manifest.event.timezone } : {})}
+            />
+          )}
 
           <IngestReport
             manifest={stage.manifest}
             grouping={stage.grouping}
+            {...(range ? { range } : {})}
             onExport={() => downloadManifest(stage.manifest)}
           >
             <FolderPicker

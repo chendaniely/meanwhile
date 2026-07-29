@@ -1,0 +1,184 @@
+/**
+ * Cropping the timeline to the part you care about.
+ *
+ * A folder is almost never just the event. The real race folder held 231
+ * files spanning **46.6 days** — planning photos from six weeks earlier, the
+ * drive out, the race itself, and everyone together the morning after. Drawn
+ * end to end, the race is a 4% sliver and the rest is empty space.
+ *
+ * So the visible window is part of the app's state, not a view detail, and it
+ * does double duty: it crops away the irrelevant, and it zooms into stretches
+ * where too much happened at once.
+ */
+
+import type { Item, Manifest } from './schema.ts';
+import { resolveItemInstant, type Instant } from './time.ts';
+
+export interface TimeWindow {
+  from: Instant;
+  to: Instant;
+}
+
+export interface PlacedItem {
+  item: Item;
+  instant: Instant;
+}
+
+export interface PlacementResult {
+  /** Items with a resolvable instant, in time order. */
+  placed: PlacedItem[];
+  /** Items with no usable time. These go to the unplaced tray. */
+  unplaced: Item[];
+}
+
+/**
+ * Resolve every item to an instant on the shared clock.
+ *
+ * Done once per manifest and reused by every view, because it applies each
+ * person's clock offset and every view must agree about where things sit.
+ */
+export function placeItems(manifest: Manifest): PlacementResult {
+  const peopleById = new Map(manifest.people.map((p) => [p.id, p]));
+  const placed: PlacedItem[] = [];
+  const unplaced: Item[] = [];
+
+  for (const item of manifest.items) {
+    const resolved = resolveItemInstant(item, peopleById.get(item.person), manifest.event);
+    if (resolved.instant === null) unplaced.push(item);
+    else placed.push({ item, instant: resolved.instant });
+  }
+
+  placed.sort((a, b) => a.instant - b.instant);
+  return { placed, unplaced };
+}
+
+/** Everything, end to end. Null when nothing could be placed. */
+export function fullSpan(placed: readonly PlacedItem[]): TimeWindow | null {
+  const first = placed[0];
+  const last = placed[placed.length - 1];
+  if (!first || !last) return null;
+  return { from: first.instant, to: last.instant };
+}
+
+export interface ClusterOptions {
+  /**
+   * Split wherever consecutive items are further apart than this. Defaults to
+   * 0.5% of the total span, clamped to between 1 and 12 hours.
+   *
+   * That default was chosen against the real folder, whose gap distribution
+   * is a cliff: one gap of 1021 hours (the six weeks before the race) and
+   * nothing else above 12.5. Any threshold in a wide band gives the same
+   * answer, which is what makes this safe to do automatically.
+   */
+  gapMs?: number;
+}
+
+export interface Cluster extends TimeWindow {
+  count: number;
+}
+
+/** Split the timeline wherever there is a long quiet stretch. */
+export function clusters(placed: readonly PlacedItem[], opts: ClusterOptions = {}): Cluster[] {
+  const span = fullSpan(placed);
+  if (!span || placed.length === 0) return [];
+
+  const gap = opts.gapMs ?? defaultGap(span.to - span.from);
+  const out: Cluster[] = [];
+  let start = 0;
+
+  for (let i = 0; i < placed.length; i++) {
+    const here = placed[i] as PlacedItem;
+    const next = placed[i + 1];
+    if (!next || next.instant - here.instant > gap) {
+      out.push({
+        from: (placed[start] as PlacedItem).instant,
+        to: here.instant,
+        count: i - start + 1,
+      });
+      start = i + 1;
+    }
+  }
+  return out;
+}
+
+function defaultGap(spanMs: number): number {
+  const HOUR = 3_600_000;
+  return Math.min(12 * HOUR, Math.max(HOUR, spanMs * 0.005));
+}
+
+/**
+ * The window to open on, when there is no course to take it from.
+ *
+ * The cluster holding the most items — which for a race folder is the race,
+ * because that is when everyone was shooting. Padded slightly so the first
+ * and last photos are not flush against the edge.
+ */
+export function densestWindow(placed: readonly PlacedItem[], opts: ClusterOptions = {}): TimeWindow | null {
+  const found = clusters(placed, opts);
+  if (found.length === 0) return null;
+
+  let best = found[0] as Cluster;
+  for (const c of found) if (c.count > best.count) best = c;
+
+  // A cluster of one has no width; give it something to show.
+  const pad = Math.max((best.to - best.from) * 0.02, 60_000);
+  return { from: best.from - pad, to: best.to + pad };
+}
+
+/**
+ * The window a GPX implies: the ride itself, plus a margin either side to
+ * catch the start line and the finish.
+ */
+export function windowFromCourse(course: TimeWindow, padMs = 10 * 60_000): TimeWindow {
+  return { from: course.from - padMs, to: course.to + padMs };
+}
+
+export function isWithin(instant: Instant, w: TimeWindow): boolean {
+  return instant >= w.from && instant <= w.to;
+}
+
+export function itemsInWindow(placed: readonly PlacedItem[], w: TimeWindow): PlacedItem[] {
+  return placed.filter((p) => isWithin(p.instant, w));
+}
+
+/** Keep a window inside the data's bounds, and never inverted or zero-width. */
+export function clampWindow(w: TimeWindow, bounds: TimeWindow): TimeWindow {
+  const min = bounds.from;
+  const max = bounds.to;
+  // A minute of width, or the whole span if the data is narrower than that.
+  const minWidth = Math.min(60_000, Math.max(1, max - min));
+
+  let from = Math.min(Math.max(w.from, min), max);
+  let to = Math.min(Math.max(w.to, min), max);
+  if (to < from) [from, to] = [to, from];
+  if (to - from < minWidth) {
+    if (from + minWidth <= max) to = from + minWidth;
+    else from = Math.max(min, to - minWidth);
+  }
+  return { from, to };
+}
+
+/**
+ * Counts per equal-width bin across `w`.
+ *
+ * This is the backdrop behind the window handles, and it is the load-bearing
+ * part of the control: across six weeks of mostly-nothing you cannot know
+ * where to drag without seeing where the photos actually are.
+ */
+export function histogram(
+  placed: readonly PlacedItem[],
+  w: TimeWindow,
+  bins: number,
+): number[] {
+  const counts = new Array<number>(Math.max(1, bins)).fill(0);
+  const width = w.to - w.from;
+  if (width <= 0) return counts;
+
+  for (const p of placed) {
+    if (!isWithin(p.instant, w)) continue;
+    const ratio = (p.instant - w.from) / width;
+    const index = Math.min(counts.length - 1, Math.floor(ratio * counts.length));
+    counts[index] = (counts[index] as number) + 1;
+  }
+  return counts;
+}

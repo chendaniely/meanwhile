@@ -323,7 +323,23 @@ record to the second.
 
 **DECISION — a two-handle time window, with a density histogram behind it.**
 The real folder proves the need: it spans from 10 June to 26 July while the
-race itself is about two days. The window lives in app state and in the URL,
-defaults to the GPX span ±10 minutes when a course exists, and doubles as
-zoom for dense stretches. The histogram is the load-bearing part — with a
-six-week span you cannot know where to drag without seeing the clusters.
+race itself is about two days. Stored as `event.range` in the manifest,
+because cropping is authoring intent and must survive export. Defaults to the
+GPX span ±10 minutes when a course exists, otherwise to the densest cluster —
+which on the real folder finds the race by itself, cutting 230 items across
+46.6 days down to 142 across 47 hours.
+
+> okay that sounds good. let's go for it. 8 can always adjust later
+
+**Built, and the first attempt was wrong in an instructive way.** Drawn
+linearly across the whole folder, the single 42-day gap ate 90% of the track:
+the handles crowded into the last few pixels and one pixel was about seven
+hours, so the owner's second use case — zooming *within* the race — was
+impossible. Fixed by giving the slider an **extent** that is normally just the
+part being looked at, plus **cluster chips** that jump between the stretches
+the data actually forms.
+
+The core-purity test also earned its keep here: it refused the field name
+`window` for shadowing a host global, and the first wiring did indeed contain
+`{placement && bounds && window && ...}` — testing the browser's
+always-truthy `window` object rather than the value. Renamed to `range`.

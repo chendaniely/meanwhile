@@ -3,6 +3,7 @@ import { assignLaneColors, isOvercrowded, MAX_DISTINCT_PEOPLE } from '../../core
 import type { Manifest, TimeSource } from '../../core/schema.ts';
 import { TIME_SOURCE_RANK } from '../../core/schema.ts';
 import { formatDateTime, formatSpan } from '../../core/time.ts';
+import { isWithin, placeItems, type TimeWindow } from '../../core/window.ts';
 
 /**
  * What came out of the folder.
@@ -29,24 +30,29 @@ const SOURCE_LABEL: Record<TimeSource, string> = {
 interface Props {
   manifest: Manifest;
   grouping: GroupingInfo;
+  /** Counts describe what is inside this, since that is the working set. */
+  range?: TimeWindow;
   onExport: () => void;
   children?: React.ReactNode;
 }
 
-export function IngestReport({ manifest, grouping, onExport, children }: Props) {
-  const summary = summarize(manifest);
+export function IngestReport({ manifest, grouping, range, onExport, children }: Props) {
+  const summary = summarize(manifest, range);
   const colors = assignLaneColors(manifest.people);
   const zone = manifest.event.timezone;
 
+  // Per-person counts follow the window too, so the numbers beside each lane
+  // match what that lane will actually show.
+  const visible = visibleItems(manifest, range);
   const perPerson = new Map<string, number>();
-  for (const item of manifest.items) {
+  for (const item of visible) {
     perPerson.set(item.person, (perPerson.get(item.person) ?? 0) + 1);
   }
 
   return (
     <section className="report">
       <div className="report__stats">
-        <Stat label="files" value={summary.total.toLocaleString()} />
+        <Stat label={range ? 'files in window' : 'files'} value={summary.total.toLocaleString()} />
         <Stat label="on the timeline" value={summary.placed.toLocaleString()} />
         <Stat
           label="unplaced"
@@ -189,4 +195,11 @@ function SourceBreakdown({ summary }: { summary: IngestSummary }) {
       })}
     </ul>
   );
+}
+
+/** Items inside the range, plus every unplaced item regardless. */
+function visibleItems(manifest: Manifest, range?: TimeWindow) {
+  const { placed, unplaced } = placeItems(manifest);
+  const inside = range ? placed.filter((p) => isWithin(p.instant, range)) : placed;
+  return [...inside.map((p) => p.item), ...unplaced];
 }

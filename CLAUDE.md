@@ -266,6 +266,35 @@ Folders still win when they exist: the author put them there on purpose.
 Result on the real folder: 1 useless lane → 4 correct ones, with 17 of 231
 files resting on the weakest signal and the report saying so.
 
+### The time window *(built after the owner asked for it)*
+
+> "i may not want to see all the photos listed in the timeline, and give me
+> the ability to zoom into a certain part of the race"
+
+`event.range` in the manifest, because cropping is authoring intent and must
+survive export. Absent means "work it out": from the course when there is
+one, otherwise `densestWindow()` — the cluster holding the most items, which
+for a race folder is the race.
+
+On the real folder that turns 46.6 days and 230 items into 47 hours and 142,
+automatically.
+
+**The histogram behind the handles is load-bearing, not decoration.** Across a
+mostly-empty span there is no other way to see where the photos are.
+
+**Two scales, and this is the part that was got wrong first.** Drawn linearly
+over the whole folder, the single 42-day gap ate 90% of the track: handles
+crowded into the last few pixels, one pixel was about seven hours, and
+zooming *within* the race was impossible. So the slider covers an **extent**
+— normally just what you are looking at — and a row of **cluster chips**
+jumps between the stretches the data actually forms. "Whole folder" widens
+the extent when you need to reach outside.
+
+**The field is `range`, not `window`.** The core-purity test refuses
+`window` because it shadows a host global — and it was right to: the first
+wiring had `{placement && bounds && window && ...}`, which tested the
+browser's always-truthy `window` object instead of the value.
+
 ### Ingest conventions *(M3)*
 
 - **The top-level folder name is the person**, when subfolders exist at all.
