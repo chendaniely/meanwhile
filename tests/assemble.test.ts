@@ -8,6 +8,7 @@ import {
   slugify,
   summarize,
 } from '../src/core/assemble.ts';
+import type { Item, Manifest } from '../src/core/schema.ts';
 import type { IngestedFile } from '../src/core/assemble.ts';
 import {
   LANE_COLORS,
@@ -309,5 +310,90 @@ describe('lane colors', () => {
 
   it('has eight distinct validated hues', () => {
     expect(new Set(LANE_COLORS).size).toBe(8);
+  });
+});
+
+describe('re-ingest preserves the author\'s work', () => {
+  // The promise behind "export, come back tomorrow, keep working" on a site
+  // with no backend. If this breaks, captions and renames vanish silently on
+  // the next folder read — the worst kind of failure this project can have.
+  const file = (path: string, at?: string): IngestedFile => ({
+    path,
+    metadata: at
+      ? { type: 'photo', timeSource: 'exif-offset', at }
+      : { type: 'photo', timeSource: 'none' },
+  });
+
+  const first = assembleManifest(
+    [file('a.jpg', '2026-07-24T12:00:00Z'), file('b.jpg')],
+    { title: 'Race' },
+  );
+
+  it('keeps a caption through a re-read of the bytes', () => {
+    const edited: Manifest = {
+      ...first,
+      items: first.items.map((it) => (it.id === 'a.jpg' ? { ...it, note: 'the climb' } : it)),
+    };
+    const again = assembleManifest(
+      [file('a.jpg', '2026-07-24T12:00:00Z'), file('b.jpg')],
+      { title: 'Race', existingItems: edited.items, existingPeople: edited.people },
+    );
+    expect(again.items.find((i) => i.id === 'a.jpg')?.note).toBe('the climb');
+  });
+
+  it('keeps a renamed person', () => {
+    const renamed: Manifest = {
+      ...first,
+      people: first.people.map((p) => ({ ...p, name: 'Priya' })),
+    };
+    const again = assembleManifest(
+      [file('a.jpg', '2026-07-24T12:00:00Z')],
+      { title: 'Race', existingPeople: renamed.people, existingItems: renamed.items },
+    );
+    expect(again.people[0]?.name).toBe('Priya');
+  });
+
+  it('keeps a role, which carries behaviour rather than being a label', () => {
+    const withRole: Manifest = {
+      ...first,
+      people: first.people.map((p) => ({ ...p, role: 'runner' as const })),
+    };
+    const again = assembleManifest(
+      [file('a.jpg', '2026-07-24T12:00:00Z')],
+      { title: 'Race', existingPeople: withRole.people, existingItems: withRole.items },
+    );
+    expect(again.people[0]?.role).toBe('runner');
+  });
+
+  it('keeps a hand-placed time but RE-READS an automatic one', () => {
+    // The distinction that matters: a manual placement is authorship, an
+    // automatic timestamp is a fact about the bytes. A stale copy of the
+    // latter would be worse than no copy.
+    const placed: Manifest = {
+      ...first,
+      items: first.items.map((it) =>
+        it.id === 'b.jpg'
+          ? { ...it, at: '2026-07-24T15:00:00Z', timeSource: 'manual' as const }
+          : { ...it, at: '1999-01-01T00:00:00Z' },
+      ),
+    };
+    const again = assembleManifest(
+      [file('a.jpg', '2026-07-24T12:00:00Z'), file('b.jpg')],
+      { title: 'Race', existingItems: placed.items, existingPeople: placed.people },
+    );
+    const a = again.items.find((i) => i.id === 'a.jpg');
+    const b = again.items.find((i) => i.id === 'b.jpg');
+    expect(b?.at).toBe('2026-07-24T15:00:00Z');
+    expect(b?.timeSource).toBe('manual');
+    expect(a?.at).toBe('2026-07-24T12:00:00Z');
+  });
+
+  it('drops work for a file that is no longer in the folder', () => {
+    const again = assembleManifest([file('a.jpg', '2026-07-24T12:00:00Z')], {
+      title: 'Race',
+      existingItems: [...first.items, { ...(first.items[0] as Item), id: 'gone.jpg' }],
+      existingPeople: first.people,
+    });
+    expect(again.items.some((i) => i.id === 'gone.jpg')).toBe(false);
   });
 });

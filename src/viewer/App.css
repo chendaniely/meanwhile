@@ -1540,3 +1540,70 @@
     height: 150px;
   }
 }
+
+/* Renaming a device to a person, in place in the report. The callout beside
+   it tells the author to do this, so it has to be obviously editable. */
+.report__rename {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--mw-fg);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--mw-radius-sm);
+  padding: 2px var(--mw-space-1);
+}
+
+.report__rename:hover {
+  border-color: var(--mw-border);
+}
+
+.report__rename:focus-visible {
+  border-color: var(--mw-accent);
+  outline: none;
+  background: var(--mw-bg);
+}
+
+/* The runner badge is a toggle, not a label: role carries behaviour. */
+button.report__tag {
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--mw-border);
+  color: var(--mw-fg-muted);
+}
+
+button.report__tag--on {
+  border-color: var(--mw-accent);
+  color: var(--mw-accent);
+}
+
+.lightbox__note {
+  display: block;
+  margin-top: var(--mw-space-2);
+}
+
+.lightbox__note-input {
+  width: 100%;
+  font: inherit;
+  color: var(--mw-fg);
+  background: transparent;
+  border: 1px solid var(--mw-border);
+  border-radius: var(--mw-radius-sm);
+  padding: var(--mw-space-1) var(--mw-space-2);
+}
+
+.lightbox__note-input:focus-visible {
+  border-color: var(--mw-accent);
+  outline: none;
+}
+
+.mw-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

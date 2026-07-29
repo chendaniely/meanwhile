@@ -88,6 +88,17 @@ export function extensionOf(filename: string): string {
  * walker must pick it up, because dropping the file in with the photos is far
  * kinder than asking for it separately.
  */
+/**
+ * A manifest sitting in the folder alongside the media.
+ *
+ * Dropping the exported file back in with the photos is how captions, names,
+ * and hand-placed times come back after the tab is closed — much kinder than
+ * a separate import step, and it is the same trick as the track file.
+ */
+export function isManifestFile(filename: string): boolean {
+  return /(^|\/)manifest\.json$/i.test(filename) || /\.manifest\.json$/i.test(filename);
+}
+
 export function isTrackFile(filename: string): boolean {
   const ext = extensionOf(filename);
   return ext === 'gpx' || ext === 'tcx';

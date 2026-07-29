@@ -237,11 +237,21 @@ Run `make dev`, click **Open a folder**, and:
    and follows what you scroll past, so you can see where each photo was
    taken without leaving the timeline.
 
+11. **Name people, mark the runner, caption photos.** The lanes start out
+   named after the phones that shot them; rename each one in the report.
+   Marking someone the runner pins their lane to the top. Any photo can be
+   captioned from the lightbox.
+12. **Your work comes back.** Export `manifest.json`, and next time drop that
+   file into the folder along with the photos — names, roles, captions, the
+   crop, and hand-placed times all return. Timestamps are always re-read from
+   the files themselves, so a stale copy can never override what the photo
+   actually says.
+
 There's also a report of how much to trust the times, an expandable list of
 any files that arrived without a timestamp (with who to ask for the
 originals), and `make inspect` for checking a folder from the terminal.
 
-Still missing: the moment grid, and in-viewer captions.
+Still missing: the moment grid as its own view, and publishing to the web.
 
 ## Why it's fast, and why nothing is uploaded
 

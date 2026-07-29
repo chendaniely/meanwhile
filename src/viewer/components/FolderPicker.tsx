@@ -92,20 +92,20 @@ export function FilePicker({
       <button type="button" className="button" onClick={() => inputRef.current?.click()}>
         {label}
       </button>
-      {/* The track extensions in `accept` are load-bearing. With only
-          `image/*,video/*` the file dialog greys out a .gpx, so the sole route
-          into the course view was opening a whole folder — and anyone handed a
-          bare track file had no way in at all. */}
+      {/* The extra extensions in `accept` are load-bearing. With only
+          `image/*,video/*` the file dialog greys out a .gpx or a manifest.json,
+          so the sole route into the course view was opening a whole folder —
+          and anyone handed a bare track file had no way in at all. */}
       <input
         ref={inputRef}
         type="file"
         multiple
-        accept="image/*,video/*,.gpx,.tcx"
+        accept="image/*,video/*,.gpx,.tcx,.json"
         hidden
         data-testid="file-input"
         onChange={(event) => {
           const files = filesFromInput(event.target.files);
-          if (files.length === 0) onError('None of those are photos, videos, or a GPX/TCX track.');
+          if (files.length === 0) onError('None of those are photos, videos, a GPX/TCX track, or a manifest.json.');
           else onPicked(files);
           event.target.value = '';
         }}

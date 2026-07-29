@@ -1,6 +1,6 @@
 import { summarize, type GroupingInfo, type IngestSummary } from '../../core/assemble.ts';
 import { assignLaneColors, isOvercrowded, MAX_DISTINCT_PEOPLE } from '../../core/palette.ts';
-import type { Manifest, TimeSource } from '../../core/schema.ts';
+import type { Manifest, PersonId, TimeSource } from '../../core/schema.ts';
 import { TIME_SOURCE_RANK } from '../../core/schema.ts';
 import { formatDateTime, formatSpan } from '../../core/time.ts';
 import { isWithin, placeItems, type TimeWindow } from '../../core/window.ts';
@@ -33,10 +33,16 @@ interface Props {
   /** Counts describe what is inside this, since that is the working set. */
   range?: TimeWindow;
   onExport: () => void;
+  /** Renaming a device to a person. The whole point of the callout below. */
+  onRename?: (person: PersonId, name: string) => void;
+  onRole?: (person: PersonId, role: 'runner' | undefined) => void;
   children?: React.ReactNode;
 }
 
-export function IngestReport({ manifest, grouping, range, onExport, children }: Props) {
+export function IngestReport({ manifest, grouping, range, onExport, children,
+  onRename,
+  onRole,
+}: Props) {
   const summary = summarize(manifest, range);
   const colors = assignLaneColors(manifest.people);
   const zone = manifest.event.timezone;
@@ -83,10 +89,26 @@ export function IngestReport({ manifest, grouping, range, onExport, children }: 
                   style={{ background: colors.get(person.id) }}
                   aria-hidden="true"
                 />
-                <span className="report__name">
-                  {person.name}
-                  {person.role === 'runner' && <span className="report__tag">runner</span>}
-                </span>
+                {/* Editable in place. The callout below tells the author to
+                    rename these, and for a long time there was nowhere to do
+                    it — an instruction with no control is worse than neither. */}
+                <input
+                  className="report__rename"
+                  value={person.name}
+                  aria-label={`Name for ${person.name}`}
+                  onChange={(e) => onRename?.(person.id, e.target.value)}
+                />
+                <button
+                  type="button"
+                  className={person.role === 'runner' ? 'report__tag report__tag--on' : 'report__tag'}
+                  aria-pressed={person.role === 'runner'}
+                  // `role` carries behaviour, not decoration: the runner's
+                  // lane pins to the top and owns the course spine.
+                  title="Mark as the runner — pins their lane to the top"
+                  onClick={() => onRole?.(person.id, person.role === 'runner' ? undefined : 'runner')}
+                >
+                  runner
+                </button>
                 <span className="report__count mw-mono">
                   {(perPerson.get(person.id) ?? 0).toLocaleString()}
                 </span>

@@ -23,6 +23,8 @@ interface Props {
   onClose: () => void;
   colors: ReadonlyMap<PersonId, string>;
   names: ReadonlyMap<PersonId, string>;
+  /** Write a caption back to the manifest. Omit to make the lightbox read-only. */
+  onNote?: (id: string, note: string) => void;
   timezone?: string;
 }
 
@@ -36,7 +38,7 @@ const SHAKY: Partial<Record<TimeSource, string>> = {
   manual: 'Placed by hand.',
 };
 
-export function Lightbox({ items, index, onIndex, onClose, colors, names, timezone }: Props) {
+export function Lightbox({ items, index, onIndex, onClose, colors, names, timezone, onNote }: Props) {
   const { store } = useMedia();
   const entry = items[index];
   const item = entry?.item;
@@ -150,6 +152,30 @@ export function Lightbox({ items, index, onIndex, onClose, colors, names, timezo
           </span>
         </div>
         {caution && <p className="lightbox__caution">{caution}</p>}
+
+        {onNote && (
+          <label className="lightbox__note">
+            <span className="mw-visually-hidden">Caption</span>
+            <input
+              /* Keyed by item id so switching photos re-mounts the field with
+                 the new caption. Without the key React reuses the input and
+                 the previous photo's text stays on screen. */
+              key={item.id}
+              className="lightbox__note-input"
+              defaultValue={item.note ?? ''}
+              placeholder="Add a caption…"
+              // Written on blur, not on every keystroke: each edit rebuilds
+              // the manifest and re-runs placement over every item.
+              onBlur={(e) => onNote(item.id, e.target.value)}
+              onKeyDown={(e) => {
+                // The lightbox closes on Escape and moves on the arrows.
+                // While typing, those belong to the text field.
+                e.stopPropagation();
+                if (e.key === 'Enter') e.currentTarget.blur();
+              }}
+            />
+          </label>
+        )}
       </div>
 
       <button

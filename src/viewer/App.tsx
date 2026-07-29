@@ -59,6 +59,9 @@ type Stage =
       /** Null until a .gpx or .tcx turns up in the folder. */
       course: Course | null;
       courseFile: string | null;
+      /** A manifest.json found in the folder, whose author work was merged in. */
+      importedFrom: string | null;
+      importError: string | null;
     };
 
 export function App() {
@@ -106,7 +109,9 @@ export function App() {
       setFiles(merged);
       setStage({ name: 'reading', progress: { done: 0, total: all.length, current: '' } });
       try {
-        const { manifest, grouping, course, courseFile } = await ingestFolder(all, {
+        const {
+          manifest, grouping, course, courseFile, importedFrom, importError,
+        } = await ingestFolder(all, {
           title,
           timezone,
           ...(previous.current
@@ -115,7 +120,14 @@ export function App() {
           onProgress: (progress) => setStage({ name: 'reading', progress }),
         });
         previous.current = manifest;
-        setStage({ name: 'loaded', manifest, grouping, course, courseFile });
+        // The imported title and timezone become the live ones, or editing
+        // either would immediately overwrite what was just loaded.
+        setTitle(manifest.event.title);
+        if (manifest.event.timezone) setTimezone(manifest.event.timezone);
+        setStage({
+          name: 'loaded', manifest, grouping, course, courseFile,
+          importedFrom, importError,
+        });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Something went wrong reading that folder.');
         setStage({ name: 'empty' });
@@ -162,6 +174,72 @@ export function App() {
     previous.current = manifest;
     setStage({ ...stage, manifest });
   };
+
+  /**
+   * Author edits to the manifest: names, roles, captions.
+   *
+   * All of them go through here so `previous.current` stays in step — that is
+   * what re-ingest reads to carry the work forward, and a path that updates
+   * `stage` without it silently loses everything on the next folder read.
+   */
+  const editManifest = useCallback((change: (m: Manifest) => Manifest) => {
+    setStage((current) => {
+      if (current.name !== 'loaded') return current;
+      const manifest = change(current.manifest);
+      previous.current = manifest;
+      return { ...current, manifest };
+    });
+  }, []);
+
+  const renamePerson = useCallback(
+    (id: PersonId, name: string) =>
+      editManifest((m) => ({
+        ...m,
+        people: m.people.map((p) => (p.id === id ? { ...p, name } : p)),
+      })),
+    [editManifest],
+  );
+
+  const setRole = useCallback(
+    (id: PersonId, role: 'runner' | undefined) =>
+      editManifest((m) => ({
+        ...m,
+        // Exactly one runner. Marking a second moves the badge rather than
+        // creating two spines, since the role owns the course.
+        people: m.people.map((p) => {
+          if (p.id === id) {
+            const next = { ...p };
+            if (role) next.role = role;
+            else delete next.role;
+            return next;
+          }
+          if (role && p.role === 'runner') {
+            const cleared = { ...p };
+            delete cleared.role;
+            return cleared;
+          }
+          return p;
+        }),
+      })),
+    [editManifest],
+  );
+
+  const setNote = useCallback(
+    (id: string, note: string) =>
+      editManifest((m) => ({
+        ...m,
+        items: m.items.map((it) => {
+          if (it.id !== id) return it;
+          const next = { ...it };
+          // An empty box means no caption, not an empty one: a stray "" would
+          // survive export and re-import as a caption that renders as nothing.
+          if (note.trim()) next.note = note;
+          else delete next.note;
+          return next;
+        }),
+      })),
+    [editManifest],
+  );
 
   const manifest = stage.name === 'loaded' ? stage.manifest : null;
 
@@ -415,6 +493,20 @@ export function App() {
             (the &hellip; menu &rarr; Export GPX), which works the same from Garmin or COROS.
           </p>
 
+          {stage.importError && (
+            <p className="callout callout--warn">
+              A manifest was found but could not be used, so nothing from it was
+              applied: {stage.importError}
+            </p>
+          )}
+          {stage.importedFrom && (
+            <p className="callout">
+              Loaded your saved work from <strong>{stage.importedFrom}</strong> &mdash;
+              names, captions, and hand-placed times came back with it. Timestamps
+              are always re-read from the files themselves.
+            </p>
+          )}
+
           {placement && bounds && range && placement.placed.length > 0 && (
             <TimeWindowSlider
               placed={placement.placed}
@@ -552,6 +644,7 @@ export function App() {
                   onClose={() => setOpenId(null)}
                   colors={assignLaneColors(stage.manifest.people)}
                   names={new Map(stage.manifest.people.map((p) => [p.id, p.name]))}
+                  onNote={setNote}
                   {...(stage.manifest.event.timezone
                     ? { timezone: stage.manifest.event.timezone }
                     : {})}
@@ -566,6 +659,8 @@ export function App() {
             grouping={stage.grouping}
             {...(range ? { range } : {})}
             onExport={() => downloadManifest(stage.manifest)}
+            onRename={renamePerson}
+            onRole={setRole}
           >
             <FolderPicker
               variant="quiet"
