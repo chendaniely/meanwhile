@@ -32,6 +32,26 @@ export interface ExtractedMetadata extends ResolvedCapture {
   orientation?: number;
   make?: string;
   model?: string;
+  /** Slug of make+model, e.g. "google-pixel-8-pro". Absent if unknown. */
+  device?: string;
+}
+
+/**
+ * A stable id for the device that took a file.
+ *
+ * The main way media arrives is a Google Photos album download, which is a
+ * FLAT folder of everyone's photos mixed together — so "the folder name is
+ * the person" has nothing to work with. The device is the next best signal,
+ * and it is usually one device per person.
+ */
+export function deviceIdOf(make?: string, model?: string): string | undefined {
+  const raw = [make, model].filter(Boolean).join(' ').trim();
+  if (!raw) return undefined;
+  const slug = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || undefined;
 }
 
 const PHOTO_EXTENSIONS = new Set([
@@ -238,6 +258,8 @@ export function photoMetadata(
   if (exif?.orientation) out.orientation = exif.orientation;
   if (exif?.make) out.make = exif.make;
   if (exif?.model) out.model = exif.model;
+  const device = deviceIdOf(exif?.make, exif?.model);
+  if (device) out.device = device;
   return out;
 }
 
@@ -250,5 +272,12 @@ export function videoMetadata(
   const out: ExtractedMetadata = { type: 'video', ...resolveVideoTime(meta, filename, ctx) };
   if (meta?.gps) out.gps = meta.gps;
   if (meta?.duration !== undefined) out.duration = meta.duration;
+  if (meta?.make) out.make = meta.make;
+  if (meta?.model) out.model = meta.model;
+  // Often absent: Apple videos carry make/model, but Android ones carry no
+  // device metadata at all. Those get grouped by proximity instead — see
+  // `groupByDevice` in ./assemble.ts.
+  const device = deviceIdOf(meta?.make, meta?.model);
+  if (device) out.device = device;
   return out;
 }

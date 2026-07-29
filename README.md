@@ -124,7 +124,9 @@ on screen. That's next.
 
 ### How to arrange your folder
 
-Give each person their own subfolder. The folder name becomes their name:
+**Two ways, and you don't have to do anything special for either.**
+
+If you have a folder per person, meanwhile uses the folder names:
 
 ```
 cascade-crest-100/
@@ -132,13 +134,22 @@ cascade-crest-100/
     IMG_4417.jpg
   dan/
     IMG_0001.jpg
-  priya/
-    VID_20260822_021500.mp4
 ```
 
-Files sitting loose at the top level still get read — they just land under
-"Unsorted", which you can sort out later. If you only have a handful of files
-and no folders, **Pick files instead** works too.
+If everything is in one flat folder — which is what a **Google Photos album
+download** gives you, with everyone's photos mixed together — meanwhile
+works out who's who **from the phones themselves**. You'll get one lane per
+device, named something like "Google Pixel 8 Pro", and you rename each to the
+person who was carrying it.
+
+It's not guessing blindly: it reads the camera model recorded inside each
+photo, and falls back to how each phone names its files. It tells you which
+files it was least sure about. Android videos in particular record no camera
+model at all, so those are matched by filename or, failing that, by what else
+was being shot at the same moment — which can be wrong when two people are
+standing together.
+
+If you only have a handful of loose files, **Pick files instead** works too.
 
 ### Checking your media before you build anything
 

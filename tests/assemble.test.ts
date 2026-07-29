@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   UNSORTED_PERSON,
   assembleManifest,
+  describeGrouping,
   displayNameFor,
   personIdFromPath,
   slugify,
@@ -41,6 +42,94 @@ describe('personIdFromPath', () => {
     expect(slugify('Renée O’Brien')).toBe('renee-o-brien');
     expect(displayNameFor('jo-chen')).toBe('Jo Chen');
     expect(displayNameFor(UNSORTED_PERSON)).toBe('Unsorted');
+  });
+
+  it('shouts model codes but never short names', () => {
+    expect(displayNameFor('google-pixel-8-pro')).toBe('Google Pixel 8 Pro');
+    expect(displayNameFor('samsung-sm-f721w')).toBe('Samsung Sm F721W');
+    // Two-letter names are real people. "jo-chen" must not become "JO Chen".
+    expect(displayNameFor('jo-chen')).toBe('Jo Chen');
+    expect(displayNameFor('al')).toBe('Al');
+  });
+});
+
+describe('grouping a flat folder by device', () => {
+  // A Google Photos album download: everything loose at the root, three
+  // phones mixed together. This is the shape real media actually arrives in.
+  const flat: IngestedFile[] = [
+    file('PXL_20260724_100000123.jpg', { at: '2026-07-24T10:00:00Z', device: 'google-pixel-8-pro' }),
+    file('PXL_20260724_100500456.jpg', { at: '2026-07-24T10:05:00Z', device: 'google-pixel-8-pro' }),
+    file('20260724_180000.jpg', { at: '2026-07-24T18:00:00Z', device: 'samsung-sm-f721w' }),
+    file('20260724_181000.jpg', { at: '2026-07-24T18:10:00Z', device: 'samsung-sm-f721w' }),
+  ];
+
+  it('makes one person per device when there are no subfolders', () => {
+    const manifest = assembleManifest(flat, { title: 'x', timezone: 'UTC' });
+    expect(manifest.people.map((p) => p.id)).toEqual(['google-pixel-8-pro', 'samsung-sm-f721w']);
+    expect(manifest.people.map((p) => p.name)).toEqual(['Google Pixel 8 Pro', 'Samsung Sm F721W']);
+  });
+
+  const video = (path: string, at: string): IngestedFile => ({
+    path,
+    metadata: { type: 'video', timeSource: 'filename', at },
+  });
+
+  it('uses the filename convention, NOT proximity, for a device-less video', () => {
+    // The bug this replaced: proximity alone put eight Samsung-named clips on
+    // the Pixel's lane, because both people were shooting at the same moments.
+    // Here the Samsung video sits nearer the Pixel's photos in time, and must
+    // still go to the Samsung because only the Samsung names files that way.
+    const withVideo = [...flat, video('20260724_101500.mp4', '2026-07-24T10:02:00Z')];
+    const manifest = assembleManifest(withVideo, { title: 'x', timezone: 'UTC' });
+    expect(manifest.items.find((i) => i.id === '20260724_101500.mp4')?.person).toBe(
+      'samsung-sm-f721w',
+    );
+  });
+
+  it('falls back to proximity only among devices sharing a convention', () => {
+    // Two Pixels both name files PXL_, so the convention cannot decide and
+    // the clock breaks the tie.
+    const twoPixels: IngestedFile[] = [
+      file('PXL_20260724_100000000.jpg', { at: '2026-07-24T10:00:00Z', device: 'google-pixel-8-pro' }),
+      file('PXL_20260724_200000000.jpg', { at: '2026-07-24T20:00:00Z', device: 'google-pixel-9a' }),
+      file('20260724_195900.jpg', { at: '2026-07-24T19:59:00Z', device: 'samsung-sm-f721w' }),
+      video('PXL_20260724_195800000.mp4', '2026-07-24T19:58:00Z'),
+    ];
+    const manifest = assembleManifest(twoPixels, { title: 'x', timezone: 'UTC' });
+    // Nearest overall is the Samsung, but only Pixels are candidates.
+    expect(manifest.items.find((i) => i.id.endsWith('.mp4'))?.person).toBe('google-pixel-9a');
+  });
+
+  it('makes an unrecognized convention its own person', () => {
+    // A DJI action camera nobody took stills with is a real fourth lane, not
+    // something to fold into whoever happened to be shooting nearby.
+    const withDji = [...flat, video('dji_mimo_20260724_1005_video.mp4', '2026-07-24T10:05:00Z')];
+    const manifest = assembleManifest(withDji, { title: 'x', timezone: 'UTC' });
+    expect(manifest.items.find((i) => i.id.startsWith('dji_'))?.person).toBe('dji');
+  });
+
+  it('reports how each guess was made', () => {
+    const withVideo = [...flat, video('20260724_180500.mp4', '2026-07-24T18:05:00Z')];
+    expect(describeGrouping(withVideo)).toEqual({ by: 'device', byFamily: 1, byProximity: 0 });
+    expect(describeGrouping(flat)).toEqual({ by: 'device', byFamily: 0, byProximity: 0 });
+  });
+
+  it('prefers folders over devices when folders exist', () => {
+    // The author put those folders there on purpose; a device guess must not
+    // override a stated intent.
+    const foldered = [
+      file('sam/a.jpg', { device: 'google-pixel-8-pro' }),
+      file('dan/b.jpg', { device: 'google-pixel-8-pro' }),
+    ];
+    const manifest = assembleManifest(foldered, { title: 'x' });
+    expect(manifest.people.map((p) => p.id)).toEqual(['dan', 'sam']);
+    expect(describeGrouping(foldered)).toEqual({ by: 'folders', byFamily: 0, byProximity: 0 });
+  });
+
+  it('falls back to unsorted when nothing states a device', () => {
+    const anonymous = [file('a.jpg'), file('b.jpg')];
+    const manifest = assembleManifest(anonymous, { title: 'x' });
+    expect(manifest.people.map((p) => p.id)).toEqual([UNSORTED_PERSON]);
   });
 });
 

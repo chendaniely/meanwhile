@@ -187,8 +187,11 @@ export interface VideoMeta {
   mvhdDate?: string;
   /** Seconds. A clip is a point on the timeline today, a span later. */
   duration?: number;
-  /** From `com.apple.quicktime.location.ISO6709`, if the device recorded it. */
+  /** From `com.apple.quicktime.location.ISO6709` or the `©xyz` atom. */
   gps?: [number, number];
+  /** Device that recorded it, when the container says. Used to group people. */
+  make?: string;
+  model?: string;
 }
 
 export function parseVideoMeta(r: Reader): VideoMeta | null {
@@ -236,6 +239,25 @@ export function parseVideoMeta(r: Reader): VideoMeta | null {
 
     const gps = parseIso6709(apple.get('com.apple.quicktime.location.ISO6709'));
     if (gps) out.gps = gps;
+
+    const make = apple.get('com.apple.quicktime.make');
+    const model = apple.get('com.apple.quicktime.model');
+    if (make) out.make = make;
+    if (model) out.model = model;
+
+    // `©xyz` is the older QuickTime location atom, and it is what Android
+    // actually writes — Pixel videos carry it and no Apple keys at all, so
+    // without this every Pixel clip silently loses its position.
+    if (!out.gps) {
+      const xyz = childBox(r, udta, '©xyz');
+      if (xyz) {
+        // [length:u16][language:u16][text], same shape as ©day.
+        const len = r.u16(xyz.contentStart);
+        const text = len === null ? null : r.ascii(xyz.contentStart + 4, len);
+        const fromXyz = parseIso6709(text);
+        if (fromXyz) out.gps = fromXyz;
+      }
+    }
 
     // Older QuickTime writers use a "\xA9day" atom directly under udta.
     if (!out.creationDate) {

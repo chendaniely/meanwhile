@@ -1,4 +1,4 @@
-import { summarize, type IngestSummary } from '../../core/assemble.ts';
+import { summarize, type GroupingInfo, type IngestSummary } from '../../core/assemble.ts';
 import { assignLaneColors, isOvercrowded, MAX_DISTINCT_PEOPLE } from '../../core/palette.ts';
 import type { Manifest, TimeSource } from '../../core/schema.ts';
 import { TIME_SOURCE_RANK } from '../../core/schema.ts';
@@ -28,11 +28,12 @@ const SOURCE_LABEL: Record<TimeSource, string> = {
 
 interface Props {
   manifest: Manifest;
+  grouping: GroupingInfo;
   onExport: () => void;
   children?: React.ReactNode;
 }
 
-export function IngestReport({ manifest, onExport, children }: Props) {
+export function IngestReport({ manifest, grouping, onExport, children }: Props) {
   const summary = summarize(manifest);
   const colors = assignLaneColors(manifest.people);
   const zone = manifest.event.timezone;
@@ -86,6 +87,24 @@ export function IngestReport({ manifest, onExport, children }: Props) {
               </li>
             ))}
           </ul>
+          {grouping.by === 'device' && (
+            <p className="callout">
+              No subfolders, so these are <strong>devices, not people</strong> &mdash; that&rsquo;s
+              what a Google Photos album download looks like. Rename each one to whoever was
+              carrying it.
+              {grouping.byFamily + grouping.byProximity > 0 && (
+                <>
+                  {' '}
+                  {grouping.byFamily + grouping.byProximity} file(s) carried no device of their own
+                  &mdash; Android videos usually don&rsquo;t.
+                  {grouping.byFamily > 0 &&
+                    ` ${grouping.byFamily} were matched by how the phone names its files, which is reliable.`}
+                  {grouping.byProximity > 0 &&
+                    ` ${grouping.byProximity} could only be matched by what was shooting nearby in time, which is a guess — worth a glance.`}
+                </>
+              )}
+            </p>
+          )}
           {isOvercrowded(manifest.people) && (
             <p className="callout callout--warn">
               More than {MAX_DISTINCT_PEOPLE} people. Beyond that, lane colors stop being reliably

@@ -7,7 +7,12 @@
  * yields often enough for progress to paint.
  */
 
-import { assembleManifest, type IngestedFile } from '../../core/assemble.ts';
+import {
+  assembleManifest,
+  describeGrouping,
+  type GroupingInfo,
+  type IngestedFile,
+} from '../../core/assemble.ts';
 import type { Manifest, Person, Item } from '../../core/schema.ts';
 import { extractMetadata } from './extract.ts';
 import type { PickedFile } from './folder.ts';
@@ -34,10 +39,16 @@ export interface IngestOptions {
   signal?: AbortSignal;
 }
 
+export interface IngestResult {
+  manifest: Manifest;
+  /** How people were worked out. Shown in the report; it is a guess. */
+  grouping: GroupingInfo;
+}
+
 export async function ingestFolder(
   files: readonly PickedFile[],
   opts: IngestOptions,
-): Promise<Manifest> {
+): Promise<IngestResult> {
   // Whether naive timestamps can be resolved changes which source wins per
   // file, so it is decided once here and passed down.
   const ctx = { hasTimezone: Boolean(opts.timezone) };
@@ -83,7 +94,7 @@ export async function ingestFolder(
   if (opts.existingPeople !== undefined) assembleOpts.existingPeople = opts.existingPeople;
   if (opts.existingItems !== undefined) assembleOpts.existingItems = opts.existingItems;
 
-  return assembleManifest(ingested, assembleOpts);
+  return { manifest: assembleManifest(ingested, assembleOpts), grouping: describeGrouping(ingested) };
 }
 
 /**

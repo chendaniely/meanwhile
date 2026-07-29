@@ -205,6 +205,7 @@ describe('metadata assembly', () => {
       orientation: 6,
       make: 'Apple',
       model: 'iPhone 15 Pro',
+      device: 'apple-iphone-15-pro',
     });
   });
 

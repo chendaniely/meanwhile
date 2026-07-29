@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import type { GroupingInfo } from '../core/assemble.ts';
 import type { Manifest } from '../core/schema.ts';
 import { FilePicker, FolderPicker } from './components/FolderPicker.tsx';
 import { IngestReport } from './components/IngestReport.tsx';
@@ -16,10 +17,17 @@ function guessTimezone(): string {
   }
 }
 
+/** The URL of whichever course variant is set, for the input's value. */
+function courseUrlOf(manifest: Manifest): string {
+  const course = manifest.course;
+  if (!course) return '';
+  return course.kind === 'gpx' ? course.src : course.url;
+}
+
 type Stage =
   | { name: 'empty' }
   | { name: 'reading'; progress: IngestProgress }
-  | { name: 'loaded'; manifest: Manifest };
+  | { name: 'loaded'; manifest: Manifest; grouping: GroupingInfo };
 
 export function App() {
   const [stage, setStage] = useState<Stage>({ name: 'empty' });
@@ -36,7 +44,7 @@ export function App() {
       setError(null);
       setStage({ name: 'reading', progress: { done: 0, total: files.length, current: '' } });
       try {
-        const manifest = await ingestFolder(files, {
+        const { manifest, grouping } = await ingestFolder(files, {
           title,
           timezone,
           ...(previous.current
@@ -45,7 +53,7 @@ export function App() {
           onProgress: (progress) => setStage({ name: 'reading', progress }),
         });
         previous.current = manifest;
-        setStage({ name: 'loaded', manifest });
+        setStage({ name: 'loaded', manifest, grouping });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Something went wrong reading that folder.');
         setStage({ name: 'empty' });
@@ -73,7 +81,24 @@ export function App() {
     else delete event.timezone;
     const manifest: Manifest = { ...stage.manifest, event };
     previous.current = manifest;
-    setStage({ name: 'loaded', manifest });
+    setStage({ name: 'loaded', manifest, grouping: stage.grouping });
+  };
+
+  /**
+   * A Strava link is presentational: it cannot be queried for where the
+   * runner was at 2am, because the embed token is not derivable from an
+   * activity URL and the embed is an opaque iframe either way. Only a GPX
+   * gives the spine. Setting one here at least records the reference.
+   */
+  const updateCourse = (url: string) => {
+    if (stage.name !== 'loaded') return;
+    const manifest: Manifest = { ...stage.manifest };
+    const trimmed = url.trim();
+    if (!trimmed) delete manifest.course;
+    else if (/\/embed\//.test(trimmed)) manifest.course = { kind: 'strava-embed', url: trimmed };
+    else manifest.course = { kind: 'strava-link', url: trimmed };
+    previous.current = manifest;
+    setStage({ name: 'loaded', manifest, grouping: stage.grouping });
   };
 
   return (
@@ -149,10 +174,26 @@ export function App() {
                 onChange={(e) => updateEvent({ timezone: e.target.value })}
               />
             </label>
+            <label className="field">
+              <span className="field__label">Strava activity (optional)</span>
+              <input
+                className="field__input mw-mono"
+                value={courseUrlOf(stage.manifest)}
+                placeholder="https://www.strava.com/activities/…"
+                onChange={(e) => updateCourse(e.target.value)}
+              />
+            </label>
           </div>
+          <p className="app__hint">
+            A Strava link renders as a link and nothing more &mdash; it carries no
+            time-and-distance data, so there is no elevation profile, no map, and no automatic
+            clock alignment. Those need a <strong>GPX export</strong> from the activity
+            (&ctdot; &rarr; Export GPX), which works the same from Garmin or COROS.
+          </p>
 
           <IngestReport
             manifest={stage.manifest}
+            grouping={stage.grouping}
             onExport={() => downloadManifest(stage.manifest)}
           >
             <FolderPicker

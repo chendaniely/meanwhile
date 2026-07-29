@@ -235,10 +235,41 @@ Three rules that must not be broken:
    label.** That is the secondary encoding that makes the map legible; it is
    not optional polish. Do not discover this again at M10.
 
+### Identifying people in a FLAT folder *(M3, corrected against real data)*
+
+The design assumed each person hands over a folder. **The real folder was a
+Google Photos album download: one flat directory, three phones mixed
+together** — so folder-based grouping produced a single useless person called
+"Unsorted" holding all 231 files. That is the shape media actually arrives in.
+
+Grouping now falls back to the **device**, using three signals, strongest
+first. The order matters and was corrected against real data:
+
+1. **EXIF Make/Model.** Clean for photos: Pixel 8 Pro / Galaxy Z Flip 4 /
+   Pixel 9a separated exactly.
+2. **The filename convention** (`filenameFamily`). Load-bearing, because
+   **Android videos carry no device metadata at all** — 25 real clips had
+   none. Phones name files distinctively and that survives when metadata does
+   not.
+3. **Proximity in time**, only among devices sharing a convention.
+
+**Proximity was tried as the primary signal and is not good enough.** Two
+people standing together shoot at the same moments, so it put all eight
+Samsung-named clips on the Pixel's lane. They keep their own filenames
+though, which is why the convention has to outrank the clock.
+
+A convention no known device produces becomes **its own person** — the DJI
+action camera nobody took stills with is genuinely a fourth lane.
+
+Folders still win when they exist: the author put them there on purpose.
+
+Result on the real folder: 1 useless lane → 4 correct ones, with 17 of 231
+files resting on the weakest signal and the report saying so.
+
 ### Ingest conventions *(M3)*
 
-- **The top-level folder name is the person.** Loose files go to `unsorted`,
-  which is visible and reassignable rather than silently dropped.
+- **The top-level folder name is the person**, when subfolders exist at all.
+  Otherwise group by device, above.
 - **An item's id is its relative path.** Stable across re-ingests, which is
   what lets captions and hand-placed times survive re-reading the bytes. A
   counter or a content hash would lose them on any rename or re-save.
