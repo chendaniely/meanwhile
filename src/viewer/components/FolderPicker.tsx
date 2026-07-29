@@ -80,13 +80,17 @@ export function FolderPicker({ onPicked, onError, label = 'Open a folder', varia
  * all land in "unsorted", which is a visible, fixable state rather than a
  * silent one.
  */
-export function FilePicker({ onPicked, onError }: Pick<Props, 'onPicked' | 'onError'>) {
+export function FilePicker({
+  onPicked,
+  onError,
+  label = 'Pick files instead',
+}: Pick<Props, 'onPicked' | 'onError' | 'label'>) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
     <>
       <button type="button" className="button" onClick={() => inputRef.current?.click()}>
-        Pick files instead
+        {label}
       </button>
       {/* The track extensions in `accept` are load-bearing. With only
           `image/*,video/*` the file dialog greys out a .gpx, so the sole route

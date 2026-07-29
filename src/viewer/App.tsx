@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GroupingInfo } from '../core/assemble.ts';
 import { simplify, type Course } from '../core/course.ts';
 import type { Manifest, PersonId } from '../core/schema.ts';
-import { isVisible, toggleVisible, VIEW_NAMES } from '../core/state.ts';
+import { isVisible, toggleVisible, VIEW_NAMES, type ViewName } from '../core/state.ts';
 import { assignLaneColors } from '../core/palette.ts';
 import {
   clampWindow,
@@ -81,13 +81,30 @@ export function App() {
    */
   const [files, setFiles] = useState<ReadonlyMap<string, File> | null>(null);
 
+  /**
+   * Read a set of files into the app.
+   *
+   * `mode` matters, and getting it wrong loses work. Opening a FOLDER replaces
+   * what is loaded — "open a different folder" means exactly that. Picking
+   * FILES adds to it, because the reason to reach for that button once a
+   * folder is open is to drop in something the folder lacked, usually the
+   * track. Replacing there silently discarded every photo, leaving a screen
+   * of zeroes and no way back but re-opening the folder.
+   */
   const handlePicked = useCallback(
-    async (picked: PickedFile[]) => {
+    async (picked: PickedFile[], mode: 'replace' | 'add' = 'replace') => {
       setError(null);
-      setFiles(new Map(picked.map((f) => [f.path, f.file])));
-      setStage({ name: 'reading', progress: { done: 0, total: picked.length, current: '' } });
+      // Merge by path, so re-picking the same file updates rather than
+      // duplicating it. An item's id IS its path, so a duplicate here would
+      // become two timeline entries for one photo.
+      const merged = new Map<string, File>(mode === 'add' && files ? files : []);
+      for (const f of picked) merged.set(f.path, f.file);
+      const all: PickedFile[] = [...merged].map(([path, file]) => ({ path, file }));
+
+      setFiles(merged);
+      setStage({ name: 'reading', progress: { done: 0, total: all.length, current: '' } });
       try {
-        const { manifest, grouping, course, courseFile } = await ingestFolder(picked, {
+        const { manifest, grouping, course, courseFile } = await ingestFolder(all, {
           title,
           timezone,
           ...(previous.current
@@ -102,7 +119,7 @@ export function App() {
         setStage({ name: 'empty' });
       }
     },
-    [title, timezone],
+    [title, timezone, files],
   );
 
   /**
@@ -165,6 +182,32 @@ export function App() {
    */
   const course = stage.name === 'loaded' ? stage.course : null;
   const track = useMemo(() => (course ? simplify(course.samples, 8) : []), [course]);
+
+  /**
+   * Which views have something to draw right now.
+   *
+   * The feed and the lanes need placed photos; the course needs a track. A
+   * view with neither renders nothing at all, and the app looked broken:
+   * a stale `#view=course` in the address bar — left over from a previous
+   * session, since the view IS the URL — meant opening a folder of photos
+   * with no track gave a blank page under the tabs. The state has to be
+   * reconciled against what actually exists, not trusted.
+   */
+  const available = useMemo<ViewName[]>(() => {
+    const names: ViewName[] = [];
+    if (placement && placement.placed.length > 0) names.push('feed', 'lanes');
+    if (course) names.push('course');
+    return names;
+  }, [placement, course]);
+
+  useEffect(() => {
+    if (available.length === 0) return;
+    if (available.includes(view.view)) return;
+    // Written in an effect, never during render: the URL is written from
+    // state, and an impure updater is exactly what StrictMode double-invokes
+    // to catch. This project has paid for that lesson once already.
+    setView({ view: available[0] as ViewName });
+  }, [available, view.view, setView]);
 
   /**
    * Where the reader is pointing along the course, in metres.
@@ -337,9 +380,9 @@ export function App() {
           {/* The course stands on its own: a GPX with no photos yet is a
               perfectly good thing to look at, and gating the tabs on a time
               range — which only photos produce — hid it completely. */}
-          {placement && (range || stage.course) && (
+          {available.length > 0 && (
             <nav className="views" aria-label="View">
-              {VIEW_NAMES.filter((name) => (name === 'course' ? stage.course : range)).map((name) => (
+              {VIEW_NAMES.filter((name) => available.includes(name)).map((name) => (
                 <button
                   key={name}
                   type="button"
@@ -434,10 +477,14 @@ export function App() {
             <FolderPicker
               variant="quiet"
               label="Open a different folder"
-              onPicked={(f) => void handlePicked(f)}
+              onPicked={(f) => void handlePicked(f, 'replace')}
               onError={setError}
             />
-            <FilePicker onPicked={(f) => void handlePicked(f)} onError={setError} />
+            <FilePicker
+              onPicked={(f) => void handlePicked(f, 'add')}
+              onError={setError}
+              label="Add more files"
+            />
           </IngestReport>
         </main>
       )}
