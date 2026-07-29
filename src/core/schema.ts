@@ -46,6 +46,8 @@ export type TimeSource =
   | 'qt-offset'
   /** EXIF DateTimeOriginal alone. Naive local time; needs `event.timezone`. */
   | 'exif-naive'
+  /** A QuickTime date atom with no zone. Naive local; needs `event.timezone`. */
+  | 'qt-naive'
   /** Android-style filename, e.g. IMG_20260822_131204. Naive local time. */
   | 'filename'
   /**
@@ -66,6 +68,10 @@ export const TIME_SOURCE_RANK: readonly TimeSource[] = [
   'exif-offset',
   'qt-offset',
   'exif-naive',
+  'qt-naive',
+  // A filename timestamp outranks mvhd deliberately. Android names files with
+  // local wall-clock, which resolves correctly through event.timezone; mvhd
+  // may be local time mislabelled as UTC, which resolves to the wrong hour.
   'filename',
   'mvhd',
   'none',

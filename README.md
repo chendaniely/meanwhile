@@ -95,6 +95,7 @@ Other commands:
 | Command | What it does |
 |---|---|
 | `make help` | List every command |
+| `make inspect DIR=~/photos` | Report what meanwhile reads from a folder of media |
 | `make test` | Run the test suite |
 | `make check` | Everything the project checks before a commit |
 | `make build` | Produce the publishable site in `dist/` |
@@ -110,9 +111,50 @@ even after you delete it.
 
 - The timeline maths: the manifest format, its validation, and all the
   clock-offset and timezone handling.
+- Reading timestamps, GPS, and durations out of photos and videos — JPEG,
+  HEIC, MOV, and MP4.
+- `make inspect`, which prints what it found (see below).
 - A page that loads, in the right typeface and colors.
 
-Nothing else. There is no way to load photos yet — that's the next step.
+There's no way to *see* a timeline yet. That's next.
+
+### Checking your media before you build anything
+
+Point this at a folder and it tells you what meanwhile would make of it:
+
+```sh
+make inspect DIR=~/Desktop/race-photos
+```
+
+It reads metadata only. Nothing is written, moved, or uploaded. You get one
+line per file and a summary like:
+
+```
+sam/IMG_4417.jpg    photo gps          2026-08-22T13:12:04Z       47.3900,-121.3900
+sam/IMG_0042.MOV    video qt-offset    2026-08-22T06:20:00-07:00  47.3900,-121.3900 12.5s
+stripped.jpg        photo none         -                          -
+```
+
+The `timeSource` column is the one to read. It says **where the time came
+from**, best to worst:
+
+| Source | Means |
+|---|---|
+| `gps` | From satellites. Correct even if the camera's clock is wrong. |
+| `exif-offset` / `qt-offset` | The device's clock, and it knew its timezone. |
+| `exif-naive` / `qt-naive` | The device's clock, but no timezone recorded. |
+| `filename` | Recovered from the filename after the metadata was stripped. |
+| `mvhd` | Last resort, from a video's header. **May be off by hours** — see below. |
+| `none` | No timestamp. Goes to the unplaced tray for you to place by hand. |
+
+Two things worth knowing:
+
+- **A lot of `none` means something stripped your files in transit** —
+  usually iMessage or WhatsApp. Get the originals.
+- **`mvhd` is not trustworthy.** That field is supposed to be UTC, but Apple
+  writes local time into it with no timezone, so a clip read from it can land
+  hours off with nothing on screen to warn you. `make inspect` prints a
+  warning when any file falls back to it.
 
 ## If you're contributing photos to an event
 

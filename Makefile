@@ -4,7 +4,7 @@
 # in the same commit — a Makefile that lies is worse than no Makefile.
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev build preview test test-watch typecheck check clean
+.PHONY: help install dev build preview test test-watch typecheck check clean inspect
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -30,6 +30,12 @@ test-watch: ## Re-run tests as files change
 
 typecheck: ## Type-check without building
 	npm run typecheck
+
+inspect: ## Report what meanwhile reads from a folder of media: make inspect DIR=~/photos
+ifndef DIR
+	$(error set DIR, e.g. make inspect DIR=~/Desktop/race-photos)
+endif
+	node scripts/inspect-media.ts "$(DIR)"
 
 check: typecheck test ## Everything CI would run
 

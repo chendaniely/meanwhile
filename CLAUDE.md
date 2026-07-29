@@ -5,10 +5,13 @@
 As of 2026-07-28 the repo builds, tests, and serves an empty shell.
 
 **Built:** Vite + React + TS scaffold, brand tokens, `tests/core-purity.test.ts`,
-`Makefile`, `src/core/schema.ts`, `src/core/time.ts`. 44 tests pass.
+`Makefile`, and the kernel so far — `schema.ts`, `time.ts`, `bytes.ts`,
+`exif.ts`, `isobmff.ts`, `metadata.ts`. Plus `scripts/inspect-media.ts`
+(`make inspect DIR=...`), which runs the real extraction over a real folder.
+114 tests pass.
 
-**Not built:** every view, all metadata extraction, folder ingest, the course
-spine. `src/viewer/App.tsx` is a shell with an empty state.
+**Not built:** every view, folder ingest in the browser, the course spine.
+`src/viewer/App.tsx` is a shell with an empty state.
 
 **Do not describe anything below as implemented unless it is in the "Built"
 list.** Check before you cite.
@@ -17,8 +20,8 @@ list.** Check before you cite.
 
 The v1 plan is 12 milestones, M0-M11, each independently verifiable. The full
 plan with per-milestone verification criteria is in the session plan file; the
-milestone list also lives in the task list. Current position: **M2 (metadata
-extraction) is next.**
+milestone list also lives in the task list. Current position: **M3 (browser
+folder ingest) is next.**
 
 Build order is not arbitrary — see "The course spine is built LAST" below.
 
@@ -125,6 +128,31 @@ most to least trustworthy. Two things depend on it:
 `item.at` is always the time **as recorded**, never corrected. Correction
 happens at render time, so adjusting one person's clock is a one-line
 manifest edit rather than a rewrite of every item they shot.
+
+### Metadata extraction gotchas *(learned building M2)*
+
+Things a future session will otherwise rediscover the hard way:
+
+- **`moov` is often at the END of a phone video.** Its size is unknown until
+  recording stops. "Read the first megabyte and parse" therefore works on
+  some clips and silently fails on others. Use `locateBox()` in
+  `isobmff.ts` — it hops top-level box headers 16 bytes at a time, so
+  finding `moov` in a 4GB file costs about three range reads.
+- **`meta` is a FullBox in ISO BMFF but a plain container in some QuickTime
+  writers.** Guessing wrong makes every child unreadable. `metaChildrenStart()`
+  sniffs which layout it is.
+- **In `ilst`, a box's four "type" bytes are an integer index into `keys`,
+  not a 4CC.**
+- **`filename` outranks `mvhd` on purpose.** Android filenames are honestly
+  local wall-clock and resolve correctly through `event.timezone`; `mvhd` may
+  be local time mislabelled as UTC and resolves to the wrong hour.
+- **Pixel `PXL_` filenames are UTC, not local**, so `parseFilenameTime()`
+  refuses them. Pixel files carry full EXIF anyway, so nothing is lost.
+- **WhatsApp names (`IMG-20260822-WA0001`) carry a date but no time.**
+  Also refused — midnight is not where the photo was taken.
+- **Node's type-stripping cannot handle TS parameter properties or `enum`.**
+  `scripts/` and anything it imports must avoid both, or `make inspect`
+  breaks.
 
 ### Media with no usable timestamp goes to an unplaced tray *(session 2)*
 
