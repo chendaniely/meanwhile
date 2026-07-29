@@ -50,6 +50,13 @@ interface Props {
   focus: number | null;
   onFocus: (distance: number | null) => void;
   onCursor: (instant: Instant) => void;
+  /**
+   * Write a note about the point being pointed at. The time is interpolated
+   * from the photographs either side of it — see `estimateInstant` — which is
+   * what makes it possible to annotate a climb nobody photographed.
+   */
+  onNoteHere?: (() => void) | undefined;
+  noteHereLabel?: string | undefined;
   timezone?: string;
 }
 
@@ -114,7 +121,7 @@ const SERIES: Series[] = [
 const CHART_HEIGHT = 56;
 
 export function CourseCharts({
-  course, track, range, at, focus, onFocus, onCursor, timezone,
+  course, track, range, at, focus, onFocus, onCursor, onNoteHere, noteHereLabel, timezone,
 }: Props) {
   // Measured on the PLOT column, not the whole row: the labels sit in their
   // own grid column, and hit-testing against the full width was exactly what
@@ -286,6 +293,12 @@ export function CourseCharts({
           <span className="charts__hint">
             {timed ? 'Move across to read the race.' : 'Move across to read the course.'}
           </span>
+        )}
+        {onNoteHere && (
+          <button type="button" className="charts__note" onClick={onNoteHere}>
+            Note here
+            {noteHereLabel && <span className="mw-mono"> {noteHereLabel}</span>}
+          </button>
         )}
         <span className="charts__total">
           {(course.length / 1000).toFixed(1)} km · {Math.round(course.ascent)} m climb

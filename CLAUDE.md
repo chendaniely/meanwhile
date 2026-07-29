@@ -587,6 +587,43 @@ browser's always-truthy `window` object instead of the value.
   timestamp into an instant, so changing it moves items in and out of the
   unplaced tray.
 
+### Interpolating a time from the photographs — the ONE place it is allowed
+
+> "sometimes as the runner, you remember moments from the elevation / course.
+> especially if there are no photos in that area from yourself/crew/pacer"
+
+`estimateInstant()` turns a point on the course into a time, so you can point
+at a climb you remember and write about it. **This is interpolation, which
+this file otherwise forbids**, so the distinction has to be exact:
+
+| | Forbidden case | This case |
+|---|---|---|
+| Anchors | race start and finish | two photographs |
+| Apart | a hundred miles | usually minutes |
+| Claim | constant pace over a whole ultra | constant pace between two pictures |
+
+Three rules keep it honest, and none may be dropped:
+
+1. **It never extrapolates.** Outside the span the photographs cover it
+   returns null. Beyond the last observation there is nothing to interpolate
+   between, and a number there would be invention.
+2. **It reports its own slack.** `gapSeconds` is the time between the two
+   anchors — the honest error bar — and the UI marks a wide one.
+3. **It admits ambiguity.** Distance is NOT a function of time on an
+   out-and-back or a lollipop: the runner passes mile 40 twice. Anchors are
+   walked in TIME order, every bracketing pass is a candidate, and the cursor
+   picks between them.
+
+On the owner's real data the photographs sit at 0, 31–32, 72, 107, 132 and
+168 km — the crew-accessible aid stations — so the long gaps between them are
+precisely where this is needed. Verified against the real folder: pointing at
+16.83 km gave 05:33 local, which is 52.4% of the way between the 0 km photo at
+11:30Z and the 32.1 km photo at 13:31Z, to the minute.
+
+The result is fed through the SHARED CURSOR rather than a private channel:
+"Note here" moves the cursor and the composer picks it up as its default, the
+same as scrubbing the lanes or scrolling the feed.
+
 ### Placing media ON the course: time first, GPS only as a fallback *(M10)*
 
 `anchorItems()` gives each item a distance along the course, which is what

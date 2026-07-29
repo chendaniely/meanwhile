@@ -30,10 +30,23 @@ interface Props {
    * worst outcome here, and silently widening the crop would be a surprise.
    */
   notice?: { text: string; action: string; onAction: () => void; onDismiss: () => void } | undefined;
+  /** Opened from elsewhere — "Note here" on the course, for instance. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function NoteDock({ manifest, cursor, timezone, onAdd, count, notice }: Props) {
-  const [open, setOpen] = useState(false);
+export function NoteDock({
+  manifest, cursor, timezone, onAdd, count, notice, open: openProp, onOpenChange,
+}: Props) {
+  const [ownOpen, setOwnOpen] = useState(false);
+  // Controlled when a parent supplies `open`, self-managed otherwise, so the
+  // dock works standalone in the feed and can also be thrown open from the
+  // course view.
+  const open = openProp ?? ownOpen;
+  const setOpen = (next: boolean) => {
+    setOwnOpen(next);
+    onOpenChange?.(next);
+  };
   const panel = useRef<HTMLDivElement>(null);
 
   // Escape closes, and focus moves into the panel when it opens — it is a

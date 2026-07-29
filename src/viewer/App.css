@@ -2042,3 +2042,53 @@ button.report__tag--on {
   font-weight: 700;
   text-decoration: underline;
 }
+
+/* A photograph on the map, shown when you point at its dot. Small on purpose:
+   it answers "which one is this" without covering the course. */
+.mapshot {
+  margin: 0;
+  width: 140px;
+}
+
+.mapshot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--mw-radius-sm);
+}
+
+.mapshot figcaption {
+  margin-top: 4px;
+  font-size: var(--mw-text-xs);
+  text-align: center;
+}
+
+/* Leaflet's tooltip is styled for one line of text. */
+.leaflet-tooltip:has(.mapshot) {
+  padding: 4px;
+  background: var(--mw-surface);
+  border: 1px solid var(--mw-border);
+  color: var(--mw-fg);
+}
+
+.rail__note,
+.charts__note {
+  align-self: flex-start;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--mw-text-xs);
+  color: var(--mw-accent);
+  background: transparent;
+  border: 1px solid var(--mw-accent);
+  border-radius: var(--mw-radius-sm);
+  padding: 2px var(--mw-space-2);
+}
+
+.charts__note {
+  margin-left: var(--mw-space-3);
+}
+
+.rail__note-when {
+  margin-left: var(--mw-space-1);
+  color: var(--mw-fg-muted);
+}

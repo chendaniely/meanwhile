@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GroupingInfo } from '../core/assemble.ts';
-import { anchorItems, simplify, type Anchor, type Course } from '../core/course.ts';
+import {
+  anchorItems,
+  estimateInstant,
+  simplify,
+  type Anchor,
+  type Course,
+  type TimeAnchor,
+} from '../core/course.ts';
 import type { Manifest, Note, PersonId } from '../core/schema.ts';
 import { isVisible, toggleVisible, VIEW_NAMES, type ViewName } from '../core/state.ts';
 import { formatClock, type Instant } from '../core/time.ts';
@@ -250,6 +257,8 @@ export function App() {
 
   /** A note that landed outside the crop, so it can be pointed at. */
   const [noteOutside, setNoteOutside] = useState<Instant | null>(null);
+  /** Opened from "Note here" on the course, so the dock appears already open. */
+  const [noteOpen, setNoteOpen] = useState(false);
   const rangeRef = useRef<TimeWindow | null>(null);
 
   const addNote = useCallback(
@@ -285,6 +294,19 @@ export function App() {
   // Lifecycle lives in the hook, where it is tested under StrictMode. See
   // tests/media-store-lifecycle.test.tsx for why that matters.
   const store = useMediaStore(files);
+
+  /** Lets the map show a photo on hover without owning the media pipeline. */
+  const thumbnails = useMemo(
+    () =>
+      store
+        ? {
+            acquire: (item: Parameters<typeof store.acquireThumbnail>[0]) =>
+              store.acquireThumbnail(item),
+            release: (id: string) => store.release(id),
+          }
+        : undefined,
+    [store],
+  );
 
   // One resolution pass per manifest, shared by the slider and the report, so
   // every part of the screen agrees about where things sit.
@@ -366,6 +388,23 @@ export function App() {
       track,
     );
   }, [course, placement, track]);
+
+  /**
+   * Places on the course whose time is actually known, from photographs.
+   *
+   * These are what make "note here" possible where nobody took a picture:
+   * point at a climb, and the time comes from interpolating between the
+   * photographs on either side of it.
+   */
+  const timeAnchors = useMemo<TimeAnchor[]>(() => {
+    if (!placement) return [];
+    const out: TimeAnchor[] = [];
+    for (const entry of placement.placed) {
+      const anchor = anchors.get(entry.item.id);
+      if (anchor) out.push({ distance: anchor.distance, at: entry.instant });
+    }
+    return out;
+  }, [placement, anchors]);
 
   /**
    * Where the reader is pointing along the course, in metres.
@@ -461,6 +500,12 @@ export function App() {
     : '';
 
   rangeRef.current = range;
+
+  /** The estimated time at whatever point on the course is being pointed at. */
+  const estimate = useMemo(
+    () => (focus === null ? null : estimateInstant(timeAnchors, focus, view.cursor ?? undefined)),
+    [focus, timeAnchors, view.cursor],
+  );
 
   /** Notes inside the crop, so they follow the window like the photos do. */
   const visibleNotes = useMemo(
@@ -716,6 +761,7 @@ export function App() {
                 focus={focus}
                 onFocus={setFocus}
                 onCursor={(cursor) => setView({ cursor })}
+                {...(thumbnails ? { thumbnails } : {})}
               />
               <CourseCharts
                 course={stage.course}
@@ -725,6 +771,19 @@ export function App() {
                 focus={focus}
                 onFocus={setFocus}
                 onCursor={(cursor) => setView({ cursor })}
+                onNoteHere={
+                  estimate
+                    ? () => {
+                        setView({ cursor: Math.round(estimate.at) });
+                        setNoteOpen(true);
+                      }
+                    : undefined
+                }
+                noteHereLabel={
+                  estimate
+                    ? formatClock(estimate.at, stage.manifest.event.timezone)
+                    : undefined
+                }
                 {...(stage.manifest.event.timezone
                   ? { timezone: stage.manifest.event.timezone }
                   : {})}
@@ -746,6 +805,25 @@ export function App() {
               at={view.cursor}
               onCursor={(cursor) => setView({ cursor })}
               unplaceable={unplaceable}
+              {...(thumbnails ? { thumbnails } : {})}
+              onNoteHere={
+                estimate
+                  ? () => {
+                      // Reuses the one cursor: move it to the estimate and the
+                      // composer picks it up as its default, like any other
+                      // way of choosing a moment.
+                      setView({ cursor: Math.round(estimate.at) });
+                      setNoteOpen(true);
+                    }
+                  : undefined
+              }
+              noteHereLabel={
+                estimate
+                  ? `${formatClock(estimate.at, stage.manifest.event.timezone)}${
+                      estimate.gapSeconds > 1800 ? ' ±' : ''
+                    }`
+                  : undefined
+              }
               {...(stage.manifest.event.timezone
                 ? { timezone: stage.manifest.event.timezone }
                 : {})}
@@ -851,12 +929,14 @@ export function App() {
             * worth scrolling to. In the lanes it sits inline just under the
             * track, where the cursor you just set is still on screen.
             */}
-          {view.view === 'feed' && (
+          {(view.view === 'feed' || view.view === 'course') && (
             <NoteDock
               manifest={stage.manifest}
               cursor={view.cursor}
               onAdd={addNote}
               count={notes.length}
+              open={noteOpen}
+              onOpenChange={setNoteOpen}
               notice={
                 noteOutside === null || !range
                   ? undefined

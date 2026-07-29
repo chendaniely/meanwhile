@@ -53,12 +53,21 @@ interface Props {
   focus: number | null;
   onFocus: (distance: number | null) => void;
   onCursor: (instant: Instant) => void;
+  /**
+   * Thumbnails for the photo dots, when a folder is loaded. Optional because
+   * the map works with a track and no media at all.
+   */
+  thumbnails?: {
+    acquire: (item: PlacedItem['item']) => Promise<string | null>;
+    release: (id: string) => void;
+  };
   /** Short, and without the basemap chips: the rail beside a scrolling feed. */
   compact?: boolean;
 }
 
 export function CourseMap({
-  manifest, course, track, items, at, focus, onFocus, onCursor, compact = false,
+  manifest, course, track, items, at, focus, onFocus, onCursor,
+  thumbnails, compact = false,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -294,10 +303,17 @@ export function CourseMap({
     const layer = photoLayer.current;
     if (!layer) return;
     layer.clearLayers();
+    // Every thumbnail taken out of the store must be handed back, or the blob
+    // stays pinned for the life of the tab. See MediaStore.
+    const held = new Set<string>();
+
     for (const entry of items) {
       const gps = entry.item.gps;
       if (!gps) continue;
-      L.circleMarker([gps[0], gps[1]], {
+      const name =
+        manifest.people.find((p) => p.id === entry.item.person)?.name ?? entry.item.person;
+
+      const marker = L.circleMarker([gps[0], gps[1]], {
         radius: 4,
         // A dark ring is the same casing trick as the course line, and for
         // the same measured reason: a person's hue alone is not readable
@@ -307,15 +323,41 @@ export function CourseMap({
         fillColor: colors.get(entry.item.person) ?? '#8a8378',
         fillOpacity: 0.9,
       })
-        .bindTooltip(
-          // The name IS the encoding here — see the note at the top.
-          manifest.people.find((p) => p.id === entry.item.person)?.name ?? entry.item.person,
-          { direction: 'top' },
-        )
+        // The name IS the encoding here — see the note at the top. It shows
+        // immediately; the picture replaces it once decoded.
+        .bindTooltip(name, { direction: 'top' })
         .on('click', () => onCursor(entry.instant))
         .addTo(layer);
+
+      if (!thumbnails) continue;
+
+      marker.on('mouseover', () => {
+        void thumbnails.acquire(entry.item).then((url) => {
+          if (!url) return;
+          held.add(entry.item.id);
+          /*
+           * Built as DOM rather than an HTML string. The person's name comes
+           * from a folder on disk, and Leaflet would happily render markup in
+           * it — a filename is not a place to trust.
+           */
+          const box = document.createElement('figure');
+          box.className = 'mapshot';
+          const img = document.createElement('img');
+          img.src = url;
+          img.alt = '';
+          const caption = document.createElement('figcaption');
+          caption.textContent = name;
+          box.append(img, caption);
+          marker.setTooltipContent(box);
+        });
+      });
     }
-  }, [items, colors, manifest.people, onCursor]);
+
+    return () => {
+      for (const id of held) thumbnails?.release(id);
+      held.clear();
+    };
+  }, [items, colors, manifest.people, onCursor, thumbnails]);
 
   const available = basemaps();
 

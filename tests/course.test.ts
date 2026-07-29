@@ -8,9 +8,12 @@ import {
   nearestPoint,
   parseCourse,
   simplify,
+  estimateInstant,
   type Course,
   type CoursePoint,
   type Sample,
+  type TimeAnchor,
+  type TimeEstimate,
 } from '../src/core/course.ts';
 
 /**
@@ -485,5 +488,88 @@ describe('anchorItems', () => {
     const near = nearestPoint(samples, 45.05, -110.001) as { metresAway: number };
     expect(near.metresAway).toBeGreaterThan(50);
     expect(near.metresAway).toBeLessThan(100);
+  });
+});
+
+describe('estimateInstant', () => {
+  // Lets the runner point at a climb they remember and get a time, when
+  // nobody photographed that stretch.
+  const t = (h: number, m = 0) => Date.UTC(2026, 6, 25, h, m);
+
+  const outbound: TimeAnchor[] = [
+    { distance: 0, at: t(6) },
+    { distance: 10_000, at: t(7) },
+    { distance: 20_000, at: t(9) },
+  ];
+
+  it('interpolates between two photographs', () => {
+    const e = estimateInstant(outbound, 5_000) as TimeEstimate;
+    expect(e.at).toBe(t(6, 30));
+  });
+
+  it('respects an uneven pace between segments', () => {
+    // The second 10km took two hours, not one. Halfway through it is 08:00.
+    const e = estimateInstant(outbound, 15_000) as TimeEstimate;
+    expect(e.at).toBe(t(8));
+  });
+
+  it('reports its own slack, so the caller can be honest about it', () => {
+    const e = estimateInstant(outbound, 15_000) as TimeEstimate;
+    expect(e.gapSeconds).toBe(7200);
+    expect(e.before.distance).toBe(10_000);
+    expect(e.after.distance).toBe(20_000);
+  });
+
+  it('REFUSES to extrapolate past the last photograph', () => {
+    // Beyond the observations there is nothing to interpolate between, and a
+    // number here would be pure invention.
+    expect(estimateInstant(outbound, 30_000)).toBeNull();
+  });
+
+  it('refuses before the first photograph too', () => {
+    expect(estimateInstant([{ distance: 5_000, at: t(6) }, { distance: 9_000, at: t(7) }], 1_000))
+      .toBeNull();
+  });
+
+  it('needs at least two observations', () => {
+    expect(estimateInstant([{ distance: 0, at: t(6) }], 0)).toBeNull();
+  });
+
+  it('handles an out-and-back, where distance is not a function of time', () => {
+    // The runner passes 8km twice: outbound at 07:00 and returning at 11:00.
+    const there: TimeAnchor[] = [
+      { distance: 0, at: t(6) },
+      { distance: 10_000, at: t(8) },
+      { distance: 0, at: t(12) },
+    ];
+    const e = estimateInstant(there, 5_000) as TimeEstimate;
+    expect(e.ambiguous).toBe(true);
+    // With no hint it takes the first pass: 5km of 10km in two hours.
+    expect(e.at).toBe(t(7));
+  });
+
+  it('uses the cursor to choose which pass was meant', () => {
+    const there: TimeAnchor[] = [
+      { distance: 0, at: t(6) },
+      { distance: 10_000, at: t(8) },
+      { distance: 0, at: t(12) },
+    ];
+    const back = estimateInstant(there, 5_000, t(11)) as TimeEstimate;
+    expect(back.at).toBe(t(10));
+    expect(back.ambiguous).toBe(true);
+  });
+
+  it('is not ambiguous on a course that only goes one way', () => {
+    expect((estimateInstant(outbound, 5_000) as TimeEstimate).ambiguous).toBe(false);
+  });
+
+  it('does not divide by zero when two photographs share a spot', () => {
+    const still: TimeAnchor[] = [
+      { distance: 4_000, at: t(6) },
+      { distance: 4_000, at: t(7) },
+    ];
+    const e = estimateInstant(still, 4_000) as TimeEstimate;
+    expect(Number.isFinite(e.at)).toBe(true);
+    expect(e.at).toBe(t(6));
   });
 });

@@ -42,6 +42,17 @@ interface Props {
    * before the reader has scrolled anywhere is simply false.
    */
   unplaceable?: boolean;
+  /**
+   * Turn the point being pointed at into a time, from the surrounding
+   * photographs. Null when it falls outside what they cover — see
+   * `estimateInstant`, which refuses to extrapolate.
+   */
+  onNoteHere?: (() => void) | undefined;
+  noteHereLabel?: string | undefined;
+  thumbnails?: {
+    acquire: (item: PlacedItem['item']) => Promise<string | null>;
+    release: (id: string) => void;
+  };
   timezone?: string;
 }
 
@@ -49,7 +60,7 @@ const STRIP_HEIGHT = 44;
 
 export function CourseRail({
   manifest, course, track, items, focus, onFocus, at, onCursor,
-  unplaceable = false, timezone,
+  unplaceable = false, onNoteHere, noteHereLabel, thumbnails, timezone,
 }: Props) {
   const profile = useMemo(() => {
     const points = track
@@ -99,6 +110,7 @@ export function CourseRail({
           focus={focus}
           onFocus={onFocus}
           onCursor={onCursor}
+          {...(thumbnails ? { thumbnails } : {})}
           compact
         />
       </div>
@@ -126,6 +138,16 @@ export function CourseRail({
             </span>
           )}
         </div>
+
+        {/* Point at a climb you remember and write about it, even where
+            nobody took a picture. The time comes from the photographs on
+            either side. */}
+        {onNoteHere && (
+          <button type="button" className="rail__note" onClick={onNoteHere}>
+            Note here
+            {noteHereLabel && <span className="rail__note-when mw-mono">{noteHereLabel}</span>}
+          </button>
+        )}
 
         {profile && (
           <svg

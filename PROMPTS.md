@@ -590,3 +590,33 @@ list.
 
 `Notes.tsx` was split into a composer and a list, because writing is constant
 and reading back is reference — one component forced both into the same place.
+
+
+---
+
+> i like how you ahve the photos geo tagged on the map. let's make it so we can
+> see them on hover/click. since we have photos as relative time references, we
+> should be able to extrapolate locations on the course between photos to put in
+> a note (this makes it easy to put in a note somewhere, we can always adjust
+> specific times later) but sometimes as the runner, you rememer moments from
+> the elevation / course. especially if there are no photos in that area from
+> yourself/crew/pacer.
+
+Two things. Map dots now show the photograph itself on hover, built as DOM
+rather than an HTML string because the caption comes from a folder name and a
+filename is not a place to trust. Thumbnails are taken from the same refcounted
+store as everywhere else and handed back when the layer is rebuilt.
+
+**DECISION — `estimateInstant()`, the one sanctioned interpolation.** Pointing
+at a place on the course gives a time, interpolated between the photographs on
+either side, so a climb nobody photographed can still be annotated. The earlier
+refusal to interpolate stands and is a different case: that was start-to-finish
+across a whole hundred-miler, this is between two pictures usually minutes
+apart. It never extrapolates past the outermost photograph, reports the gap
+between its anchors as an error bar, and handles an out-and-back where the same
+distance happens twice by walking anchors in time order and letting the cursor
+choose.
+
+On the real folder the photographs cluster at 0, 31, 72, 107, 132 and 168 km —
+the crew-accessible aid stations — so the gaps between them are exactly where
+this earns its place.

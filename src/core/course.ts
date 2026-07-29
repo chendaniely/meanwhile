@@ -643,3 +643,102 @@ export function anchorItems<
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Estimating a time from where you were
+// ---------------------------------------------------------------------------
+
+/** A place on the course whose time is actually known, from a photograph. */
+export interface TimeAnchor {
+  distance: number;
+  at: Instant;
+}
+
+export interface TimeEstimate {
+  at: Instant;
+  /** The two real observations it sits between. */
+  before: TimeAnchor;
+  after: TimeAnchor;
+  /** Seconds between those two — how much slack the estimate has. */
+  gapSeconds: number;
+  /** True when more than one pass bracketed this distance. See below. */
+  ambiguous: boolean;
+}
+
+/**
+ * Guess when the runner was at a point on the course, from the photographs.
+ *
+ * **This is interpolation, which this project otherwise refuses** — so the
+ * difference matters. The rejected case was spreading a race's start and
+ * finish evenly across a whole hundred-miler: two observations, a hundred
+ * miles apart, across a pace that varies several-fold. This case is bounded by
+ * two REAL observations that are usually minutes apart, and it exists to
+ * answer a question the owner actually has:
+ *
+ * > "sometimes as the runner, you remember moments from the elevation /
+ * > course. especially if there are no photos in that area"
+ *
+ * Three rules keep it honest:
+ *
+ * 1. **It never extrapolates.** Outside the range the photographs cover it
+ *    returns null rather than a guess, because beyond the last observation
+ *    there is nothing to interpolate between.
+ * 2. **It reports its own slack.** `gapSeconds` is the distance in time
+ *    between the two anchors, which is the honest error bar. Callers show it.
+ * 3. **It admits ambiguity.** Distance is NOT a function of time on an
+ *    out-and-back or a lollipop — the runner passes mile 40 twice — so
+ *    anchors are walked in TIME order and every bracketing pass is a
+ *    candidate. `near` picks between them, and `ambiguous` says when there
+ *    was a choice.
+ *
+ * Constant pace between the two anchors is assumed. Over the few minutes that
+ * usually separate two photographs that is a small claim; over a long gap it
+ * is not, which is exactly what `gapSeconds` is for.
+ */
+export function estimateInstant(
+  anchors: readonly TimeAnchor[],
+  distance: number,
+  near?: Instant,
+): TimeEstimate | null {
+  if (anchors.length < 2) return null;
+  const ordered = [...anchors].sort((a, b) => a.at - b.at);
+
+  const candidates: TimeEstimate[] = [];
+  for (let i = 0; i < ordered.length - 1; i++) {
+    const before = ordered[i] as TimeAnchor;
+    const after = ordered[i + 1] as TimeAnchor;
+    const lo = Math.min(before.distance, after.distance);
+    const hi = Math.max(before.distance, after.distance);
+    if (distance < lo || distance > hi) continue;
+
+    const span = after.distance - before.distance;
+    // Two photographs from the same spot: no movement to interpolate over, so
+    // the earlier of the two is the honest answer rather than a ratio of zero.
+    const ratio = span === 0 ? 0 : (distance - before.distance) / span;
+    candidates.push({
+      at: before.at + (after.at - before.at) * ratio,
+      before,
+      after,
+      gapSeconds: (after.at - before.at) / 1000,
+      ambiguous: false,
+    });
+  }
+
+  if (candidates.length === 0) return null;
+  const ambiguous = candidates.length > 1;
+
+  // With several passes, the one nearest whatever the reader is already
+  // looking at is the one they mean.
+  let best = candidates[0] as TimeEstimate;
+  if (near !== undefined) {
+    let bestGap = Math.abs(best.at - near);
+    for (const candidate of candidates.slice(1)) {
+      const gap = Math.abs(candidate.at - near);
+      if (gap < bestGap) {
+        bestGap = gap;
+        best = candidate;
+      }
+    }
+  }
+  return { ...best, ambiguous };
+}
