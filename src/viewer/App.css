@@ -1709,13 +1709,23 @@ button.report__tag--on {
   font-size: var(--mw-text-xs);
 }
 
-.notes__person {
+/* Wraps every person on a note — mirrors .moment__who in the feed. A note
+   can carry several people now, so this is the flex row that holds them;
+   .notes__person below styles each one individually. */
+.notes__who {
   flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--mw-space-2);
+  flex-wrap: wrap;
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-muted);
+}
+
+.notes__person {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: var(--mw-text-xs);
-  color: var(--mw-fg-muted);
 }
 
 .notes__swatch {

@@ -233,9 +233,9 @@ export function NoteList({ manifest, notes, timezone, onEdit, onDelete, onGo }: 
               {until !== undefined && ' →'}
             </button>
             {(knownIds.length > 0 || unknownNames.length > 0) && (
-              <span className="notes__person">
+              <span className="notes__who">
                 {knownIds.map((id) => (
-                  <span key={id}>
+                  <span key={id} className="notes__person">
                     <span
                       className="notes__swatch"
                       style={{ background: colors.get(id) }}
@@ -245,7 +245,7 @@ export function NoteList({ manifest, notes, timezone, onEdit, onDelete, onGo }: 
                   </span>
                 ))}
                 {unknownNames.map((name) => (
-                  <span key={name}>{name}</span>
+                  <span key={name} className="notes__person">{name}</span>
                 ))}
               </span>
             )}

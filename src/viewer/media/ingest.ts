@@ -295,8 +295,12 @@ export function legacyNoteToNote(legacy: LegacyNote, people: readonly Person[]):
  * A caption has no id of its own, so it gets a stable one derived from the
  * item id (`caption:<item id>`), which stays the same across re-ingests of
  * the same folder rather than minting a new one every time.
+ *
+ * Exported for direct testing — this is the highest-risk code in the task
+ * (duration arithmetic, name resolution, resolved-instant lookup), and it
+ * only needs a plain `Manifest` object to exercise, no `File`/browser mocking.
  */
-function migrateLegacyNotes(manifest: Manifest): Note[] {
+export function migrateLegacyNotes(manifest: Manifest): Note[] {
   const out: Note[] = [];
   for (const legacy of manifest.notes ?? []) {
     out.push(legacyNoteToNote(legacy, manifest.people));
