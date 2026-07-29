@@ -51,7 +51,7 @@ thing to explain. `items[].note` disappears.
 id,at,until,people,photo,author,text
 n_k3f9x2,2026-07-25T15:45:00-06:00,,Priya,,Dan,wrong turn on the ridge
 n_p1a7m4,2026-07-25T15:53:00-06:00,,Priya;Sam,PXL_20260725_215331309.jpg,Dan,the buckle
-,2026-07-26T03:00:00-06:00,2026-07-26T06:40:00-06:00,Sam,,Priya,asleep in the car
+,2026-07-26T03:00:00-06:00,2026-07-26T06:40:00-06:00,Sam,,Dan;Priya,asleep in the car
 ```
 
 | Column | Meaning |
@@ -61,7 +61,7 @@ n_p1a7m4,2026-07-25T15:53:00-06:00,,Priya;Sam,PXL_20260725_215331309.jpg,Dan,the
 | `until` | End of a span. Blank for a moment. Crewing is mostly spans: waiting, driving, sleeping. |
 | `people` | Who it is **about**. Semicolon-separated names. |
 | `photo` | Item this is a caption for. Blank for a standalone note. |
-| `author` | Who **wrote** it. Distinct from `people`. |
+| `author` | Who **wrote** it. Semicolon-separated names, same as `people`. |
 | `text` | The note. |
 
 **Matched by header name, not column position**, so anyone may reorder columns
@@ -164,26 +164,38 @@ mapping is part of the format, not an implementation detail:
 | When | `at` | — |
 | Until (optional) | `until` | — |
 | Whose | `people` | **Now multi-select.** See below. |
-| — | `author` | **New.** See below. |
+| Written by | `author` | **New**, also multi-select. See below. |
 | — | `photo` | Filled only when captioning from the lightbox. |
 | — | `id` | Minted at creation. Never shown. |
 
-### `people` becomes a searchable multi-select
+### `people` and `author` are both searchable multi-selects
 
-Today it is a single `<select>` with an "Everyone" option. `people` is plural
-now, so it becomes a **searchable multi-select** — the same control pattern as
-the timezone picker, which the owner asked for on the same grounds: a list you
-filter by typing beats a list you scroll. Choosing nobody means the note
-belongs to the event rather than to a person, which is what "Everyone" meant.
+`Whose` is a single `<select>` today. Both columns now hold any number of
+names, so both get the same **searchable multi-select** — the control pattern
+the owner asked for on the timezone field, on the same grounds: a list you
+filter by typing beats a list you scroll.
+
+Making them the same type rather than one singular and one plural is
+deliberate. Two columns, one control, one parsing rule, one sentence to
+explain. And multiple authors is a real case:
+
+> "i guess you can have multiple authors as well. i can imagine multiple people
+> writing down an experience all at the same time."
+
+Choosing nobody in `people` means the note belongs to the event rather than to
+a person — what the old "Everyone" option meant.
 
 ### `author` comes from a "you are…" setting, and never blocks writing
 
-The site has never known who is using it. It gets a **"you are…" picker**,
+The site has never known who is using it. It gets a **"you are…" picker** —
+which also takes more than one name, for two people working side by side —
 defaulting to **unset**:
 
 - Unset, you can still write notes; they are saved with `author` blank.
 - On save, if any note has a blank author, it asks once and stamps them all.
-- Set it, and every note you write is stamped as you go.
+- Set it, and every note you write is stamped as you go. The composer shows
+  the field pre-filled, so a note someone else contributed can be re-attributed
+  without changing the setting.
 
 Kept in the browser's local storage, **not in the manifest** — it is a fact
 about who is at this laptop, not about the event, and would be wrong the moment
