@@ -289,6 +289,14 @@ and `tests/media-store.test.ts` fails if any URL is created and not revoked.
 - **Video posters seek ~0.15s in, not to 0.** The first frame of a phone
   recording is usually black or mid-autoexposure. A codec the browser cannot
   handle never fires `seeked`, so the wait needs a timeout, not just events.
+- **Once a seek is requested, ONLY `seeked` may report success.** Setting
+  `currentTime` updates the property immediately while the seek is still in
+  flight, and Chrome drops `readyState` back to 1 meanwhile because it is
+  re-buffering. A second ready-signal (`canplay` after `loadeddata`) that
+  re-checks "are we there yet" therefore reads a readyState that is
+  momentarily too low and declares a perfectly good clip unplayable. This
+  broke every video thumbnail once; `tests/video-poster.test.ts` drives a
+  fake element through that exact sequence.
 - **Only one video plays at a time**, tracked in `MediaContext`.
 
 ### One state object, four projections *(M5, M7)*

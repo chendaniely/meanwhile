@@ -125,19 +125,40 @@ export async function decodeVideoPoster(
   }
 }
 
+/** The bit of `HTMLVideoElement` this needs, so a test can stand in for one. */
+export interface SeekableVideo {
+  readyState: number;
+  videoWidth: number;
+  currentTime: number;
+  duration: number;
+  addEventListener(type: string, handler: () => void): void;
+  removeEventListener(type: string, handler: () => void): void;
+}
+
 /**
  * Resolves once a frame is actually painted, or false if it never arrives.
  *
- * Deliberately belt-and-braces. A codec the browser cannot handle never fires
- * `seeked` at all, so events alone can hang forever; but a timeout alone
- * turns any slow decode into a false "cannot display this file", which is a
- * lie about the user's video. So: several ready signals, a generous deadline,
- * and success as soon as there is a frame to draw.
+ * ONCE A SEEK HAS BEEN REQUESTED, ONLY `seeked` MAY REPORT SUCCESS. This is
+ * the whole subtlety, and getting it wrong broke every video thumbnail:
+ *
+ *   Setting `currentTime` updates the property IMMEDIATELY, while the seek
+ *   itself is still in flight — and Chrome drops `readyState` back to 1 in
+ *   the meantime, because it is re-buffering at the new position. So a
+ *   second ready-signal (`canplay` arriving after `loadeddata`) would find
+ *   "we are already at the target" and report on a readyState that was
+ *   momentarily too low. Result: `finish=false ... rs=1`, and a perfectly
+ *   good clip labelled unplayable.
+ *
+ * Several ready signals are still listened for, because which one arrives
+ * first varies by container and browser; they just cannot conclude anything
+ * once a seek is under way. A codec the browser truly cannot handle never
+ * fires `seeked` at all, which is what the deadline is for.
  */
-function seekToFrame(video: HTMLVideoElement, duration?: number): Promise<boolean> {
+export function seekToFrame(video: SeekableVideo, duration?: number, timeoutMs = 10_000): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
-    const timer = setTimeout(() => finish(false), 10_000);
+    let seekRequested = false;
+    const timer = setTimeout(() => finish(false), timeoutMs);
 
     const finish = (ok: boolean) => {
       if (settled) return;
@@ -147,22 +168,24 @@ function seekToFrame(video: HTMLVideoElement, duration?: number): Promise<boolea
       resolve(ok);
     };
 
+    // HAVE_CURRENT_DATA or better means there is something on the frame.
+    const readyToDraw = () => video.readyState >= 2 && video.videoWidth > 0;
+
     const seek = () => {
+      if (settled || seekRequested) return;
       const length = duration ?? video.duration;
       // A little way in: the first frame of a phone recording is often black
       // or mid-autoexposure. Never past the halfway point of a short clip.
       const target = Number.isFinite(length) && length > 0 ? Math.min(0.15, length / 2) : 0;
-      if (target <= 0) finish(readyToDraw());
-      else if (Math.abs(video.currentTime - target) > 0.001) video.currentTime = target;
-      else finish(readyToDraw());
+      if (target <= 0) {
+        finish(readyToDraw());
+        return;
+      }
+      seekRequested = true;
+      video.currentTime = target;
     };
 
-    // HAVE_CURRENT_DATA or better means there is something on the frame.
-    const readyToDraw = () => video.readyState >= 2 && video.videoWidth > 0;
-
     const listeners: Array<[string, () => void]> = [
-      // Any of these can be the first to indicate a decodable frame; which one
-      // arrives first varies by container and by browser.
       ['loadeddata', seek],
       ['canplay', seek],
       ['seeked', () => finish(readyToDraw())],
