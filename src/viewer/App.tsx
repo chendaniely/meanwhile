@@ -26,7 +26,7 @@ import {
 import { CourseCharts } from './components/CourseCharts.tsx';
 import { CourseFallback } from './components/CourseFallback.tsx';
 import { CourseRail } from './components/CourseRail.tsx';
-import { NoteComposer, NoteList } from './components/Notes.tsx';
+import { NoteList } from './components/Notes.tsx';
 import { NoteDock } from './components/NoteDock.tsx';
 import { Feed } from './components/Feed.tsx';
 import { Lightbox } from './components/Lightbox.tsx';
@@ -864,16 +864,6 @@ export function App() {
                   onRange={setWindow}
                 />
               )}
-              {view.view === 'lanes' && (
-                <NoteComposer
-                  manifest={stage.manifest}
-                  cursor={view.cursor}
-                  onAdd={addNote}
-                  {...(stage.manifest.event.timezone
-                    ? { timezone: stage.manifest.event.timezone }
-                    : {})}
-                />
-              )}
 
               {view.view === 'feed' && (
                 <Feed
@@ -942,7 +932,13 @@ export function App() {
             * worth scrolling to. In the lanes it sits inline just under the
             * track, where the cursor you just set is still on screen.
             */}
-          {(view.view === 'feed' || view.view === 'course') && (
+          {/*
+            * Present in EVERY view, because writing a note is a thing you do
+            * while reading, not a feature of one page. It was in the feed and
+            * the course but inline under the lanes, which meant scrolling to
+            * reach it there and a different shape in each place.
+            */}
+          {placement && (
             <NoteDock
               manifest={stage.manifest}
               cursor={view.cursor}

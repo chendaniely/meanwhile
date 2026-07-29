@@ -645,6 +645,32 @@ browser's always-truthy `window` object instead of the value.
   timestamp into an instant, so changing it moves items in and out of the
   unplaced tray.
 
+### The course view shows the COURSE, not the crop *(real timed GPX)*
+
+Reported as "it looks like it got cut off or isn't rendering half the 100mile
+race". The import was fine — 121,077 points, 104.8 mi, 20,419 ft, 33h38m,
+parsed in 546ms. The charts were **filtering the track to the visible time
+window**, which comes from where the PHOTOGRAPHS cluster. Two test photos two
+minutes apart cropped a thirty-three-hour race to two minutes of it.
+
+**The window's job is to filter media. The course is not media** — it is the
+thing the media happened along, and you cannot judge where a photograph sits
+in a race without the whole shape of it. The charts now always plot the full
+course and draw the window as a shaded band instead.
+
+Note this only appeared with a TIMED track: an untimed one plots against
+distance and was never filtered, so the bug arrived with the good file.
+
+### The note dock is app chrome, not a feature of one view *(owner)*
+
+> "it should just be a persistant part across all pages/tabs so the UI is
+> consitant. it's really anoying to have to scrool all the way down"
+
+It began in the feed only, then the course, with an inline composer under the
+lanes — three placements and two shapes for one action. It is now in every
+view, in the same corner. Writing a note is something done WHILE reading, so
+it belongs to the app rather than to whichever page happens to be open.
+
 ### Interpolating a time from the photographs — the ONE place it is allowed
 
 > "sometimes as the runner, you remember moments from the elevation / course.

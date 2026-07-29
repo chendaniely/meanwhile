@@ -132,18 +132,25 @@ export function CourseCharts({
 
   const timed = course.timed;
 
-  // A timed course with no photos loaded still has its own span to plot.
+  /*
+   * THE WHOLE COURSE, ALWAYS.
+   *
+   * These charts used to be cropped to the visible time window, which comes
+   * from where the PHOTOGRAPHS cluster. On a hundred-miler whose crew shot at
+   * six aid stations that hid most of the race — the profile simply stopped
+   * half way, which reads as a truncated import rather than a crop.
+   *
+   * The window's job is to filter media. The course is not media: it is the
+   * thing the media happened along, and you cannot judge where a photograph
+   * sits in the race without seeing the whole shape of it. The crop is drawn
+   * as a band over the profile instead, so it is visible rather than
+   * destructive.
+   */
   const span: TimeWindow | null = timed
-    ? (range ?? { from: course.from as number, to: course.to as number })
+    ? { from: course.from as number, to: course.to as number }
     : null;
 
-  const visible = useMemo(
-    () =>
-      span
-        ? track.filter((s) => s.at !== undefined && s.at >= span.from && s.at <= span.to)
-        : track,
-    [track, span],
-  );
+  const visible = track;
 
   // One accessor decides the whole axis, so nothing below needs to branch.
   const xOfSample = useMemo(
@@ -181,6 +188,15 @@ export function CourseCharts({
 
   const width = domain.max - domain.min;
   const pctOf = (x: number) => (width > 0 ? ((x - domain.min) / width) * 100 : 0);
+
+  // Only worth drawing when it actually hides something.
+  const crop =
+    range && timed && width > 0 && (range.from > domain.min || range.to < domain.max)
+      ? {
+          left: Math.max(0, pctOf(range.from)),
+          width: Math.min(100, pctOf(range.to)) - Math.max(0, pctOf(range.from)),
+        }
+      : null;
 
   /** Axis units under the pointer, measured against the plot column. */
   const xAt = (clientX: number): number | null => {
@@ -277,6 +293,15 @@ export function CourseCharts({
         })}
 
         <div className="charts__overlay" ref={plotArea}>
+          {/* Where the time window sits within the race. Shown rather than
+              enforced — see the note above. */}
+          {crop && (
+            <span
+              className="charts__crop"
+              style={{ left: `${crop.left}%`, width: `${crop.width}%` }}
+              aria-hidden="true"
+            />
+          )}
           {focusX !== null && (
             <span
               className="charts__crosshair"
@@ -300,6 +325,7 @@ export function CourseCharts({
           </span>
         )}
         {onPick && <span className="charts__note-hint">Click to note something here</span>}
+        {crop && <span className="charts__cropnote">shaded = current time window</span>}
         <span className="charts__total">
           {(course.length / 1000).toFixed(1)} km · {Math.round(course.ascent)} m climb
         </span>

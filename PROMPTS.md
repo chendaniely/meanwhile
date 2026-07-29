@@ -720,3 +720,31 @@ today — but so is a friend legitimately running their own copy. And a
 non-commercial restriction is not open source under either the OSI or FSF
 definitions, which matters before anyone is invited to contribute. Options
 written up in `TODO.md`.
+
+
+---
+
+> i uploaded a gpx but it looks liek it got cut off or isn't rendering half the
+> 100mile race, is there a limit to the file import?
+
+No limit — the real activity export parses completely: 121,077 points, 104.8
+miles, 20,419 ft, 33h38m, heart rate and cadence, in 546ms. The charts were
+cropping the track to the visible TIME WINDOW, which is derived from where the
+photographs cluster, so a race whose crew shot at six aid stations showed only
+the slice around them.
+
+**DECISION — the course view always plots the whole course**, with the window
+drawn as a shaded band rather than enforced. The window filters media; the
+course is the thing the media happened along. The bug only appeared with a
+timed track, because an untimed one plots against distance and was never
+filtered.
+
+---
+
+> for the note in the bottom right corner that's floating. i think the swim lane
+> page shoudl have that too. it should just be a persistant part across all
+> pages/tabs so the UI is consitant
+
+Right — it had drifted into three placements and two shapes for one action.
+The dock is now in every view, same corner, and the inline composer under the
+lanes is gone.

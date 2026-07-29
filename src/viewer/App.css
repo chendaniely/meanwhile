@@ -2189,3 +2189,21 @@ button.report__tag--on {
   border-radius: var(--mw-radius-lg);
   margin-top: var(--mw-space-3);
 }
+
+/* The time window, drawn over the full course profile rather than cropping
+   it. The crop filters photographs; the course is what they happened along. */
+.charts__crop {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgb(242 101 34 / 10%);
+  border-left: 1px solid rgb(242 101 34 / 45%);
+  border-right: 1px solid rgb(242 101 34 / 45%);
+  pointer-events: none;
+}
+
+.charts__cropnote {
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-muted);
+  margin-left: var(--mw-space-3);
+}
