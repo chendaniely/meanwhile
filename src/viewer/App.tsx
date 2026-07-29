@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { GroupingInfo } from '../core/assemble.ts';
-import type { Manifest } from '../core/schema.ts';
+import type { Manifest, PersonId } from '../core/schema.ts';
+import { toggleVisible, VIEW_NAMES } from '../core/state.ts';
 import {
   clampWindow,
   densestWindow,
@@ -9,6 +10,7 @@ import {
   type TimeWindow,
 } from '../core/window.ts';
 import { Feed } from './components/Feed.tsx';
+import { Swimlanes } from './components/Swimlanes.tsx';
 import { FilePicker, FolderPicker } from './components/FolderPicker.tsx';
 import { IngestReport } from './components/IngestReport.tsx';
 import { TimeWindowSlider } from './components/TimeWindowSlider.tsx';
@@ -16,6 +18,7 @@ import { TimezoneField } from './components/TimezoneField.tsx';
 import { UnplacedTray } from './components/UnplacedTray.tsx';
 import { MediaProvider } from './media/MediaContext.tsx';
 import { useMediaStore } from './media/useMediaStore.ts';
+import { useAppState } from './hooks/useAppState.ts';
 import type { PickedFile } from './media/folder.ts';
 import { downloadManifest, ingestFolder, type IngestProgress } from './media/ingest.ts';
 import './App.css';
@@ -44,6 +47,9 @@ type Stage =
 
 export function App() {
   const [stage, setStage] = useState<Stage>({ name: 'empty' });
+  // Cursor, view, visible lanes, and the crop — one object, mirrored in the
+  // URL so any moment is a link.
+  const [view, setView] = useAppState();
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState('Untitled event');
   const [timezone, setTimezone] = useState(guessTimezone);
@@ -144,6 +150,8 @@ export function App() {
    */
   const range: TimeWindow | null = useMemo(() => {
     if (!manifest || !placement || !bounds) return null;
+    // A shared link wins over the manifest: whoever sent it meant that crop.
+    if (view.range) return clampWindow(view.range, bounds);
     const saved = manifest.event.range;
     if (saved) {
       const from = Date.parse(saved.from);
@@ -154,6 +162,9 @@ export function App() {
   }, [manifest, placement, bounds]);
 
   const setWindow = (next: TimeWindow | null) => {
+    // Kept in both places on purpose: the manifest so it survives export, the
+    // URL so it survives being sent to someone.
+    setView({ range: next });
     if (stage.name !== 'loaded') return;
     const event = { ...stage.manifest.event };
     if (next) {
@@ -266,9 +277,46 @@ export function App() {
             />
           )}
 
+          {placement && range && (
+            <nav className="views" aria-label="View">
+              {VIEW_NAMES.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  className={view.view === name ? 'view-tab view-tab--on' : 'view-tab'}
+                  aria-pressed={view.view === name}
+                  onClick={() => setView({ view: name })}
+                >
+                  {name === 'feed' ? 'Feed' : 'Swimlanes'}
+                </button>
+              ))}
+            </nav>
+          )}
+
           {placement && range && store && (
             <MediaProvider store={store}>
-              <Feed manifest={stage.manifest} placed={placement.placed} range={range} />
+              {view.view === 'lanes' && (
+                <Swimlanes
+                  manifest={stage.manifest}
+                  placed={placement.placed}
+                  range={range}
+                  state={view}
+                  onCursor={(cursor) => setView({ cursor })}
+                  onTogglePerson={(person: PersonId) =>
+                    setView({
+                      visible: toggleVisible(view, person, stage.manifest.people.map((p) => p.id)),
+                    })
+                  }
+                />
+              )}
+              {view.view === 'feed' && (
+                <Feed
+                  manifest={stage.manifest}
+                  placed={placement.placed}
+                  range={range}
+                  state={view}
+                />
+              )}
               <UnplacedTray manifest={stage.manifest} unplaced={placement.unplaced} />
             </MediaProvider>
           )}

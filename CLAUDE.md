@@ -12,8 +12,7 @@ look at the race. Scaffold, brand tokens,
 report, and manifest export. Plus `scripts/inspect-media.ts`
 (`make inspect DIR=...`). 138 tests pass.
 
-**Not built:** swimlanes, moment grid, map. App state and URL sync, the
-unplaced tray, notes, the course spine.
+**Not built:** moment grid, map, in-viewer notes, the course spine.
 
 **Do not describe anything below as implemented unless it is in the "Built"
 list.** Check before you cite.
@@ -291,6 +290,41 @@ and `tests/media-store.test.ts` fails if any URL is created and not revoked.
   recording is usually black or mid-autoexposure. A codec the browser cannot
   handle never fires `seeked`, so the wait needs a timeout, not just events.
 - **Only one video plays at a time**, tracked in `MediaContext`.
+
+### One state object, four projections *(M5, M7)*
+
+`src/core/state.ts` holds `{ view, cursor, range, visible }` and nothing else.
+Switching view changes `view` alone, which is what makes the cursor survive
+the switch — that shared cursor is the difference between goggles and four
+separate pages.
+
+It is mirrored into the URL hash, so any moment is a link. Two details that
+matter:
+
+- **The URL is written in an EFFECT, never inside the state updater.** An
+  impure updater is exactly what React double-invokes to catch, and this
+  project has already paid for that lesson once.
+- **`replaceState`, not `pushState`.** Scrubbing a cursor would otherwise
+  stack hundreds of history entries and make the back button useless.
+
+`visible: null` means everyone, which is deliberately distinct from an empty
+set meaning every lane hidden. `who=` in a URL is the latter.
+
+### Swimlanes: the gaps are the encoding *(M7)*
+
+Lanes are binned by **screen position**, not by fixed clock intervals, so a
+gap you can see is a gap in the data at whatever zoom you are at. Fixed bins
+would leave pixel-level gaps to the accident of where a boundary fell.
+
+- **An empty lane is drawn, never omitted.** Someone asleep in a car for six
+  hours is the point, not an absence of data.
+- **`longestGap` is measured from the window edges**, not between the first
+  and last item — otherwise someone who shot twice at the start and then
+  stopped would report no gap at all.
+- **A mark is never thinner than a quarter of the lane.** Presence must not
+  be mistakable for absence, so a single photo reads as clearly as a burst.
+- **D3 is used for tick placement only.** `scaleTime().ticks()` knows that
+  every three hours beats every 2.8 hours. Nothing else goes through it.
 
 ### Verifying in a browser: the tab must be VISIBLE
 

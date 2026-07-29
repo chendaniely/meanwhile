@@ -4,9 +4,50 @@
 relation to everyone else.*
 
 > **Status: working, but not finished.**
-> Point it at a folder and you get a chronological feed of everyone's photos
-> and video, croppable to the part of the event you care about. The swimlane,
-> grid, and map views aren't built yet. See [Running it](#running-it).
+> Point it at a folder and you get a chronological feed and a swimlane view of
+> everyone's photos and video, croppable to the part of the event you care
+> about. The moment grid and the map aren't built yet, and neither is the
+> course profile. See [Running it](#running-it).
+
+## Two things to know before you start
+
+**1. One folder is fine — it sorts people out by phone.**
+
+You don't have to organise anything. If you give it a single folder with
+everyone's photos mixed together — which is exactly what a **Google Photos
+album download** gives you — meanwhile works out who's who from the phones
+themselves, using the camera model recorded inside each photo. You get one
+lane per device, named something like "Google Pixel 8 Pro", and you rename
+each to whoever was carrying it.
+
+If you *do* have a folder per person, it uses those names instead.
+
+**2. Get originals. Anything sent through a chat app is useless here.**
+
+> **AirDrop, a shared Drive/Dropbox folder, or a Google Photos album.
+> Never iMessage, WhatsApp, Messenger, Instagram, or Slack.**
+
+Those apps recompress photos and **strip the timestamp out of them** — and a
+photo with no timestamp has no place on a timeline. It's not a quality
+issue you can live with; the photo simply cannot be positioned.
+
+Things that destroy the timestamp:
+
+| | |
+|---|---|
+| **WhatsApp, Messenger, Instagram DMs, Slack, Discord** | Strip everything. WhatsApp leaves the date in the filename but not the time. |
+| **iMessage** | Strips it unless the sender picks the original size. |
+| **Screenshotting a photo** | You get a picture of a picture, with today's date. |
+| **Right-click-saving from Google Photos in a browser** | Gives a re-encoded copy with the metadata removed. Use the album's **"Download all"** button instead. |
+| **Emailing "optimised for web"** | Same story. |
+| **Airdropped to a phone, then re-shared** | Usually survives once, rarely twice. |
+
+Things that keep it: **AirDrop**, **a USB cable**, **Google Photos "Download
+all"**, **Dropbox/Drive uploads of the original file**, **iCloud shared
+albums**, and **email with "actual size"**.
+
+meanwhile will tell you which files arrived stripped and who sent them, so you
+can go back and ask — but it can't recover what isn't there.
 
 ## The idea
 
@@ -58,16 +99,19 @@ It's the athlete's own file, so there are no API terms or fees involved — and
 the same export works from Garmin, COROS, or any other watch, so none of this
 depends on Strava at all.
 
-## Planned views
+## The views
 
-All four share one cursor, so switching between them keeps your place in time.
+All four share one cursor, so switching between them keeps your place in time
+— and that place lives in the address bar, so any moment is a link you can
+text to someone.
 
-- **Swimlanes** — one lane per person across a shared clock, over the course's
-  elevation profile.
-- **Feed** — everything interleaved into one chronological scroll, tagged by
-  who shot it. The phone view.
-- **Moment grid** — pick a time, see what all four people captured right then.
-- **Map** — where everyone was, drawn on the course.
+- **Feed** ✅ — everything interleaved into one chronological scroll, grouped
+  into moments and tagged by who shot it. The phone view.
+- **Swimlanes** ✅ — one lane per person across a shared clock. The gaps are
+  the point: the six-hour hole in the runner's lane while three crew lanes are
+  busy *is* the story of the night section.
+- **Moment grid** — pick a time, see what everyone captured right then.
+- **Map** — where everyone was, drawn on the course. Needs the GPX.
 
 ## Running it
 
@@ -118,17 +162,23 @@ Run `make dev`, click **Open a folder**, and:
 3. **It crops to the event.** A folder usually holds far more than the day
    itself; meanwhile finds the stretch where the photos actually cluster and
    opens on that. Drag the handles, or click the date chips, to change it.
-4. **It shows you the timeline** — a chronological feed of everyone's media,
-   grouped into moments and tagged with who shot it. When two people were
-   shooting at the same time, the moment says so. That is the whole point of
-   the thing.
-5. **Export manifest.json** saves the lot, including your crop and any names
+4. **It shows you the timeline**, two ways. The **feed** is a chronological
+   scroll grouped into moments — when two people were shooting at the same
+   time, the moment says so. The **swimlanes** put one lane per person on a
+   shared clock, so you can see who was and wasn't shooting, and when. Click
+   anywhere on the lanes to drop a cursor.
+5. **Click any photo or video** to see it full size; video plays there.
+6. **The address bar follows you.** View, cursor, crop, and hidden lanes all
+   live in the URL, so any moment is a link you can send to someone.
+7. **Export manifest.json** saves the lot, including your crop and any names
    you've corrected.
 
-There's also a report of how much to trust the times, and `make inspect`
-(below) for checking a folder from the terminal.
+There's also a report of how much to trust the times, an expandable list of
+any files that arrived without a timestamp (with who to ask for the
+originals), and `make inspect` for checking a folder from the terminal.
 
-Still missing: the swimlane view, the moment grid, and the map.
+Still missing: the moment grid, the map, and the course elevation profile —
+all three of which want the GPX.
 
 ## Why it's fast, and why nothing is uploaded
 
@@ -208,11 +258,9 @@ that wrong and the tab swells until it dies. So every one of them is handed
 out and taken back in a single place in the code, with a test that fails if
 any is created and not released.
 
-### How to arrange your folder
+### How it works out who's who
 
-**Two ways, and you don't have to do anything special for either.**
-
-If you have a folder per person, meanwhile uses the folder names:
+If you have a folder per person, it uses the folder names:
 
 ```
 cascade-crest-100/
@@ -222,18 +270,15 @@ cascade-crest-100/
     IMG_0001.jpg
 ```
 
-If everything is in one flat folder — which is what a **Google Photos album
-download** gives you, with everyone's photos mixed together — meanwhile
-works out who's who **from the phones themselves**. You'll get one lane per
-device, named something like "Google Pixel 8 Pro", and you rename each to the
-person who was carrying it.
+Otherwise it goes by device, as described at the top. It isn't guessing
+blindly — it reads the camera model recorded inside each photo, and falls
+back to how each phone names its files.
 
-It's not guessing blindly: it reads the camera model recorded inside each
-photo, and falls back to how each phone names its files. It tells you which
-files it was least sure about. Android videos in particular record no camera
-model at all, so those are matched by filename or, failing that, by what else
-was being shot at the same moment — which can be wrong when two people are
-standing together.
+**Where it's least certain, and says so:** Android videos record no camera
+model at all. Those are matched by filename where the naming is
+distinctive, and failing that by what else was being shot at the same
+moment — which can be wrong when two people are standing together. The
+report tells you how many fell back to that weakest signal.
 
 If you only have a handful of loose files, **Pick files instead** works too.
 
@@ -283,25 +328,31 @@ Three things worth knowing:
   hours off with nothing on screen to warn you. `make inspect` prints a
   warning when any file falls back to it.
 
-## If you're contributing photos to an event
+## What to send the people who took photos
 
-One rule matters more than all the others:
+Copy and paste this to them:
 
-> **AirDrop or a shared Drive folder. Never iMessage or WhatsApp.**
+> I'm putting everyone's photos from the race onto one shared timeline, so we
+> can see what each of us was doing at the same moments.
+>
+> For it to work I need the **original files**, because the timestamp inside
+> them is what places each photo. Sending them through WhatsApp, iMessage,
+> Messenger or Instagram strips that out and the photo can't be used.
+>
+> Easiest ways that keep it intact:
+> - **AirDrop** them to me (iPhone/Mac)
+> - Drop them in the **shared Drive/Dropbox folder**
+> - Add them to the **shared Google Photos album**
+>
+> Videos too, please. And don't worry about picking the good ones — send
+> everything, it's easier to leave things out later than to chase them down.
 
-Those apps recompress your photos and strip the timestamp out of them — and a
-photo with no timestamp has no place on the timeline. Send originals.
-
-Coming from Google Photos? Use the album's **"Download all"** button to get a
-ZIP. Don't right-click-save individual images from the web page; that gives
-you a stripped copy.
-
-**On an iPhone, send JPEG rather than HEIC.** iPhones shoot HEIC by default,
-and no browser except Safari can display it. meanwhile will still place a
-HEIC photo correctly on the timeline — it can read the timestamp — but it
-can't show you the picture. To change this: *Settings → Camera → Formats →
-Most Compatible*. For photos you've already taken, AirDrop to a Mac converts
-them automatically.
+**One extra note for iPhone users.** iPhones shoot HEIC by default, and no
+browser except Safari can display it. meanwhile will still place a HEIC photo
+at the right moment — it reads the timestamp fine — but the picture itself
+shows as a placeholder. To change it: *Settings → Camera → Formats → Most
+Compatible*. Photos already taken convert automatically when AirDropped to a
+Mac.
 
 ## Documentation
 

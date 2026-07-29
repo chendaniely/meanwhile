@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { assignLaneColors } from '../../core/palette.ts';
 import type { Manifest, PersonId } from '../../core/schema.ts';
+import { isVisible, type AppState } from '../../core/state.ts';
 import { formatClock, formatDateTime } from '../../core/time.ts';
 import { isWithin, type PlacedItem, type TimeWindow } from '../../core/window.ts';
 import { Lightbox } from './Lightbox.tsx';
@@ -24,6 +25,8 @@ interface Props {
   manifest: Manifest;
   placed: readonly PlacedItem[];
   range: TimeWindow;
+  /** Shared with every other view: hiding a lane hides it here too. */
+  state: AppState;
 }
 
 /** Gap that separates one moment from the next. */
@@ -49,7 +52,7 @@ function toMoments(placed: readonly PlacedItem[]): Moment[] {
   return out;
 }
 
-export function Feed({ manifest, placed, range }: Props) {
+export function Feed({ manifest, placed, range, state }: Props) {
   const zone = manifest.event.timezone;
   const colors = useMemo(() => assignLaneColors(manifest.people), [manifest.people]);
   const names = useMemo(
@@ -64,7 +67,10 @@ export function Feed({ manifest, placed, range }: Props) {
    * the whole event, not stop at the edge of whichever moment you opened
    * from.
    */
-  const visible = useMemo(() => placed.filter((p) => isWithin(p.instant, range)), [placed, range]);
+  const visible = useMemo(
+    () => placed.filter((p) => isWithin(p.instant, range) && isVisible(state, p.item.person)),
+    [placed, range, state],
+  );
   const moments = useMemo(() => toMoments(visible), [visible]);
 
   const [openIndex, setOpenIndex] = useState<number | null>(null);

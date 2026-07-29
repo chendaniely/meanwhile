@@ -1000,3 +1000,228 @@
 .field__input[aria-invalid='true'] {
   border-color: var(--mw-accent);
 }
+
+/* ---- view switcher ----------------------------------------------------- */
+
+.views {
+  display: flex;
+  gap: var(--mw-space-1);
+  margin: var(--mw-space-6) 0 0;
+  border-bottom: 1px solid var(--mw-border);
+}
+
+.view-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: var(--mw-space-2) var(--mw-space-4);
+  color: var(--mw-fg-muted);
+  font-size: var(--mw-text-sm);
+}
+
+.view-tab:hover {
+  color: var(--mw-fg);
+}
+
+.view-tab--on {
+  color: var(--mw-fg);
+  border-bottom-color: var(--mw-accent);
+  font-weight: 700;
+}
+
+/* ---- swimlanes --------------------------------------------------------- */
+
+.lanes {
+  margin: var(--mw-space-6) 0;
+}
+
+.lanes__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--mw-space-3);
+  min-height: 2rem;
+  margin-bottom: var(--mw-space-2);
+}
+
+.lanes__readout {
+  display: flex;
+  align-items: baseline;
+  gap: var(--mw-space-3);
+}
+
+.lanes__time {
+  font-weight: 700;
+}
+
+.lanes__hint,
+.lanes__hidden {
+  font-size: var(--mw-text-sm);
+  color: var(--mw-fg-muted);
+}
+
+/* Two lanes active at one moment is the app's entire premise, so it is said
+   in words rather than left to be inferred from the marks. */
+.lanes__together {
+  font-size: var(--mw-text-xs);
+  color: var(--mw-accent);
+  border: 1px solid var(--mw-accent);
+  border-radius: 999px;
+  padding: 0 var(--mw-space-2);
+}
+
+.lanes__grid {
+  display: flex;
+  gap: var(--mw-space-3);
+}
+
+.lanes__labels {
+  flex: none;
+  width: 13rem;
+}
+
+.lanes__label {
+  display: flex;
+  align-items: center;
+  gap: var(--mw-space-2);
+  overflow: hidden;
+  /* Line-height is reset because the body's 1.75 makes two items taller than
+     the lane, and a label that does not line up with its lane is worse than
+     no label. */
+  line-height: 1.2;
+}
+
+.lanes__name {
+  display: flex;
+  align-items: center;
+  gap: var(--mw-space-2);
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  font-size: var(--mw-text-sm);
+  line-height: 1.2;
+  color: var(--mw-fg);
+}
+
+.lanes__name:hover {
+  color: var(--mw-fg-muted);
+}
+
+.lanes__name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lanes__swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.lanes__gap {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-faint);
+  line-height: 1.2;
+}
+
+.lanes__track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.lanes__gridlines {
+  position: absolute;
+  inset: 0;
+}
+
+/* Recessive on purpose: the gridlines locate the marks, they do not compete
+   with them. */
+.lanes__gridline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--mw-border);
+}
+
+.lanes__lane {
+  position: relative;
+  border-bottom: 1px solid var(--mw-border);
+}
+
+.lanes__mark {
+  position: absolute;
+  bottom: 1px;
+  min-width: 2px;
+  border-radius: 1px;
+}
+
+/* Markers run through every lane, so "sunrise" or "the aid station" is a
+   single event across all of them rather than a note on one. */
+.lanes__marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--mw-fg-faint);
+  border-left: 1px dashed var(--mw-fg-faint);
+}
+
+.lanes__hover {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--mw-fg-muted);
+  pointer-events: none;
+}
+
+.lanes__cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--mw-accent);
+  pointer-events: none;
+}
+
+.lanes__cursor-label {
+  position: absolute;
+  top: -1.4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: var(--mw-text-xs);
+  color: var(--brand-near-black);
+  background: var(--mw-accent);
+  border-radius: var(--mw-radius);
+  padding: 0 var(--mw-space-1);
+  white-space: nowrap;
+}
+
+.lanes__axis {
+  position: relative;
+  height: 1.5rem;
+  margin-left: calc(13rem + var(--mw-space-3));
+}
+
+.lanes__tick {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-muted);
+  white-space: nowrap;
+}
+
+.lanes__hidden .chip {
+  margin-left: var(--mw-space-2);
+}
