@@ -4,13 +4,51 @@
   flex-direction: column;
 }
 
+/* Sticky, because the actions it carries have to stay reachable no matter how
+   far down a 200-photo feed you are. */
 .app__header {
-  padding: var(--mw-space-4) var(--mw-space-6);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  padding: var(--mw-space-3) var(--mw-space-6);
   border-bottom: 1px solid var(--mw-border);
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--mw-space-4);
   flex-wrap: wrap;
+  background: var(--mw-bg);
+}
+
+/* The event name IS the page title, so it is edited in place in the bar
+   rather than hidden in a settings panel. */
+.app__event {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--mw-text-md);
+  color: var(--mw-fg);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--mw-radius-sm);
+  padding: var(--mw-space-1) var(--mw-space-2);
+}
+
+.app__event:hover {
+  border-color: var(--mw-border);
+}
+
+.app__event:focus-visible {
+  border-color: var(--mw-accent);
+  outline: none;
+  background: var(--mw-surface);
+}
+
+.app__bar-actions {
+  display: flex;
+  gap: var(--mw-space-2);
+  align-items: center;
+  flex-wrap: wrap;
+  margin-left: auto;
 }
 
 .app__title {
@@ -1782,4 +1820,191 @@ button.report__tag--on {
 .feed__note-text {
   margin: var(--mw-space-1) 0 0;
   color: var(--mw-fg);
+}
+
+/* ---------------------------------------------------------------------------
+   The reference panel: settings, report, unplaced, notes list.
+
+   Collapsed by default and placed ABOVE the views. These are read once when a
+   folder lands and then rarely, so they cost one line here — where before they
+   sat after an unbounded feed and were effectively unreachable.
+   --------------------------------------------------------------------------- */
+
+.panel {
+  border: 1px solid var(--mw-border);
+  border-radius: var(--mw-radius-lg);
+  margin-bottom: var(--mw-space-3);
+  background: var(--mw-surface);
+}
+
+.panel__summary {
+  cursor: pointer;
+  padding: var(--mw-space-2) var(--mw-space-3);
+  display: flex;
+  align-items: baseline;
+  gap: var(--mw-space-3);
+  flex-wrap: wrap;
+  list-style: none;
+}
+
+.panel__summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel__summary::before {
+  content: '▸';
+  color: var(--mw-fg-muted);
+}
+
+.panel[open] .panel__summary::before {
+  content: '▾';
+}
+
+.panel__title {
+  font-weight: 700;
+}
+
+.panel__digest {
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-muted);
+  margin-left: auto;
+}
+
+.panel__body {
+  padding: 0 var(--mw-space-3) var(--mw-space-3);
+  border-top: 1px solid var(--mw-border);
+}
+
+/* ---------------------------------------------------------------------------
+   The note dock: a composer that floats over the feed.
+   --------------------------------------------------------------------------- */
+
+.dock {
+  position: fixed;
+  right: var(--mw-space-4);
+  bottom: var(--mw-space-4);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--mw-space-2);
+}
+
+.dock__button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mw-space-2);
+  cursor: pointer;
+  font: inherit;
+  color: var(--mw-bg);
+  background: var(--mw-accent);
+  border: none;
+  border-radius: 999px;
+  padding: var(--mw-space-2) var(--mw-space-4);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
+}
+
+.dock__button--on {
+  color: var(--mw-fg);
+  background: var(--mw-surface);
+  border: 1px solid var(--mw-accent);
+}
+
+.dock__count {
+  font-size: var(--mw-text-xs);
+  opacity: 0.8;
+}
+
+.dock__panel {
+  width: min(30rem, calc(100vw - 2 * var(--mw-space-4)));
+  padding: var(--mw-space-3);
+  border: 1px solid var(--mw-border);
+  border-radius: var(--mw-radius-lg);
+  background: var(--mw-surface);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 55%);
+}
+
+.dock__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--mw-space-2);
+}
+
+.dock__close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--mw-fg-muted);
+  font-size: var(--mw-text-md);
+  line-height: 1;
+}
+
+.dock__close:hover {
+  color: var(--mw-fg);
+}
+
+/* ---------------------------------------------------------------------------
+   The composer, shared by the dock and the inline placement under the lanes.
+   --------------------------------------------------------------------------- */
+
+.compose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mw-space-2);
+  margin: var(--mw-space-3) 0;
+}
+
+.compose__text {
+  width: 100%;
+  font: inherit;
+  color: var(--mw-fg);
+  background: var(--mw-bg);
+  border: 1px solid var(--mw-border);
+  border-radius: var(--mw-radius-md);
+  padding: var(--mw-space-2);
+  resize: vertical;
+}
+
+.compose__text:focus-visible {
+  border-color: var(--mw-accent);
+  outline: none;
+}
+
+.compose__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mw-space-3);
+  align-items: flex-end;
+}
+
+.compose__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-muted);
+}
+
+.compose__field input,
+.compose__field select {
+  font: inherit;
+  color: var(--mw-fg);
+  background: var(--mw-bg);
+  border: 1px solid var(--mw-border);
+  border-radius: var(--mw-radius-sm);
+  padding: var(--mw-space-1) var(--mw-space-2);
+  /* Chrome renders the date picker's icon dark-on-dark otherwise. */
+  color-scheme: dark;
+}
+
+.compose__hint {
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-muted);
+  margin: 0;
+}
+
+/* The sticky course rail sits below the sticky bar, not under it. */
+.rail {
+  top: calc(var(--mw-space-2) + 3.5rem);
 }

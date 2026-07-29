@@ -356,6 +356,33 @@ matter:
 `visible: null` means everyone, which is deliberately distinct from an empty
 set meaning every lane hidden. `who=` in a URL is the latter.
 
+### Nothing persistent may sit after the content *(UI pass)*
+
+> "after i upload 200+ images all the things on the bottom of the site are
+> really hard to notice"
+
+The diagnosis is structural, not cosmetic. The feed is **unbounded** — 2,000
+files is the stated target — and the export button, the people list, the
+unplaced tray and the note composer were all rendered *after* it. At 231 files
+that is a few thousand pixels down. Anything that must stay reachable cannot
+be positioned behind a region that grows without limit.
+
+The rule, in priority order by how often a thing is used:
+
+1. **Constant, must never be hunted for** → the sticky top bar. Event name,
+   Open folder, Add files, Save manifest.
+2. **Used while reading** → within reach of the view it belongs to. The note
+   composer sits inline under the lanes, and **floats over the feed**, because
+   the feed has no bottom worth scrolling to.
+3. **Reference, read once per folder** → a collapsed `<details>` panel ABOVE
+   the views, costing one line with a digest (`231 placed · 1 unplaced · 4
+   people`). Settings, ingest report, unplaced tray, the notes list.
+
+`Notes.tsx` exports the composer and the list **separately** for exactly this
+reason: writing is constant and reading back is reference, so they belong in
+different places. Keeping them one component is what dragged the composer
+below two thousand photographs.
+
 ### Swimlanes: the gaps are the encoding *(M7)*
 
 Lanes are binned by **screen position**, not by fixed clock intervals, so a

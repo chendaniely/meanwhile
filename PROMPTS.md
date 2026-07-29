@@ -554,3 +554,39 @@ already at 3am. Typing a timestamp is the fallback, not the path.
 Notes interleave with the photographs in the feed rather than living in their
 own list, because the feed's whole job is reading the event in the order it
 happened.
+
+
+---
+
+> how easy is it to put in a arbitrary note in the timeline view instead of the
+> swim Lane view?
+
+It already worked — the composer was in every view and its time field is
+editable — but the feed never set a cursor, so the field started blank. Fixed
+by making the feed's scroll-spy move the shared cursor, which also closed a
+real hole: the feed was the one view not taking part in "one cursor, four
+projections", so you could scrub in the lanes and flip to the feed but not the
+reverse. The spy had also been attached only when a GPX was loaded.
+
+---
+
+> i thienk there's a few UI things we need to fix up. after i upload 200+
+> images all the things on the bottom of the site are really hard to notice.
+> let's think about the UI and UX a bit mroe and see what needs to move around.
+> i also feel like a few items like saving and loading a manifest file should be
+> in a top menu bar or something. and adding a note should be more towards the
+> top in the swim lane view, and should float in the feed view
+
+**DECISION — nothing persistent may sit after the content.** The problem is
+structural: the feed is unbounded, and the export button, people list,
+unplaced tray and note composer were all rendered after it.
+
+Placement now follows how often a thing is used. Constant → sticky top bar
+(event name, Open folder, Add files, Save manifest). Used while reading → next
+to the view it serves: the composer is inline under the lanes and **floats
+over the feed**. Reference → a collapsed panel above the views with a one-line
+digest, holding settings, the ingest report, the unplaced tray and the notes
+list.
+
+`Notes.tsx` was split into a composer and a list, because writing is constant
+and reading back is reference — one component forced both into the same place.

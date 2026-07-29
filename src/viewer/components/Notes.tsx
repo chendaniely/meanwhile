@@ -13,27 +13,22 @@ import type { PlacedNote } from '../../core/window.ts';
  * something that we remembered happening during some point of time."*
  *
  * **The cursor is the default time**, which is the whole trick. Scrub to 3am
- * in the lanes, come here, and the new note is already at 3am; you type the
- * sentence and nothing else. Typing a timestamp by hand is possible but is
- * the fallback, not the path.
+ * in the lanes, or scroll the feed to the small hours, and the new note is
+ * already there; you type the sentence and nothing else. Typing a timestamp
+ * by hand is possible but is the fallback, not the path.
  *
  * A note can carry a person, and that is not decoration: it puts the note in
- * that person's lane, which is what lets one EXPLAIN A GAP. Six empty hours
- * in the runner's lane is the story of the night section, and "asleep at
+ * that person's lane, which is what lets one EXPLAIN A GAP. Six empty hours in
+ * the runner's lane is the story of the night section, and "asleep at
  * Cottonwood" is the caption that gap never had.
+ *
+ * **The composer and the list are separate exports on purpose.** Writing a
+ * note is something you do constantly while reading, so it has to sit within
+ * reach of whatever view you are in — under the lanes, floating over the feed.
+ * Re-reading the whole list is reference, and belongs with the other reference
+ * material. Keeping them one component forced both to live in the same place,
+ * which is how the composer ended up below two thousand photographs.
  */
-
-interface Props {
-  manifest: Manifest;
-  notes: readonly PlacedNote[];
-  /** Where the timeline cursor is, used as the default time for a new note. */
-  cursor: Instant | null;
-  timezone?: string;
-  onAdd: (note: Note) => void;
-  onEdit: (id: string, change: Partial<Note>) => void;
-  onDelete: (id: string) => void;
-  onGo: (instant: Instant) => void;
-}
 
 /** Local ISO (`2026-07-25T21:43`) for `<input type="datetime-local">`. */
 function toLocalInput(instant: Instant, timezone?: string): string {
@@ -67,11 +62,17 @@ function fromLocalInput(value: string, timezone?: string): Instant | null {
   return guess + (guess - rendered);
 }
 
-export function Notes({
-  manifest, notes, cursor, timezone, onAdd, onEdit, onDelete, onGo,
-}: Props) {
-  const colors = assignLaneColors(manifest.people);
-  const names = new Map(manifest.people.map((p) => [p.id, p.name]));
+interface ComposerProps {
+  manifest: Manifest;
+  /** Where the timeline cursor is, used as the default time for a new note. */
+  cursor: Instant | null;
+  timezone?: string;
+  onAdd: (note: Note) => void;
+  /** Called after a note is added, so a popover can close itself. */
+  onDone?: () => void;
+}
+
+export function NoteComposer({ manifest, cursor, timezone, onAdd, onDone }: ComposerProps) {
   const [text, setText] = useState('');
   const [person, setPerson] = useState<PersonId | ''>('');
   const [when, setWhen] = useState('');
@@ -101,121 +102,130 @@ export function Notes({
     setText('');
     setSpan('');
     setWhen('');
+    onDone?.();
   };
 
   return (
-    <section className="notes" aria-label="Notes">
-      <h2 className="notes__heading">Notes</h2>
-      <p className="notes__lead">
-        Something that happened with no photo of it &mdash; a wrong turn, a nap in
-        the car, a rough patch. It lands on the timeline like everything else.
-      </p>
-
-      <div className="notes__compose">
-        <textarea
-          className="notes__text"
-          value={text}
-          rows={2}
-          placeholder="What happened?"
-          aria-label="What happened"
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            // Enter submits; Shift+Enter is a new line. A note is usually one
-            // sentence, so reaching for the mouse for every one would grate.
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-        />
-        <div className="notes__fields">
-          <label className="notes__field">
-            <span>When</span>
-            <input
-              type="datetime-local"
-              className="mw-mono"
-              value={whenValue}
-              onChange={(e) => setWhen(e.target.value)}
-            />
-          </label>
-          <label className="notes__field">
-            <span>Until (optional)</span>
-            <input
-              type="datetime-local"
-              className="mw-mono"
-              value={span}
-              onChange={(e) => setSpan(e.target.value)}
-            />
-          </label>
-          <label className="notes__field">
-            <span>Whose</span>
-            <select value={person} onChange={(e) => setPerson(e.target.value)}>
-              <option value="">Everyone</option>
-              {manifest.people.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </label>
-          <button type="button" className="button button--primary" onClick={submit}>
-            Add note
-          </button>
-        </div>
-        {cursor !== null && !when && (
-          <p className="notes__hint mw-mono">
-            Using the cursor: {formatDateTime(cursor, timezone)}
-          </p>
-        )}
+    <div className="compose">
+      <textarea
+        className="compose__text"
+        value={text}
+        rows={2}
+        placeholder="Something that happened — a wrong turn, a nap in the car…"
+        aria-label="What happened"
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          // Enter submits; Shift+Enter is a new line. A note is usually one
+          // sentence, so reaching for the mouse every time would grate.
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            submit();
+          }
+        }}
+      />
+      <div className="compose__fields">
+        <label className="compose__field">
+          <span>When</span>
+          <input
+            type="datetime-local"
+            className="mw-mono"
+            value={whenValue}
+            onChange={(e) => setWhen(e.target.value)}
+          />
+        </label>
+        <label className="compose__field">
+          <span>Until (optional)</span>
+          <input
+            type="datetime-local"
+            className="mw-mono"
+            value={span}
+            onChange={(e) => setSpan(e.target.value)}
+          />
+        </label>
+        <label className="compose__field">
+          <span>Whose</span>
+          <select value={person} onChange={(e) => setPerson(e.target.value)}>
+            <option value="">Everyone</option>
+            {manifest.people.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </label>
+        <button type="button" className="button button--primary" onClick={submit}>
+          Add note
+        </button>
       </div>
-
-      {notes.length === 0 ? (
-        <p className="notes__empty">No notes yet.</p>
-      ) : (
-        <ul className="notes__list">
-          {notes.map(({ note, instant, until }) => (
-            <li key={note.id} className="notes__row">
-              <button
-                type="button"
-                className="notes__when mw-mono"
-                onClick={() => onGo(instant)}
-                title="Jump the timeline here"
-              >
-                {formatDateTime(instant, timezone)}
-                {until !== undefined && ' →'}
-              </button>
-              {note.person && (
-                <span className="notes__person">
-                  <span
-                    className="notes__swatch"
-                    style={{ background: colors.get(note.person) }}
-                    aria-hidden="true"
-                  />
-                  {names.get(note.person) ?? note.person}
-                </span>
-              )}
-              <input
-                className="notes__edit"
-                defaultValue={note.text}
-                aria-label="Note text"
-                onBlur={(e) => {
-                  const next = e.target.value.trim();
-                  // Clearing the text deletes it: an empty note is not a note,
-                  // and this is more discoverable than hunting for Remove.
-                  if (!next) onDelete(note.id);
-                  else if (next !== note.text) onEdit(note.id, { text: next });
-                }}
-              />
-              <button
-                type="button"
-                className="notes__delete"
-                onClick={() => onDelete(note.id)}
-                aria-label={`Delete note: ${note.text}`}
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
+      {cursor !== null && !when && (
+        <p className="compose__hint mw-mono">
+          Using the cursor: {formatDateTime(cursor, timezone)}
+        </p>
       )}
-    </section>
+    </div>
+  );
+}
+
+interface ListProps {
+  manifest: Manifest;
+  notes: readonly PlacedNote[];
+  timezone?: string;
+  onEdit: (id: string, change: Partial<Note>) => void;
+  onDelete: (id: string) => void;
+  onGo: (instant: Instant) => void;
+}
+
+export function NoteList({ manifest, notes, timezone, onEdit, onDelete, onGo }: ListProps) {
+  const colors = assignLaneColors(manifest.people);
+  const names = new Map(manifest.people.map((p) => [p.id, p.name]));
+
+  if (notes.length === 0) {
+    return <p className="notes__empty">No notes yet.</p>;
+  }
+
+  return (
+    <ul className="notes__list">
+      {notes.map(({ note, instant, until }) => (
+        <li key={note.id} className="notes__row">
+          <button
+            type="button"
+            className="notes__when mw-mono"
+            onClick={() => onGo(instant)}
+            title="Jump the timeline here"
+          >
+            {formatDateTime(instant, timezone)}
+            {until !== undefined && ' →'}
+          </button>
+          {note.person && (
+            <span className="notes__person">
+              <span
+                className="notes__swatch"
+                style={{ background: colors.get(note.person) }}
+                aria-hidden="true"
+              />
+              {names.get(note.person) ?? note.person}
+            </span>
+          )}
+          <input
+            className="notes__edit"
+            defaultValue={note.text}
+            aria-label="Note text"
+            onBlur={(e) => {
+              const next = e.target.value.trim();
+              // Clearing the text deletes it: an empty note is not a note, and
+              // this is more discoverable than hunting for a Remove button.
+              if (!next) onDelete(note.id);
+              else if (next !== note.text) onEdit(note.id, { text: next });
+            }}
+          />
+          <button
+            type="button"
+            className="notes__delete"
+            onClick={() => onDelete(note.id)}
+            aria-label={`Delete note: ${note.text}`}
+          >
+            ×
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }

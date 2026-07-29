@@ -17,7 +17,8 @@ import {
 } from '../core/window.ts';
 import { CourseCharts } from './components/CourseCharts.tsx';
 import { CourseRail } from './components/CourseRail.tsx';
-import { Notes } from './components/Notes.tsx';
+import { NoteComposer, NoteList } from './components/Notes.tsx';
+import { NoteDock } from './components/NoteDock.tsx';
 import { Feed } from './components/Feed.tsx';
 import { Lightbox } from './components/Lightbox.tsx';
 import { Swimlanes } from './components/Swimlanes.tsx';
@@ -405,6 +406,26 @@ export function App() {
     );
   }, [placement, range, view]);
 
+  /**
+   * The one line worth seeing without opening the panel.
+   *
+   * Unplaced files are the number that changes what you do next — they are
+   * the ones nobody can see on the timeline — so it is named even when zero
+   * is the happy answer.
+   */
+  const summaryLine = placement
+    ? [
+        `${placement.placed.length.toLocaleString()} placed`,
+        placement.unplaced.length > 0
+          ? `${placement.unplaced.length.toLocaleString()} unplaced`
+          : null,
+        `${manifest?.people.length ?? 0} ${manifest?.people.length === 1 ? 'person' : 'people'}`,
+        notes.length > 0 ? `${notes.length} ${notes.length === 1 ? 'note' : 'notes'}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : '';
+
   /** Notes inside the crop, so they follow the window like the photos do. */
   const visibleNotes = useMemo(
     () => (range ? notes.filter((n) => isWithin(n.instant, range)) : notes),
@@ -439,9 +460,46 @@ export function App() {
 
   return (
     <div className="app">
+      {/*
+        * The bar carries what must always be reachable: which event this is,
+        * and the file actions. Those used to sit under the photographs, which
+        * put them a couple of thousand pixels down a 200-photo feed — the
+        * content region is unbounded, so nothing persistent can live after it.
+        */}
       <header className="app__header">
         <h1 className="app__title">meanwhile</h1>
-        <p className="app__tagline">Many people&rsquo;s photos, one shared timeline.</p>
+        {stage.name === 'loaded' ? (
+          <>
+            <input
+              className="app__event"
+              value={stage.manifest.event.title}
+              aria-label="Event name"
+              onChange={(e) => updateEvent({ title: e.target.value })}
+            />
+            <div className="app__bar-actions">
+              <FolderPicker
+                variant="quiet"
+                label="Open folder"
+                onPicked={(f) => void handlePicked(f, 'replace')}
+                onError={setError}
+              />
+              <FilePicker
+                onPicked={(f) => void handlePicked(f, 'add')}
+                onError={setError}
+                label="Add files"
+              />
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={() => downloadManifest(stage.manifest)}
+              >
+                Save manifest
+              </button>
+            </div>
+          </>
+        ) : (
+          <p className="app__tagline">Many people&rsquo;s photos, one shared timeline.</p>
+        )}
       </header>
 
       {error && (
@@ -498,35 +556,72 @@ export function App() {
 
       {stage.name === 'loaded' && (
         <main className="app__loaded">
-          <div className="event-fields">
-            <label className="field">
-              <span className="field__label">Event</span>
-              <input
-                className="field__input"
-                value={stage.manifest.event.title}
-                onChange={(e) => updateEvent({ title: e.target.value })}
+          {/*
+            * Settings and the ingest report are REFERENCE: read once when the
+            * folder lands, then rarely. Collapsed and placed above the views,
+            * they cost one line until wanted — where before they sat below the
+            * feed and could not be reached at all.
+            */}
+          <details className="panel">
+            <summary className="panel__summary">
+              <span className="panel__title">Event settings and report</span>
+              <span className="panel__digest mw-mono">
+                {summaryLine}
+              </span>
+            </summary>
+
+            <div className="panel__body">
+              <div className="event-fields">
+                <TimezoneField
+                  value={stage.manifest.event.timezone ?? ''}
+                  onChange={(next) => updateEvent({ timezone: next })}
+                />
+                <label className="field">
+                  <span className="field__label">Strava activity (optional)</span>
+                  <input
+                    className="field__input mw-mono"
+                    value={courseUrlOf(stage.manifest)}
+                    placeholder="https://www.strava.com/activities/…"
+                    onChange={(e) => updateCourse(e.target.value)}
+                  />
+                </label>
+              </div>
+              <p className="app__hint">
+                A Strava link renders as a link and nothing more &mdash; it carries no
+                time-and-distance data, so there is no elevation profile, no map, and no
+                automatic clock alignment. Those need a <strong>GPX export</strong> from the
+                activity (the &hellip; menu &rarr; Export GPX), which works the same from
+                Garmin or COROS.
+              </p>
+
+              <IngestReport
+                manifest={stage.manifest}
+                grouping={stage.grouping}
+                {...(range ? { range } : {})}
+                onExport={() => downloadManifest(stage.manifest)}
+                onRename={renamePerson}
+                onRole={setRole}
               />
-            </label>
-            <TimezoneField
-              value={stage.manifest.event.timezone ?? ''}
-              onChange={(next) => updateEvent({ timezone: next })}
-            />
-            <label className="field">
-              <span className="field__label">Strava activity (optional)</span>
-              <input
-                className="field__input mw-mono"
-                value={courseUrlOf(stage.manifest)}
-                placeholder="https://www.strava.com/activities/…"
-                onChange={(e) => updateCourse(e.target.value)}
-              />
-            </label>
-          </div>
-          <p className="app__hint">
-            A Strava link renders as a link and nothing more &mdash; it carries no
-            time-and-distance data, so there is no elevation profile, no map, and no automatic
-            clock alignment. Those need a <strong>GPX export</strong> from the activity
-            (the &hellip; menu &rarr; Export GPX), which works the same from Garmin or COROS.
-          </p>
+
+              {placement && (
+                <UnplacedTray manifest={stage.manifest} unplaced={placement.unplaced} />
+              )}
+
+              <section className="notes" aria-label="Notes">
+                <h2 className="notes__heading">Notes</h2>
+                <NoteList
+                  manifest={stage.manifest}
+                  notes={notes}
+                  onEdit={editNote}
+                  onDelete={deleteNote}
+                  onGo={(cursor) => setView({ cursor })}
+                  {...(stage.manifest.event.timezone
+                    ? { timezone: stage.manifest.event.timezone }
+                    : {})}
+                />
+              </section>
+            </div>
+          </details>
 
           {stage.importError && (
             <p className="callout callout--warn">
@@ -642,6 +737,16 @@ export function App() {
                   onOpen={(entry) => setOpenId(entry.item.id)}
                 />
               )}
+              {view.view === 'lanes' && (
+                <NoteComposer
+                  manifest={stage.manifest}
+                  cursor={view.cursor}
+                  onAdd={addNote}
+                  {...(stage.manifest.event.timezone
+                    ? { timezone: stage.manifest.event.timezone }
+                    : {})}
+                />
+              )}
 
               {view.view === 'feed' && (
                 <Feed
@@ -702,46 +807,25 @@ export function App() {
                     : {})}
                 />
               )}
-              <UnplacedTray manifest={stage.manifest} unplaced={placement.unplaced} />
-
-              {/* Below the timeline, not above it: you write a note about
-                  something you just looked at, and the cursor it defaults to
-                  is the one you set up there. */}
-              <Notes
-                manifest={stage.manifest}
-                notes={notes}
-                cursor={view.cursor}
-                onAdd={addNote}
-                onEdit={editNote}
-                onDelete={deleteNote}
-                onGo={(cursor) => setView({ cursor })}
-                {...(stage.manifest.event.timezone
-                  ? { timezone: stage.manifest.event.timezone }
-                  : {})}
-              />
             </MediaProvider>
           )}
 
-          <IngestReport
-            manifest={stage.manifest}
-            grouping={stage.grouping}
-            {...(range ? { range } : {})}
-            onExport={() => downloadManifest(stage.manifest)}
-            onRename={renamePerson}
-            onRole={setRole}
-          >
-            <FolderPicker
-              variant="quiet"
-              label="Open a different folder"
-              onPicked={(f) => void handlePicked(f, 'replace')}
-              onError={setError}
+          {/*
+            * The composer floats over the feed, because the feed has no bottom
+            * worth scrolling to. In the lanes it sits inline just under the
+            * track, where the cursor you just set is still on screen.
+            */}
+          {view.view === 'feed' && (
+            <NoteDock
+              manifest={stage.manifest}
+              cursor={view.cursor}
+              onAdd={addNote}
+              count={notes.length}
+              {...(stage.manifest.event.timezone
+                ? { timezone: stage.manifest.event.timezone }
+                : {})}
             />
-            <FilePicker
-              onPicked={(f) => void handlePicked(f, 'add')}
-              onError={setError}
-              label="Add more files"
-            />
-          </IngestReport>
+          )}
         </main>
       )}
     </div>
