@@ -132,6 +132,52 @@ most to least trustworthy. Two things depend on it:
 happens at render time, so adjusting one person's clock is a one-line
 manifest edit rather than a rewrite of every item they shot.
 
+### GPS time is NOT the shutter time — verified, do not re-order *(M3)*
+
+The single most important correction so far, found only by running against
+231 real files from the race. It is counter-intuitive enough that a future
+session will be tempted to "fix" it back. Do not.
+
+EXIF `GPSDateStamp`/`GPSTimeStamp` comes from satellites, so it looks like the
+most authoritative timestamp available. It is not: **it timestamps the GPS
+FIX, not the shutter.** Measured across 134 real photos that had both:
+
+| | shutter minus GPS |
+|---|---|
+| median | **11 s** |
+| p90 | 76 s |
+| p99 | 399 s |
+| worst | **919 s** (15 minutes) |
+| within 2s | only 27 of 134 |
+
+And the error is **non-uniform**, so photos taken seconds apart collapse onto
+one instant. Before the fix, 27 distinct instants had collisions and up to
+**seven different photos shared a single second** — destroying exactly the
+relative ordering this app exists to show. A wrong timezone shifts everything
+equally and preserves order; a stale fix does not. For a simultaneity app,
+uniform error is far cheaper than non-uniform error.
+
+Also decisive: **all 134 GPS-bearing photos also had a zoned shutter time,
+and zero photos had GPS only.** Preferring GPS made 134 photos worse and
+helped none.
+
+So `gps` ranks BELOW the shutter sources. Its two remaining jobs:
+
+1. Fallback when a file has no EXIF date at all.
+2. **The clock-offset estimator for M10.** Note the right estimator is
+   `min(shutter − gps)` across many photos, not the mean: fix staleness is
+   one-sided (a fix always precedes the shutter), so the minimum is the
+   freshest fix and therefore the true clock error. On this dataset the min
+   was 0, correctly indicating an accurate camera clock.
+
+Result on the real folder: `gps` 134 → 0, collisions 27 → 2, and the two
+remaining are a duplicated file and a genuine 461ms burst that EXIF can only
+record to the second.
+
+Keep `isDeviceClock()` (provenance) separate from `TIME_SOURCE_RANK`
+(accuracy). GPS is ranked low but is still *not* the device clock, so
+`clockOffset` must not be applied to it.
+
 ### Metadata extraction gotchas *(learned building M2)*
 
 Things a future session will otherwise rediscover the hard way:
@@ -149,8 +195,15 @@ Things a future session will otherwise rediscover the hard way:
 - **`filename` outranks `mvhd` on purpose.** Android filenames are honestly
   local wall-clock and resolve correctly through `event.timezone`; `mvhd` may
   be local time mislabelled as UTC and resolves to the wrong hour.
-- **Pixel `PXL_` filenames are UTC, not local**, so `parseFilenameTime()`
-  refuses them. Pixel files carry full EXIF anyway, so nothing is lost.
+- **Pixel `PXL_` filenames are UTC, not local.** Confirmed three ways against
+  real files: against a duplicate whose naive EXIF read six hours earlier in a
+  UTC-6 zone, against `mvhd` minus clip duration, and against a zoned shutter
+  time matching to the second. They also carry **milliseconds**
+  (`HHMMSSmmm`) — a trailing-digit guard that forgets this rejects every
+  Pixel name, which is how 15 real videos ended up on the `mvhd` fallback.
+- **Android writes `mvhd` at the END of recording** (start + duration + ~2s),
+  on both Samsung and Pixel. The filename records the start, which is what a
+  timeline wants. Another reason `filename` outranks `mvhd`.
 - **WhatsApp names (`IMG-20260822-WA0001`) carry a date but no time.**
   Also refused — midnight is not where the photo was taken.
 - **Node's type-stripping cannot handle TS parameter properties or `enum`.**

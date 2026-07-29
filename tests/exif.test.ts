@@ -152,7 +152,7 @@ describe('UTC offsets', () => {
       }),
     )?.offsetTimeOriginal;
 
-  it('normalises the forms cameras write', () => {
+  it('normalizes the forms cameras write', () => {
     expect(withOffset('-07:00')).toBe('-07:00');
     expect(withOffset('+0530')).toBe('+05:30');
     expect(withOffset('Z')).toBe('+00:00');
@@ -166,7 +166,7 @@ describe('UTC offsets', () => {
 
 describe('GPS edge cases', () => {
   it('ignores exactly 0,0', () => {
-    // Null Island. Devices that never got a fix write it, and honouring it
+    // Null Island. Devices that never got a fix write it, and honoring it
     // would drag the map to the Gulf of Guinea.
     const exif = parse(
       typicalPhoto({

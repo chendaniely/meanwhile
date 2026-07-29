@@ -52,6 +52,19 @@ commit hash when done.
   the image; the tile shows a placeholder. Decoding would mean a WASM
   dependency, which the budget does not currently justify.
 
+## Found while verifying against real race files (2026-07-28)
+
+- **Sub-second ordering.** EXIF `DateTimeOriginal` has one-second resolution,
+  so a burst lands on one instant — two real photos 461ms apart shared a
+  timestamp. `SubSecTimeOriginal` (tag 0x9291) would break the tie. Cheap, and
+  it matters for ordering within a burst.
+- **Duplicate detection.** The real folder contained
+  `20260724_184945.jpg` and `20260724_184945(0).jpg` — the same photo twice.
+  Both currently become items. Worth flagging, if not auto-merging.
+- **A better `mvhd` estimate.** Android writes it at the END of recording, so
+  `mvhd − duration` would recover the start. Not generalized because Apple's
+  `mvhd` means something else again; the filename covers Android today.
+
 ## Housekeeping
 
 - Choose a license.

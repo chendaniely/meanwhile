@@ -136,7 +136,7 @@ describe('HEIC', () => {
     exif: [{ tag: TAG_DATETIME_ORIGINAL, type: TYPE_ASCII, values: '2026:08:22 06:12:04' }],
   });
 
-  it('recognises the brand', () => {
+  it('recognizes the brand', () => {
     expect(isHeic(read(buildHeic(tiff)))).toBe(true);
     expect(isHeic(read(buildMov()))).toBe(false);
   });

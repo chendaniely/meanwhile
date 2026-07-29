@@ -15,7 +15,7 @@
 import { Reader } from './bytes.ts';
 
 export interface ExifData {
-  /** Naive local time, normalised to "2026-08-22T13:12:04". No zone. */
+  /** Naive local time, normalized to "2026-08-22T13:12:04". No zone. */
   dateTimeOriginal?: string;
   /** UTC offset the camera recorded alongside it, e.g. "-07:00". */
   offsetTimeOriginal?: string;
@@ -145,13 +145,13 @@ export function parseTiffExif(tiff: Reader): ExifData | null {
     const exif = readIfd(tiff, exifOffset, le);
     if (exif) {
       const shot =
-        normaliseExifDate(asString(exif.get(TAG_DATETIME_ORIGINAL))) ??
-        normaliseExifDate(asString(exif.get(TAG_DATETIME_DIGITIZED)));
+        normalizeExifDate(asString(exif.get(TAG_DATETIME_ORIGINAL))) ??
+        normalizeExifDate(asString(exif.get(TAG_DATETIME_DIGITIZED)));
       if (shot) out.dateTimeOriginal = shot;
 
       const offset =
-        normaliseOffset(asString(exif.get(TAG_OFFSET_TIME_ORIGINAL))) ??
-        normaliseOffset(asString(exif.get(TAG_OFFSET_TIME)));
+        normalizeOffset(asString(exif.get(TAG_OFFSET_TIME_ORIGINAL))) ??
+        normalizeOffset(asString(exif.get(TAG_OFFSET_TIME)));
       if (offset) out.offsetTimeOriginal = offset;
 
       const w = asNumber(exif.get(TAG_PIXEL_X));
@@ -169,7 +169,7 @@ export function parseTiffExif(tiff: Reader): ExifData | null {
       const lat = dms(gps.get(TAG_GPS_LAT), asString(gps.get(TAG_GPS_LAT_REF)), 'S', 90);
       const lon = dms(gps.get(TAG_GPS_LON), asString(gps.get(TAG_GPS_LON_REF)), 'W', 180);
       // Exactly 0,0 is Null Island, off the coast of Ghana. Devices that
-      // never got a fix write it, and honouring it would drag the map there.
+      // never got a fix write it, and honoring it would drag the map there.
       if (lat !== null && lon !== null && !(lat === 0 && lon === 0)) {
         out.gps = [lat, lon];
       }
@@ -295,7 +295,7 @@ function asNumbers(v: Value | undefined): number[] | null {
  * because "0000:00:00 00:00:00" parsed naively becomes a real date in the
  * year zero and would place the item at the far left of every timeline.
  */
-function normaliseExifDate(raw: string | null): string | null {
+function normalizeExifDate(raw: string | null): string | null {
   if (!raw) return null;
   const m = /^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(raw.trim());
   if (!m) return null;
@@ -309,7 +309,7 @@ function normaliseExifDate(raw: string | null): string | null {
 }
 
 /** Accepts "+09:00", "-0700", "Z"; returns a canonical "+09:00" form. */
-function normaliseOffset(raw: string | null): string | null {
+function normalizeOffset(raw: string | null): string | null {
   if (!raw) return null;
   const s = raw.trim();
   if (s === 'Z') return '+00:00';

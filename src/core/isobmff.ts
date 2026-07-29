@@ -175,7 +175,7 @@ function metaChildrenStart(r: Reader, meta: Box): number {
 
 export interface VideoMeta {
   /**
-   * Apple's `com.apple.quicktime.creationdate`, normalised to an ISO string
+   * Apple's `com.apple.quicktime.creationdate`, normalized to an ISO string
    * WITH its UTC offset. Trustworthy.
    */
   creationDate?: string;
@@ -231,7 +231,7 @@ export function parseVideoMeta(r: Reader): VideoMeta | null {
   const udta = childBox(r, moov, 'udta');
   if (udta) {
     const apple = readAppleKeys(r, udta);
-    const created = normaliseQuickTimeDate(apple.get('com.apple.quicktime.creationdate'));
+    const created = normalizeQuickTimeDate(apple.get('com.apple.quicktime.creationdate'));
     if (created) out.creationDate = created;
 
     const gps = parseIso6709(apple.get('com.apple.quicktime.location.ISO6709'));
@@ -244,7 +244,7 @@ export function parseVideoMeta(r: Reader): VideoMeta | null {
         // [length:u16][language:u16][text]
         const len = r.u16(day.contentStart);
         const text = len === null ? null : r.ascii(day.contentStart + 4, len);
-        const parsed = normaliseQuickTimeDate(text);
+        const parsed = normalizeQuickTimeDate(text);
         if (parsed) out.creationDate = parsed;
       }
     }
@@ -302,7 +302,7 @@ function readAppleKeys(r: Reader, udta: Box): Map<string, string> {
 }
 
 /** "2026-08-22T06:12:04-0700" and friends -> "2026-08-22T06:12:04-07:00". */
-function normaliseQuickTimeDate(raw: string | null | undefined): string | null {
+function normalizeQuickTimeDate(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?/.exec(
     raw.trim(),

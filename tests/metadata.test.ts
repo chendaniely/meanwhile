@@ -30,22 +30,27 @@ describe('classify', () => {
 });
 
 describe('parseFilenameTime', () => {
-  it('reads the common Android and Samsung patterns', () => {
-    expect(parseFilenameTime('IMG_20260822_131204.jpg')).toBe('2026-08-22T13:12:04');
-    expect(parseFilenameTime('VID_20260822_131204.mp4')).toBe('2026-08-22T13:12:04');
-    expect(parseFilenameTime('20260822_131204.jpg')).toBe('2026-08-22T13:12:04');
-    expect(parseFilenameTime('Screenshot_20260822-131204.png')).toBe('2026-08-22T13:12:04');
+  it('reads the common Android and Samsung patterns as naive local', () => {
+    const local = { at: '2026-08-22T13:12:04', zoned: false };
+    expect(parseFilenameTime('IMG_20260822_131204.jpg')).toEqual(local);
+    expect(parseFilenameTime('VID_20260822_131204.mp4')).toEqual(local);
+    expect(parseFilenameTime('20260822_131204.jpg')).toEqual(local);
+    expect(parseFilenameTime('Screenshot_20260822-131204.png')).toEqual(local);
+  });
+
+  it('reads Pixel names as UTC, not local', () => {
+    // Confirmed three ways against real files: against a duplicate whose
+    // naive EXIF read six hours earlier in a UTC-6 zone, against mvhd minus
+    // clip duration, and against a zoned shutter time matching to the second.
+    expect(parseFilenameTime('PXL_20260723_171909866.mp4')).toEqual({
+      at: '2026-07-23T17:19:09Z',
+      zoned: true,
+    });
   });
 
   it('refuses date-only names like WhatsApp writes', () => {
     // Midnight is not where that photo was taken. Better unplaced than wrong.
     expect(parseFilenameTime('IMG-20260822-WA0001.jpg')).toBeNull();
-  });
-
-  it('refuses Pixel names, whose timestamps are UTC not local', () => {
-    // Treating these as local would shift them by the UTC offset. Pixel files
-    // carry full EXIF anyway, so declining to guess costs nothing.
-    expect(parseFilenameTime('PXL_20260822_131204123.jpg')).toBeNull();
   });
 
   it('rejects impossible dates and times', () => {
@@ -62,61 +67,90 @@ describe('parseFilenameTime', () => {
 });
 
 describe('resolvePhotoTime priority', () => {
+  const TZ = { hasTimezone: true };
+  const NO_TZ = { hasTimezone: false };
+
   const full: ExifData = {
-    gpsInstant: '2026-08-22T13:12:04Z',
-    dateTimeOriginal: '2026-08-22T06:12:04',
-    offsetTimeOriginal: '-07:00',
+    // A real Pixel photo from the race: the GPS fix is 76 seconds behind the
+    // shutter. Both fields are present, which was true of all 134 GPS-bearing
+    // photos in the sample.
+    gpsInstant: '2026-07-22T17:12:22Z',
+    dateTimeOriginal: '2026-07-22T11:13:38',
+    offsetTimeOriginal: '-06:00',
   };
 
-  it('prefers satellite time above everything', () => {
-    expect(resolvePhotoTime(full, 'IMG_20260822_131204.jpg')).toEqual({
-      at: '2026-08-22T13:12:04Z',
-      timeSource: 'gps',
-    });
-  });
-
-  it('falls back to the camera clock plus its recorded zone', () => {
-    const { gpsInstant: _drop, ...noGps } = full;
-    expect(resolvePhotoTime(noGps, 'IMG_4417.jpg')).toEqual({
-      at: '2026-08-22T06:12:04-07:00',
+  it('prefers the SHUTTER over GPS, because a GPS fix goes stale', () => {
+    // The bug this replaced: GPS won, so this photo landed 76 seconds early.
+    // Across the real folder that collapsed up to 7 distinct photos onto a
+    // single instant and destroyed their relative order.
+    expect(resolvePhotoTime(full, 'PXL_20260722_171338854.jpg', TZ)).toEqual({
+      at: '2026-07-22T11:13:38-06:00',
       timeSource: 'exif-offset',
     });
   });
 
-  it('falls back to a naive camera clock', () => {
-    expect(resolvePhotoTime({ dateTimeOriginal: '2026-08-22T06:12:04' }, 'IMG_4417.jpg')).toEqual({
-      at: '2026-08-22T06:12:04',
+  it('prefers a naive shutter time over GPS when a timezone can resolve it', () => {
+    const { offsetTimeOriginal: _drop, ...noOffset } = full;
+    expect(resolvePhotoTime(noOffset, 'x.jpg', TZ)).toEqual({
+      at: '2026-07-22T11:13:38',
       timeSource: 'exif-naive',
     });
   });
 
-  it('falls back to the filename when EXIF was stripped in transit', () => {
-    expect(resolvePhotoTime(null, 'IMG_20260822_131204.jpg')).toEqual({
+  it('falls back to GPS when a naive time cannot be resolved', () => {
+    // Without event.timezone the naive shutter time is unplaceable, so the
+    // self-contained GPS instant is genuinely the better choice.
+    const { offsetTimeOriginal: _drop, ...noOffset } = full;
+    expect(resolvePhotoTime(noOffset, 'x.jpg', NO_TZ)).toEqual({
+      at: '2026-07-22T17:12:22Z',
+      timeSource: 'gps',
+    });
+  });
+
+  it('uses GPS when there is no shutter time at all', () => {
+    expect(resolvePhotoTime({ gpsInstant: '2026-07-22T17:12:22Z' }, 'x.jpg', TZ)).toEqual({
+      at: '2026-07-22T17:12:22Z',
+      timeSource: 'gps',
+    });
+  });
+
+  it('falls back to the filename when metadata was stripped in transit', () => {
+    expect(resolvePhotoTime(null, 'IMG_20260822_131204.jpg', TZ)).toEqual({
       at: '2026-08-22T13:12:04',
       timeSource: 'filename',
     });
   });
 
+  it('keeps an unplaceable time rather than discarding the data', () => {
+    // Setting event.timezone later must fix this item without a re-ingest.
+    expect(resolvePhotoTime({ dateTimeOriginal: '2026-08-22T06:12:04' }, 'x.jpg', NO_TZ)).toEqual({
+      at: '2026-08-22T06:12:04',
+      timeSource: 'exif-naive',
+    });
+  });
+
   it('gives up rather than guessing', () => {
-    expect(resolvePhotoTime(null, 'IMG_4417.jpg')).toEqual({ timeSource: 'none' });
-    expect(resolvePhotoTime({}, 'photo.jpg')).toEqual({ timeSource: 'none' });
+    expect(resolvePhotoTime(null, 'IMG_4417.jpg', TZ)).toEqual({ timeSource: 'none' });
+    expect(resolvePhotoTime({}, 'photo.jpg', TZ)).toEqual({ timeSource: 'none' });
   });
 });
 
 describe('resolveVideoTime priority', () => {
+  const TZ = { hasTimezone: true };
+
   it('prefers a zoned QuickTime creationdate', () => {
     const meta: VideoMeta = {
       creationDate: '2026-08-22T06:12:04-07:00',
       mvhdDate: '2026-08-22T13:12:04Z',
     };
-    expect(resolveVideoTime(meta, 'IMG_0042.MOV')).toEqual({
+    expect(resolveVideoTime(meta, 'IMG_0042.MOV', TZ)).toEqual({
       at: '2026-08-22T06:12:04-07:00',
       timeSource: 'qt-offset',
     });
   });
 
   it('marks an unzoned QuickTime date as naive', () => {
-    expect(resolveVideoTime({ creationDate: '2026-08-22T06:12:04' }, 'clip.mov')).toEqual({
+    expect(resolveVideoTime({ creationDate: '2026-08-22T06:12:04' }, 'clip.mov', TZ)).toEqual({
       at: '2026-08-22T06:12:04',
       timeSource: 'qt-naive',
     });
@@ -127,7 +161,7 @@ describe('resolveVideoTime priority', () => {
     // zone, so reading it as UTC shifts the clip by hours; an Android
     // filename is honestly local and resolves correctly via event.timezone.
     const meta: VideoMeta = { mvhdDate: '2026-08-22T13:12:04Z' };
-    expect(resolveVideoTime(meta, 'VID_20260822_061204.mp4')).toEqual({
+    expect(resolveVideoTime(meta, 'VID_20260822_061204.mp4', TZ)).toEqual({
       at: '2026-08-22T06:12:04',
       timeSource: 'filename',
     });
@@ -135,14 +169,14 @@ describe('resolveVideoTime priority', () => {
 
   it('uses mvhd only as a last resort, and flags it', () => {
     const meta: VideoMeta = { mvhdDate: '2026-08-22T13:12:04Z' };
-    expect(resolveVideoTime(meta, 'IMG_0042.MOV')).toEqual({
+    expect(resolveVideoTime(meta, 'IMG_0042.MOV', TZ)).toEqual({
       at: '2026-08-22T13:12:04Z',
       timeSource: 'mvhd',
     });
   });
 
   it('gives up rather than guessing', () => {
-    expect(resolveVideoTime(null, 'IMG_0042.MOV')).toEqual({ timeSource: 'none' });
+    expect(resolveVideoTime(null, 'IMG_0042.MOV', TZ)).toEqual({ timeSource: 'none' });
   });
 });
 

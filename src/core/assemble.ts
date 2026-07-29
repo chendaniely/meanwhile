@@ -149,7 +149,7 @@ export interface IngestSummary {
 }
 
 /** What to tell the author about what just came in. */
-export function summarise(manifest: Manifest): IngestSummary {
+export function summarize(manifest: Manifest): IngestSummary {
   const peopleById = new Map(manifest.people.map((p) => [p.id, p]));
   const bySource: Record<string, number> = {};
   let photos = 0;

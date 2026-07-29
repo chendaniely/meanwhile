@@ -62,7 +62,7 @@ async function walk(dir: DirectoryHandle, prefix: string, out: PickedFile[]): Pr
  * Ask for a folder. Resolves to null if the user cancels.
  *
  * Throws only for genuine failures, so a cancelled picker is an ordinary
- * outcome rather than an error the UI has to apologise for.
+ * outcome rather than an error the UI has to apologize for.
  */
 export async function pickFolder(): Promise<PickedFile[] | null> {
   const picker = (globalThis as PickerWindow).showDirectoryPicker;

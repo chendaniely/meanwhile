@@ -43,6 +43,10 @@ async function walk(dir: string, out: string[] = []): Promise<string[]> {
   return out;
 }
 
+/** The viewer defaults event.timezone to the browser's zone, so naive
+ * timestamps are normally resolvable. Mirror that here. */
+const CTX = { hasTimezone: true };
+
 async function inspect(path: string): Promise<ExtractedMetadata | null> {
   const kind = classify(path);
   if (!kind) return null;
@@ -60,26 +64,26 @@ async function inspect(path: string): Promise<ExtractedMetadata | null> {
 
     if (kind === 'photo') {
       if (!hasExifContainer(path) && !hasIsobmffContainer(path)) {
-        return photoMetadata(null, path); // e.g. PNG: no metadata to read
+        return photoMetadata(null, path, CTX); // e.g. PNG: no metadata to read
       }
       const head = await read(0, Math.min(HEAD_BYTES, size));
-      if (!head) return photoMetadata(null, path);
+      if (!head) return photoMetadata(null, path, CTX);
       const r = new Reader(head);
 
       if (hasIsobmffContainer(path) && isHeic(r)) {
         const tiff = findHeicExif(r);
-        return photoMetadata(tiff ? parseTiffExif(tiff) : null, path);
+        return photoMetadata(tiff ? parseTiffExif(tiff) : null, path, CTX);
       }
-      return photoMetadata(parseJpegExif(r), path);
+      return photoMetadata(parseJpegExif(r), path, CTX);
     }
 
-    if (!hasIsobmffContainer(path)) return videoMetadata(null, path);
+    if (!hasIsobmffContainer(path)) return videoMetadata(null, path, CTX);
     // `moov` is commonly at the END of a phone recording, so hop the top-level
     // headers to find it rather than reading the file body.
     const moov = await locateBox(read, size, 'moov');
-    if (!moov) return videoMetadata(null, path);
+    if (!moov) return videoMetadata(null, path, CTX);
     const bytes = await read(moov.offset, moov.length);
-    return videoMetadata(bytes ? parseVideoMeta(new Reader(bytes)) : null, path);
+    return videoMetadata(bytes ? parseVideoMeta(new Reader(bytes)) : null, path, CTX);
   } finally {
     await handle.close();
   }

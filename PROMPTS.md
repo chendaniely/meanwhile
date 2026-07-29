@@ -266,5 +266,64 @@ Hyperlegible is **self-hosted** so the site makes zero external requests.
 
 ---
 
-**Implemented this session:** M0 (scaffold, brand tokens, core-purity test,
-Makefile) and M1 (`src/core/schema.ts`, `src/core/time.ts`, 44 tests).
+**Implemented:** M0 (scaffold, brand tokens, core-purity test, Makefile),
+M1 (`schema.ts`, `time.ts`), M2 (`exif.ts`, `isobmff.ts`, `metadata.ts`,
+`make inspect`), M3 (folder ingest, `assemble.ts`, `palette.ts`, the ingest
+report, manifest export).
+
+---
+
+**Verification against real files.** The owner supplied the actual race
+folder — 231 files, 2.0GB, from a Samsung, a Pixel, and a DJI action cam.
+
+> ok i have the ~/Desktop/manifest.json file and the folder i picked is the
+> "~/Desktop/<the race folder>" directory
+
+This found a **serious bug that synthetic fixtures could never have caught**,
+which is exactly what the "Both" answer on fixtures was for.
+
+meanwhile ranked GPS time as the most trustworthy source, on the reasoning
+that it comes from satellites and so is immune to a wrong camera clock. That
+reasoning is correct and the conclusion was still wrong: **GPS timestamps the
+FIX, not the shutter.** Across the 134 real photos carrying both, the shutter
+ran a median 11s later, p90 76s, worst 919s. Worse, the lag is non-uniform,
+so photos seconds apart collapsed onto one instant — 27 colliding instants,
+with up to seven distinct photos sharing a single second. That destroys
+relative ordering, which is the entire point of the app.
+
+Decisive detail: every one of those 134 photos *also* had a zoned shutter
+time, and no photo had GPS only. Preferring GPS made 134 photos worse and
+helped none.
+
+**DECISION — the shutter outranks GPS.** GPS keeps two jobs: a fallback when
+there is no EXIF date, and the clock-offset estimator for M10 — where the
+right statistic is `min(shutter − gps)`, not the mean, because fix staleness
+is one-sided.
+
+Two smaller fixes fell out of the same run: Pixel filenames are UTC and carry
+milliseconds (a trailing-digit guard was rejecting all of them, pushing 15
+videos onto the unreliable `mvhd` fallback), and Android writes `mvhd` at the
+*end* of recording on both Samsung and Pixel.
+
+Result: `gps` 134 → 0, `mvhd` 15 → 0, collisions 27 → 2 — and the two
+survivors are a duplicated file and a real 461ms burst that EXIF can only
+record to the second.
+
+---
+
+> for the final UI. i think i also want a 2-sided slider that let's me crop
+> the time window. i have uploaded a lot of photos way before the event when
+> we were planning, and also a few photos after the race when we were all
+> together. when i point it to a folder, i may not want to see all the photos
+> listed in the timeline, and give me the ability to zoom into a certain part
+> of the race (if there are a lot of concurrent photos) and also maybe i only
+> want to look at photos during the race (so nothing outside of a time window
+> i care about -- in this case the window is determined by the gpx file +/- 10
+> minutes)
+
+**DECISION — a two-handle time window, with a density histogram behind it.**
+The real folder proves the need: it spans from 10 June to 26 July while the
+race itself is about two days. The window lives in app state and in the URL,
+defaults to the GPX span ±10 minutes when a course exists, and doubles as
+zoom for dense stretches. The histogram is the load-bearing part — with a
+six-week span you cannot know where to drag without seeing the clusters.

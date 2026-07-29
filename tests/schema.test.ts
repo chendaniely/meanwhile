@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SCHEMA_VERSION, isExactTime, validateManifest } from '../src/core/schema.ts';
+import { SCHEMA_VERSION, TIME_SOURCE_RANK, isDeviceClock, validateManifest } from '../src/core/schema.ts';
 
 function minimal(overrides: Record<string, unknown> = {}): unknown {
   return {
@@ -208,12 +208,42 @@ describe('warnings do not block loading', () => {
   });
 });
 
-describe('isExactTime', () => {
-  it('marks satellite time and author intent as exact, everything else not', () => {
-    expect(isExactTime('gps')).toBe(true);
-    expect(isExactTime('manual')).toBe(true);
-    expect(isExactTime('exif-offset')).toBe(false);
-    expect(isExactTime('mvhd')).toBe(false);
-    expect(isExactTime('none')).toBe(false);
+describe('isDeviceClock', () => {
+  it('separates provenance from accuracy', () => {
+    // Satellite time and author intent do NOT come from the device clock, so
+    // a clockOffset correcting that clock must not touch them. Note this is
+    // independent of rank: GPS time is ranked low because a fix goes stale,
+    // but it is still not the camera's clock.
+    expect(isDeviceClock('gps')).toBe(false);
+    expect(isDeviceClock('manual')).toBe(false);
+    expect(isDeviceClock('none')).toBe(false);
+
+    expect(isDeviceClock('exif-offset')).toBe(true);
+    expect(isDeviceClock('exif-naive')).toBe(true);
+    expect(isDeviceClock('qt-offset')).toBe(true);
+    expect(isDeviceClock('filename')).toBe(true);
+    expect(isDeviceClock('mvhd')).toBe(true);
+  });
+});
+
+describe('TIME_SOURCE_RANK', () => {
+  it('ranks the shutter above GPS', () => {
+    // Corrected against real race photos: a GPS fix lags the shutter by a
+    // median 11s and non-uniformly, which scrambles the relative order of
+    // photos taken close together.
+    const rank = (s: Parameters<typeof isDeviceClock>[0]) => TIME_SOURCE_RANK.indexOf(s);
+    expect(rank('exif-offset')).toBeLessThan(rank('gps'));
+    expect(rank('exif-naive')).toBeLessThan(rank('gps'));
+  });
+
+  it('ranks a filename above mvhd', () => {
+    // Android writes mvhd at the END of recording; the filename is the start.
+    const rank = (s: Parameters<typeof isDeviceClock>[0]) => TIME_SOURCE_RANK.indexOf(s);
+    expect(rank('filename')).toBeLessThan(rank('mvhd'));
+  });
+
+  it('lists every source exactly once', () => {
+    expect(new Set(TIME_SOURCE_RANK).size).toBe(TIME_SOURCE_RANK.length);
+    expect(TIME_SOURCE_RANK.at(-1)).toBe('none');
   });
 });

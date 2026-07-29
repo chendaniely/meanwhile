@@ -76,83 +76,162 @@ export function hasIsobmffContainer(filename: string): boolean {
   return ISOBMFF_EXTENSIONS.has(extensionOf(filename));
 }
 
+export interface FilenameTime {
+  at: string;
+  /** True when the encoded time is UTC rather than naive local. */
+  zoned: boolean;
+}
+
 /**
- * A naive local timestamp encoded in a filename, e.g. `IMG_20260822_131204`.
+ * A timestamp encoded in a filename.
  *
- * Deliberately conservative. Two patterns are excluded on purpose:
+ * Deliberately conservative about which patterns it trusts:
  *
- *   - Date-only names, as WhatsApp writes (`IMG-20260822-WA0001`). Midnight
- *     is not where that photo was taken, and putting it there would be a
- *     confident lie.
- *   - Pixel's `PXL_` names, whose timestamps are UTC rather than local.
- *     Treating them as local would shift them by the UTC offset. Pixel photos
- *     carry full EXIF anyway, so nothing is lost by declining to guess.
+ *   - **`PXL_` (Pixel) names are UTC, not local.** Confirmed three ways
+ *     against real files: against a duplicate whose naive EXIF read six hours
+ *     earlier in a UTC-6 zone, against `mvhd` minus clip duration, and
+ *     against a zoned shutter time that matched to the second. Reading them
+ *     as local would shift every one by the UTC offset.
+ *   - **Everything else is naive local**, which is what Samsung, Android, and
+ *     screenshot names encode.
+ *   - **Date-only names are refused**, as WhatsApp writes
+ *     (`IMG-20260822-WA0001`). Midnight is not where that photo was taken,
+ *     and putting it there would be a confident lie.
  */
-export function parseFilenameTime(filename: string): string | null {
+export function parseFilenameTime(filename: string): FilenameTime | null {
   const base = filename.slice(filename.lastIndexOf('/') + 1);
-  if (/^PXL_/i.test(base)) return null;
+  const isPixel = /^PXL_/i.test(base);
 
   // IMG_20260822_131204 / VID_20260822_131204 / 20260822_131204 /
-  // Screenshot_20260822-131204
-  const m = /(?:^|[^0-9])(\d{4})(\d{2})(\d{2})[-_ T]?(\d{2})(\d{2})(\d{2})(?![0-9])/.exec(base);
+  // Screenshot_20260822-131204 / PXL_20260822_131204123
+  //
+  // The optional trailing three digits are milliseconds, which Pixel appends.
+  // Without them the trailing-digit guard rejects every Pixel name outright —
+  // that is exactly how 15 real videos ended up on the untrustworthy `mvhd`
+  // fallback instead of their own filename.
+  const m = /(?:^|[^0-9])(\d{4})(\d{2})(\d{2})[-_ T]?(\d{2})(\d{2})(\d{2})(?:\d{3})?(?![0-9])/.exec(
+    base,
+  );
   if (!m) return null;
 
   const [, y, mo, d, h, mi, s] = m as unknown as [string, string, string, string, string, string, string];
-  const year = Number(y);
-  if (year < 1990 || year > 2100) return null;
+  if (Number(y) < 1990 || Number(y) > 2100) return null;
   if (Number(mo) < 1 || Number(mo) > 12) return null;
   if (Number(d) < 1 || Number(d) > 31) return null;
   if (Number(h) > 23 || Number(mi) > 59 || Number(s) > 59) return null;
 
-  return `${y}-${mo}-${d}T${h}:${mi}:${s}`;
+  const stamp = `${y}-${mo}-${d}T${h}:${mi}:${s}`;
+  return isPixel ? { at: `${stamp}Z`, zoned: true } : { at: stamp, zoned: false };
+}
+
+export interface ResolveContext {
+  /**
+   * Whether `event.timezone` is set. Without it, a naive timestamp cannot
+   * become an instant, so a lower-ranked but self-contained source wins.
+   */
+  hasTimezone: boolean;
+}
+
+interface Candidate extends ResolvedCapture {
+  /** True when this candidate is unplaceable without `event.timezone`. */
+  needsTimezone: boolean;
+}
+
+/**
+ * Take the best candidate that can actually be placed.
+ *
+ * If none can be placed, keep the best one anyway rather than discarding the
+ * data: the item shows in the unplaced tray, and setting `event.timezone`
+ * later moves it onto the timeline without a re-ingest.
+ */
+function pick(candidates: Candidate[], ctx: ResolveContext): ResolvedCapture {
+  const usable = candidates.find((c) => !c.needsTimezone || ctx.hasTimezone) ?? candidates[0];
+  if (!usable) return { timeSource: 'none' };
+  const { needsTimezone: _drop, ...chosen } = usable;
+  return chosen;
 }
 
 /** Pick the most trustworthy timestamp available for a still image. */
-export function resolvePhotoTime(exif: ExifData | null, filename: string): ResolvedCapture {
-  // 1. Satellites. Immune to the camera's clock being wrong.
-  if (exif?.gpsInstant) return { at: exif.gpsInstant, timeSource: 'gps' };
+export function resolvePhotoTime(
+  exif: ExifData | null,
+  filename: string,
+  ctx: ResolveContext,
+): ResolvedCapture {
+  const candidates: Candidate[] = [];
 
-  // 2. The camera's clock, plus the zone it believed it was in.
+  // 1. The shutter, with the zone the camera believed it was in. Exact.
   if (exif?.dateTimeOriginal && exif.offsetTimeOriginal) {
-    return { at: `${exif.dateTimeOriginal}${exif.offsetTimeOriginal}`, timeSource: 'exif-offset' };
+    candidates.push({
+      at: `${exif.dateTimeOriginal}${exif.offsetTimeOriginal}`,
+      timeSource: 'exif-offset',
+      needsTimezone: false,
+    });
   }
 
-  // 3. The camera's clock alone. Needs event.timezone to become an instant.
+  // 2. The shutter alone. Exact once event.timezone resolves it.
   if (exif?.dateTimeOriginal) {
-    return { at: exif.dateTimeOriginal, timeSource: 'exif-naive' };
+    candidates.push({ at: exif.dateTimeOriginal, timeSource: 'exif-naive', needsTimezone: true });
   }
 
-  // 4. The filename, for files whose EXIF was stripped in transit.
-  const fromName = parseFilenameTime(filename);
-  if (fromName) return { at: fromName, timeSource: 'filename' };
+  // 3. GPS. Ranked BELOW the shutter despite coming from satellites, because
+  //    it timestamps the fix rather than the shutter — median 11s stale, p90
+  //    76s, worst 919s on real race photos. That error is non-uniform, so it
+  //    scrambles the order of photos taken seconds apart, which is precisely
+  //    what this app exists to show. A wrong timezone at least shifts
+  //    everything equally and keeps the order intact.
+  if (exif?.gpsInstant) {
+    candidates.push({ at: exif.gpsInstant, timeSource: 'gps', needsTimezone: false });
+  }
 
-  return { timeSource: 'none' };
+  // 4. The filename, for files whose metadata was stripped in transit.
+  const fromName = parseFilenameTime(filename);
+  if (fromName) {
+    candidates.push({ at: fromName.at, timeSource: 'filename', needsTimezone: !fromName.zoned });
+  }
+
+  return pick(candidates, ctx);
 }
 
 /** Pick the most trustworthy timestamp available for a video. */
-export function resolveVideoTime(meta: VideoMeta | null, filename: string): ResolvedCapture {
-  // 1. Apple's creationdate, when it carries a real UTC offset.
+export function resolveVideoTime(
+  meta: VideoMeta | null,
+  filename: string,
+  ctx: ResolveContext,
+): ResolvedCapture {
+  const candidates: Candidate[] = [];
+
   if (meta?.creationDate) {
     const zoned = /(Z|[+-]\d{2}:\d{2})$/.test(meta.creationDate);
-    return { at: meta.creationDate, timeSource: zoned ? 'qt-offset' : 'qt-naive' };
+    candidates.push({
+      at: meta.creationDate,
+      timeSource: zoned ? 'qt-offset' : 'qt-naive',
+      needsTimezone: !zoned,
+    });
   }
 
-  // 2. The filename, BEFORE mvhd. Android writes local wall-clock there,
-  //    which resolves correctly through event.timezone — whereas mvhd may be
-  //    local time mislabelled as UTC, which resolves to the wrong hour.
+  // The filename outranks mvhd. Every Android video checked wrote mvhd at the
+  // END of recording — start plus duration plus about two seconds — while the
+  // filename records the start. Apple additionally writes LOCAL time into
+  // mvhd with no zone. So mvhd is both biased late and possibly hours off.
   const fromName = parseFilenameTime(filename);
-  if (fromName) return { at: fromName, timeSource: 'filename' };
+  if (fromName) {
+    candidates.push({ at: fromName.at, timeSource: 'filename', needsTimezone: !fromName.zoned });
+  }
 
-  // 3. mvhd. Nominally UTC; Apple writes local time here with no zone, so
-  //    this is the last resort and is always flagged in the UI.
-  if (meta?.mvhdDate) return { at: meta.mvhdDate, timeSource: 'mvhd' };
+  if (meta?.mvhdDate) {
+    candidates.push({ at: meta.mvhdDate, timeSource: 'mvhd', needsTimezone: false });
+  }
 
-  return { timeSource: 'none' };
+  return pick(candidates, ctx);
 }
 
 /** Assemble the item fields for a photo from its parsed EXIF. */
-export function photoMetadata(exif: ExifData | null, filename: string): ExtractedMetadata {
-  const out: ExtractedMetadata = { type: 'photo', ...resolvePhotoTime(exif, filename) };
+export function photoMetadata(
+  exif: ExifData | null,
+  filename: string,
+  ctx: ResolveContext = { hasTimezone: true },
+): ExtractedMetadata {
+  const out: ExtractedMetadata = { type: 'photo', ...resolvePhotoTime(exif, filename, ctx) };
   if (exif?.gps) out.gps = exif.gps;
   if (exif?.width) out.width = exif.width;
   if (exif?.height) out.height = exif.height;
@@ -163,8 +242,12 @@ export function photoMetadata(exif: ExifData | null, filename: string): Extracte
 }
 
 /** Assemble the item fields for a video from its parsed container metadata. */
-export function videoMetadata(meta: VideoMeta | null, filename: string): ExtractedMetadata {
-  const out: ExtractedMetadata = { type: 'video', ...resolveVideoTime(meta, filename) };
+export function videoMetadata(
+  meta: VideoMeta | null,
+  filename: string,
+  ctx: ResolveContext = { hasTimezone: true },
+): ExtractedMetadata {
+  const out: ExtractedMetadata = { type: 'video', ...resolveVideoTime(meta, filename, ctx) };
   if (meta?.gps) out.gps = meta.gps;
   if (meta?.duration !== undefined) out.duration = meta.duration;
   return out;

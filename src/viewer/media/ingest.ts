@@ -38,6 +38,9 @@ export async function ingestFolder(
   files: readonly PickedFile[],
   opts: IngestOptions,
 ): Promise<Manifest> {
+  // Whether naive timestamps can be resolved changes which source wins per
+  // file, so it is decided once here and passed down.
+  const ctx = { hasTimezone: Boolean(opts.timezone) };
   const results = new Array<IngestedFile | null>(files.length);
   let done = 0;
   let next = 0;
@@ -52,7 +55,7 @@ export async function ingestFolder(
       try {
         results[index] = {
           path: picked.path,
-          metadata: await extractMetadata(picked.path, picked.file),
+          metadata: await extractMetadata(picked.path, picked.file, ctx),
           bytes: picked.file.size,
         };
       } catch {

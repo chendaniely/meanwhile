@@ -38,7 +38,20 @@ export type MediaKind = 'photo' | 'video';
  * Ordered most to least trustworthy.
  */
 export type TimeSource =
-  /** EXIF GPSDateStamp + GPSTimeStamp. UTC, from satellites. Authoritative. */
+  /**
+   * EXIF GPSDateStamp + GPSTimeStamp. UTC, from satellites — so it is immune
+   * to the device clock being wrong.
+   *
+   * BUT it is the time of the GPS FIX, not of the shutter, and a fix goes
+   * stale. Measured against 134 real photos from a 100-mile race: median 11s
+   * behind the shutter, p90 76s, worst 919s. Worse, the error is not uniform,
+   * so photos seconds apart collapse onto one instant and their relative
+   * order is destroyed — which is exactly what this app exists to show.
+   *
+   * Therefore ranked BELOW the shutter sources. Its real jobs are as a
+   * fallback when a file has no EXIF date, and as the clock-offset estimator
+   * (see TIME_SOURCE_RANK).
+   */
   | 'gps'
   /** EXIF DateTimeOriginal + OffsetTimeOriginal. Carries a real UTC offset. */
   | 'exif-offset'
@@ -61,28 +74,48 @@ export type TimeSource =
   /** No usable timestamp. The item goes to the unplaced tray. */
   | 'none';
 
-/** Most to least trustworthy. Index 0 is best. */
+/**
+ * Most to least trustworthy. Index 0 is best.
+ *
+ * The ordering was corrected against 231 real files from a 100-mile race, and
+ * two of its choices are counter-intuitive enough to be worth stating:
+ *
+ * **Shutter time beats GPS time.** GPS looks authoritative — it comes from
+ * satellites — but it timestamps the FIX, not the shutter, and lags by a
+ * median 11 seconds. Crucially that lag is not uniform, so it scrambles the
+ * relative order of photos taken close together. A timezone that is wrong
+ * shifts everything by the same amount and preserves order; a stale fix does
+ * not. For an app about simultaneity, uniform error is far cheaper than
+ * non-uniform error.
+ *
+ * **Filename beats mvhd.** Every Android video checked wrote `mvhd` at the
+ * END of recording (start + duration + ~2s), while the filename records the
+ * start. Apple additionally writes local time into `mvhd` with no zone. So
+ * `mvhd` is both biased late and possibly hours off.
+ */
 export const TIME_SOURCE_RANK: readonly TimeSource[] = [
-  'gps',
   'manual',
   'exif-offset',
   'qt-offset',
   'exif-naive',
   'qt-naive',
-  // A filename timestamp outranks mvhd deliberately. Android names files with
-  // local wall-clock, which resolves correctly through event.timezone; mvhd
-  // may be local time mislabelled as UTC, which resolves to the wrong hour.
+  'gps',
   'filename',
   'mvhd',
   'none',
 ];
 
 /**
- * Sources whose instant is exact. Everything else is a best effort that the
- * UI should mark, and that clock alignment may later correct.
+ * Whether this timestamp came from the device's own clock.
+ *
+ * This is about PROVENANCE, not accuracy, and is deliberately separate from
+ * the ranking above. GPS time is ranked low because it is stale, but it still
+ * comes from satellites rather than the camera — so a `clockOffset` that
+ * corrects a wrong camera clock must not be applied to it. Same for a manual
+ * placement, which came from the author.
  */
-export function isExactTime(source: TimeSource): boolean {
-  return source === 'gps' || source === 'manual';
+export function isDeviceClock(source: TimeSource): boolean {
+  return source !== 'gps' && source !== 'manual' && source !== 'none';
 }
 
 export interface EventInfo {

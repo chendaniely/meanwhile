@@ -21,6 +21,7 @@ import {
   photoMetadata,
   videoMetadata,
   type ExtractedMetadata,
+  type ResolveContext,
 } from '../../core/metadata.ts';
 
 /**
@@ -38,7 +39,11 @@ function rangeReaderFor(file: File): RangeReader {
   };
 }
 
-export async function extractMetadata(path: string, file: File): Promise<ExtractedMetadata> {
+export async function extractMetadata(
+  path: string,
+  file: File,
+  ctx: ResolveContext,
+): Promise<ExtractedMetadata> {
   const kind = classify(path);
   // The caller filters by extension, so this is belt-and-braces.
   if (!kind) return { type: 'photo', timeSource: 'none' };
@@ -49,26 +54,26 @@ export async function extractMetadata(path: string, file: File): Promise<Extract
     // PNG, WebP, and GIF carry no timestamp we read; fall through to the
     // filename rather than pretending to parse them.
     if (!hasExifContainer(path) && !hasIsobmffContainer(path)) {
-      return photoMetadata(null, path);
+      return photoMetadata(null, path, ctx);
     }
     const head = await read(0, Math.min(HEAD_BYTES, file.size));
-    if (!head) return photoMetadata(null, path);
+    if (!head) return photoMetadata(null, path, ctx);
     const r = new Reader(head);
 
     if (hasIsobmffContainer(path) && isHeic(r)) {
       const tiff = findHeicExif(r);
-      return photoMetadata(tiff ? parseTiffExif(tiff) : null, path);
+      return photoMetadata(tiff ? parseTiffExif(tiff) : null, path, ctx);
     }
-    return photoMetadata(parseJpegExif(r), path);
+    return photoMetadata(parseJpegExif(r), path, ctx);
   }
 
-  if (!hasIsobmffContainer(path)) return videoMetadata(null, path);
+  if (!hasIsobmffContainer(path)) return videoMetadata(null, path, ctx);
 
   // `moov` is commonly at the END of a phone recording, since its size is not
   // known until recording stops. Hop the top-level box headers to find it —
   // usually about three 16-byte reads even on a multi-gigabyte file.
   const moov = await locateBox(read, file.size, 'moov');
-  if (!moov) return videoMetadata(null, path);
+  if (!moov) return videoMetadata(null, path, ctx);
   const bytes = await read(moov.offset, moov.length);
-  return videoMetadata(bytes ? parseVideoMeta(new Reader(bytes)) : null, path);
+  return videoMetadata(bytes ? parseVideoMeta(new Reader(bytes)) : null, path, ctx);
 }

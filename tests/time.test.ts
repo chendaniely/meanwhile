@@ -127,7 +127,7 @@ describe('resolveItemInstant', () => {
     );
     expect(r.instant).toBe(Date.UTC(2026, 7, 22, 13, 11, 17));
     expect(r.offsetApplied).toBe(-47_000);
-    expect(r.exact).toBe(false);
+    expect(r.deviceIndependent).toBe(false);
   });
 
   it('leaves a GPS timestamp alone even when the person has an offset', () => {
@@ -138,7 +138,7 @@ describe('resolveItemInstant', () => {
     );
     expect(r.instant).toBe(Date.UTC(2026, 7, 22, 13, 12, 4));
     expect(r.offsetApplied).toBe(0);
-    expect(r.exact).toBe(true);
+    expect(r.deviceIndependent).toBe(true);
   });
 
   it('leaves a manual placement alone', () => {

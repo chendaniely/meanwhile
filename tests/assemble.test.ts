@@ -5,7 +5,7 @@ import {
   displayNameFor,
   personIdFromPath,
   slugify,
-  summarise,
+  summarize,
 } from '../src/core/assemble.ts';
 import type { IngestedFile } from '../src/core/assemble.ts';
 import {
@@ -145,7 +145,7 @@ describe('assembleManifest', () => {
   });
 });
 
-describe('summarise', () => {
+describe('summarize', () => {
   it('counts what came in and finds the event span', () => {
     const manifest = assembleManifest(
       [
@@ -155,7 +155,7 @@ describe('summarise', () => {
       ],
       { title: 'x', timezone: 'America/Los_Angeles' },
     );
-    const s = summarise(manifest);
+    const s = summarize(manifest);
 
     expect(s.total).toBe(3);
     expect(s.photos).toBe(2);
@@ -169,7 +169,7 @@ describe('summarise', () => {
 
   it('reports no span when nothing could be placed', () => {
     const manifest = assembleManifest([file('a.jpg', { timeSource: 'none' })], { title: 'x' });
-    expect(summarise(manifest).span).toBeNull();
+    expect(summarize(manifest).span).toBeNull();
   });
 
   it('counts an item as unplaced when a naive time has no timezone to resolve it', () => {
@@ -177,7 +177,7 @@ describe('summarise', () => {
       [file('a.jpg', { at: '2026-08-22T06:12:04', timeSource: 'exif-naive' })],
       { title: 'x' },
     );
-    expect(summarise(manifest).unplaced).toBe(1);
+    expect(summarize(manifest).unplaced).toBe(1);
   });
 });
 

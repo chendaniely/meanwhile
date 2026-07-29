@@ -11,7 +11,7 @@
  */
 
 import type { EventInfo, Item, Person, TimeSource } from './schema.ts';
-import { isExactTime } from './schema.ts';
+import { isDeviceClock } from './schema.ts';
 
 /** Epoch milliseconds. The cursor and every comparison use this. */
 export type Instant = number;
@@ -195,7 +195,7 @@ export function zonedToInstant(naive: string, timeZone: string): Instant | null 
  * exactly the error the offset exists to remove.
  */
 export function appliesClockOffset(source: TimeSource): boolean {
-  return !isExactTime(source) && source !== 'none';
+  return isDeviceClock(source);
 }
 
 export interface ResolvedTime {
@@ -203,7 +203,12 @@ export interface ResolvedTime {
   instant: Instant | null;
   source: TimeSource;
   /** True when the instant came from satellites or from the author. */
-  exact: boolean;
+  /**
+   * True when the timestamp did NOT come from the device's own clock, so no
+   * `clockOffset` was applied. Provenance, not accuracy — a GPS time is
+   * device-independent but can still be stale by minutes.
+   */
+  deviceIndependent: boolean;
   /** Milliseconds of clockOffset actually applied. */
   offsetApplied: number;
   /** Present only when `instant` is null; shown in the unplaced tray. */
@@ -224,8 +229,11 @@ export function resolveItemInstant(
   event: Pick<EventInfo, 'timezone'>,
 ): ResolvedTime {
   const source = item.timeSource;
-  const exact = isExactTime(source);
-  const base: Omit<ResolvedTime, 'instant'> = { source, exact, offsetApplied: 0 };
+  const base: Omit<ResolvedTime, 'instant'> = {
+    source,
+    deviceIndependent: !isDeviceClock(source),
+    offsetApplied: 0,
+  };
 
   if (source === 'none' || item.at === undefined) {
     return { ...base, instant: null, reason: 'no timestamp found in this file' };

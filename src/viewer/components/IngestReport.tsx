@@ -1,4 +1,4 @@
-import { summarise, type IngestSummary } from '../../core/assemble.ts';
+import { summarize, type IngestSummary } from '../../core/assemble.ts';
 import { assignLaneColors, isOvercrowded, MAX_DISTINCT_PEOPLE } from '../../core/palette.ts';
 import type { Manifest, TimeSource } from '../../core/schema.ts';
 import { TIME_SOURCE_RANK } from '../../core/schema.ts';
@@ -33,7 +33,7 @@ interface Props {
 }
 
 export function IngestReport({ manifest, onExport, children }: Props) {
-  const summary = summarise(manifest);
+  const summary = summarize(manifest);
   const colors = assignLaneColors(manifest.people);
   const zone = manifest.event.timezone;
 
