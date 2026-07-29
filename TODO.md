@@ -223,3 +223,45 @@ What to build instead, in order:
 Folders remain the reliable separator, and the roster lives in the manifest as
 deliberate metadata precisely so notes can reference people by name rather than
 by phone.
+
+## An import/export wizard *(raised 2026-07-29, during the notes-as-CSV build)*
+
+> "i feel like we'd need a wizard screen at the start to handle how everythign
+> gets read into the site. separate files, zip files, location to local media
+> folders, and having metadata files in a git repo (potentially a Github PAT
+> that has only 1 repo write access so saves can happen directly into the repo)"
+
+Right, and the need is created by this very change: once metadata lives in
+several files that can arrive several ways, "point at a folder" stops being the
+whole story. The routes to support:
+
+1. **A folder** — what exists today.
+2. **Loose files** — exists today, and now includes `notes*.csv` and
+   `people.csv`.
+3. **A zip** — we will be *writing* one after this change, so reading one back
+   closes the loop. Needs an inflater: `DecompressionStream('deflate-raw')` is
+   in every current browser, so still no dependency.
+4. **A metadata repo over HTTP** — already has its own spec pending. Read-only
+   is easy: `raw.githubusercontent.com` sends permissive CORS.
+5. **Media separately from metadata**, since metadata is small and text and
+   media is neither. This is the piece that would finally make a shared link
+   work.
+
+### On the GitHub PAT — worth doing, with eyes open
+
+Writing back to a repo from a static site needs a credential in the browser,
+and there is no way around that without a backend. The honest trade-offs:
+
+- **A fine-grained PAT scoped to one repository with `contents: write`** is the
+  right shape, and GitHub supports exactly that. It is what makes "save goes
+  straight into the repo" possible with no server.
+- **It is a bearer token sitting in browser storage.** meanwhile loads no
+  third-party scripts, which removes the usual XSS route, but the token is
+  still readable by anything that does run in the page, and it survives until
+  it is revoked. It should be entered by the user, never logged, never put in
+  a URL, and easy to clear.
+- **The better long-term shape is GitHub's OAuth device flow**, which needs
+  only a client id — no secret and no backend — and yields a revocable
+  short-lived token instead of a long-lived PAT. More work; strictly safer.
+- Whichever is used, saving must still produce a downloadable zip, because a
+  token is optional and the site has to work without one.
