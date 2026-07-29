@@ -205,6 +205,72 @@
   color: var(--mw-fg-faint);
 }
 
+/* ---- person picker ------------------------------------------------------
+   A searchable multi-select, the same idea as the timezone field but with
+   chosen names kept as chips above the input rather than a single value. */
+
+.picker {
+  position: relative;
+}
+
+.picker__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mw-space-1);
+  margin: 0 0 var(--mw-space-1);
+  padding: 0;
+  list-style: none;
+}
+
+.chip--person {
+  background: var(--mw-surface-raised);
+}
+
+.chip__remove {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--mw-fg-muted);
+  font-size: var(--mw-text-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chip__remove:hover {
+  color: var(--mw-fg);
+}
+
+/* Floats over whatever sits below it rather than pushing layout around as
+   matches change — the same reason the cluster chips don't reflow the
+   slider underneath them. */
+.picker__list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: var(--mw-z-content);
+  margin: var(--mw-space-1) 0 0;
+  padding: var(--mw-space-1);
+  list-style: none;
+  background: var(--mw-surface);
+  border: 1px solid var(--mw-border);
+  border-radius: var(--mw-radius);
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.picker__option {
+  padding: var(--mw-space-2) var(--mw-space-3);
+  border-radius: var(--mw-radius);
+  color: var(--mw-fg-muted);
+  cursor: pointer;
+}
+
+.picker__option--active {
+  background: var(--mw-surface-raised);
+  color: var(--mw-fg);
+}
+
 /* ---- callouts ---------------------------------------------------------- */
 
 .callout {
