@@ -269,6 +269,36 @@ originals), and `make inspect` for checking a folder from the terminal.
 
 Still missing: the moment grid as its own view, and publishing to the web.
 
+## Publishing it
+
+The site is a renderer, so publishing it ships **no photographs, no manifest
+and no track** — only the app. Whoever opens it points it at their own files.
+
+`.github/workflows/pages.yml` builds and deploys on every push to `main`. To
+turn it on once: **Settings → Pages → Source → GitHub Actions**. The tests and
+the type-check gate the deploy, because a broken timeline is worse than a stale
+one.
+
+It publishes to `https://<user>.github.io/meanwhile/`. Assets resolve under
+that path via `base` in `vite.config.ts`; if you rename the repository, change
+it there or set `MEANWHILE_BASE`.
+
+### The optional map key
+
+The map works with no key at all — OpenTopoMap, Esri imagery, Esri hillshade
+and OSM are all keyless, which is why Leaflet was chosen over MapLibre. A free
+[Thunderforest](https://www.thunderforest.com) key adds their Outdoors basemap:
+put it in **Settings → Secrets and variables → Actions** as
+`VITE_THUNDERFOREST_KEY`, and locally in `.env.local` as
+`VITE_THUNDERFOREST_KEY=...`.
+
+**One caveat that is easy to get wrong.** This is a static site, so Vite bakes
+the key into the published JavaScript. A repository secret keeps it out of your
+source, **not out of the page** — anyone can read it from the deployed site.
+That is normal for client-side maps and providers expect it: restrict the key
+by HTTP referrer to your own domain, and it is useless anywhere else. Do not
+rely on it being hidden.
+
 ## Why it's fast, and why nothing is uploaded
 
 meanwhile opens a folder of hundreds of photos and gigabytes of video in

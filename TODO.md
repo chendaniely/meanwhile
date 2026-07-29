@@ -71,7 +71,6 @@ commit hash when done.
 
 ## Housekeeping
 
-- Choose a license.
 - `CHANGELOG.md` once there is a release to describe.
 
 - **Automatic clock alignment.** Match a photo's GPS position to the point on
@@ -163,3 +162,32 @@ captions — they are author work, not metadata read from a file.
   `<input type="datetime-local">` cannot be made to follow it — Chrome formats
   that control from the browser's locale and ignores `lang` — which is why the
   note fields are plain text.
+
+## The license — deferred, with a constraint *(2026-07-29)*
+
+The owner: *"let's hold off on the license now. i want to protect it from
+commercial use."*
+
+**Deferring is not neutral, and here it happens to do what was asked.** A
+public repository with no LICENSE file is **all rights reserved**: nobody may
+use, copy, modify or redistribute it. GitHub's terms add only the right to
+view and to fork *within* GitHub. So commercial use is already barred — but so
+is a friend legitimately running their own copy, which is probably not
+intended long term.
+
+When it is picked up, the thing to know first: **a non-commercial restriction
+is not open source.** It fails the OSI definition and the FSF's, so the repo
+should not be described as either, and some people's employers forbid
+contributing to such projects.
+
+The options that actually fit "no commercial use":
+
+| | Notes |
+|---|---|
+| **PolyForm Noncommercial 1.0.0** | Purpose-built for software, plainly drafted, and the one to reach for. Permits any noncommercial use including by nonprofits and schools. |
+| **PolyForm Strict / Small Business** | Same family, different lines drawn. Worth a look if "noncommercial" turns out to be the wrong cut. |
+| **CC BY-NC-SA 4.0** | Creative Commons explicitly advise against using their licences for software; it has no patent or warranty language. Avoid. |
+| **Dual: AGPL + a commercial licence** | Keeps it genuinely open source while making a closed commercial fork impractical. More administration, and the owner has to be willing to grant the second licence. |
+
+Worth deciding before anyone else is invited to contribute, because
+relicensing later needs every contributor's agreement.

@@ -15,17 +15,28 @@ the swimlanes with a moment strip, the lightbox, the unplaced tray, and the
 charts, and a shared distance focus linking the two. Plus
 `scripts/inspect-media.ts` (`make inspect DIR=...`).
 
-**Not built:** in-viewer notes/captions, automatic clock alignment (blocked —
-needs a timed track, see below), Strava embed rendering, Pages deploy.
+Also built: in-viewer notes and captions, people renaming and the runner role,
+the manifest round-trip, the note dock, and the Strava link/embed fallback.
+The Pages workflow is committed at `.github/workflows/pages.yml`.
+
+**Not built:** automatic clock alignment (blocked — needs a timed track, see
+below), aid stations, and everything else in `TODO.md`.
 
 **Do not describe anything as implemented unless it is in the "Built" list.**
 Check before you cite.
 
 ## START HERE
 
-Remaining work: **M9** (in-viewer notes) and **M11** (Strava embed fallback,
-GitHub Pages deploy with a `VITE_THUNDERFOREST_KEY` secret). Open questions
-still unanswered: whether the repo is public from day one, and the license.
+**M0-M11 are done.** What is left is not a milestone but a set of things
+blocked on the outside world:
+
+- **Automatic clock alignment** — blocked on a *timed* track. The owner's GPX
+  is a route export with no timestamps, so there is nothing to align against.
+- **Turning on GitHub Pages** — the workflow is committed and the repo is to
+  be public; flipping *Settings → Pages → Source → GitHub Actions* is the
+  owner's action, not Claude's.
+- **The license** — deferred with a constraint. See the decision record.
+- **Aid stations**, and the rest of `TODO.md`.
 
 
 ---
@@ -974,14 +985,19 @@ thumbnails. Both additive.
 
 Ask these. Do not answer them unilaterally.
 
-1. **Public from day one?** The site is public by design, but the *manifest*
-   for your friend's race is a separate choice. Public repo with a private
-   manifest, or keep the whole thing unlisted until the crew has seen it?
+1. ~~**Public from day one?**~~ **Answered 2026-07-29: public repo, private
+   manifest.** The renderer is published; photographs, `manifest.json` and the
+   track never enter git and stay on the author's disk. `.gitignore` enforces
+   it and a pre-publication audit confirmed nothing sensitive is tracked or in
+   history.
 2. **Scope of an event.** One manifest per event. Does a multi-day event, or
    a series (training runs leading up to the race), need a collection
    concept, or is one file always enough? *(Assumed: one file is enough.
    YAGNI until told otherwise.)*
-3. **License.** Still unchosen.
+3. **License.** Deferred 2026-07-29 **with a constraint**: the owner wants to
+   bar commercial use. Note that a public repo with no LICENSE is already all
+   rights reserved, and that a non-commercial restriction is not open source.
+   Options and trade-offs are written up in `TODO.md` — do not re-derive them.
 
 ### Answered in session 2 — do not re-ask
 

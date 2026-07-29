@@ -1,0 +1,63 @@
+# Publish the viewer to GitHub Pages.
+#
+# What this ships is the RENDERER and nothing else: no photographs, no
+# manifest, no track. Those live on the machine of whoever is looking, which
+# is the whole architecture — see README, "Why nothing is uploaded".
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  # So a deploy can be re-run without an empty commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The tests gate the deploy. A broken timeline is worse than a stale one.
+      - run: npm run typecheck
+      - run: npm test
+
+      - run: npm run build
+        env:
+          # Optional. Absent, the map falls back to the keyless basemaps and
+          # works fine — see src/viewer/map/basemaps.ts.
+          #
+          # NOTE: Vite inlines this into the published JavaScript, so the
+          # secret keeps it out of the repository, NOT out of the page.
+          # Restrict the key by HTTP referrer at Thunderforest instead.
+          VITE_THUNDERFOREST_KEY: ${{ secrets.VITE_THUNDERFOREST_KEY }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

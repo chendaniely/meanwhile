@@ -689,3 +689,34 @@ rather than the middle. It writes the shared range, so the slider at the top
 follows for free — there is one crop, not one per view. The listener is bound
 with `passive: false` directly on the element, because React registers
 `onWheel` passively at the root and `preventDefault` is ignored there.
+
+
+---
+
+> let's finish up this milestone we can come back to this later
+
+**M11.** The Strava fallback renders at last: a link or an embed now earns the
+Course tab and says plainly what a URL cannot carry — no position-at-time, no
+elevation, no clock alignment. **The embed is click-to-load**, because it is
+the only external request meanwhile ever makes: whoever pasted the URL
+consented to it, but whoever they later send the manifest to did not, and
+loading it unasked would hand their IP address to Strava before they had
+decided to look.
+
+`.github/workflows/pages.yml` builds and deploys on push to `main`, gated on
+the tests and the type-check. README gained a publishing section, including
+the caveat that a build-time map key is inlined into the published JavaScript
+and must be restricted by HTTP referrer rather than kept secret.
+
+Asked the two open questions. **Public repo with a private manifest** — a
+pre-publication audit confirmed no media, manifest or track is tracked or in
+history, and no personal strings survive anywhere in the repository.
+
+> "let's hold off on the license now. i want to protect it from commercial use"
+
+Deferred, and recorded with the part that is easy to get wrong: a public repo
+with **no** LICENSE is already all rights reserved, so commercial use is barred
+today — but so is a friend legitimately running their own copy. And a
+non-commercial restriction is not open source under either the OSI or FSF
+definitions, which matters before anyone is invited to contribute. Options
+written up in `TODO.md`.

@@ -24,6 +24,7 @@ import {
   type TimeWindow,
 } from '../core/window.ts';
 import { CourseCharts } from './components/CourseCharts.tsx';
+import { CourseFallback } from './components/CourseFallback.tsx';
 import { CourseRail } from './components/CourseRail.tsx';
 import { NoteComposer, NoteList } from './components/Notes.tsx';
 import { NoteDock } from './components/NoteDock.tsx';
@@ -360,9 +361,12 @@ export function App() {
   const available = useMemo<ViewName[]>(() => {
     const names: ViewName[] = [];
     if (placement && placement.placed.length > 0) names.push('feed', 'lanes');
-    if (course) names.push('course');
+    // Any kind of course reference earns the tab — a bare Strava link shows
+    // what it can and says what it cannot, which beats the tab vanishing with
+    // no explanation of why.
+    if (course || manifest?.course) names.push('course');
     return names;
-  }, [placement, course]);
+  }, [placement, course, manifest]);
 
   useEffect(() => {
     if (available.length === 0) return;
@@ -781,6 +785,10 @@ export function App() {
 
           {/* Outside the media gate on purpose: the map and profile need no
               photos and no time range, only the track. */}
+          {view.view === 'course' && !stage.course && stage.manifest.course && (
+            <CourseFallback course={stage.manifest.course} />
+          )}
+
           {view.view === 'course' && stage.course && (
             <>
               <CourseMap
