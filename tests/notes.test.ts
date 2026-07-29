@@ -158,4 +158,13 @@ describe('mergeNotes', () => {
     expect(notes.map((n) => n.text)).toEqual(['good']);
     expect(problems[0]).toContain('a.csv');
   });
+
+  it('keeps two rows differing only in people, even with the same id and time', () => {
+    const { notes } = mergeNotes([
+      file('a.csv', 'n_x,2026,7,25,15,0,,,Dan,,Dan,same\n'),
+      file('b.csv', 'n_x,2026,7,25,15,0,,,Priya,,Dan,same\n'),
+    ], ZONE);
+    expect(notes).toHaveLength(2);
+    expect(new Set(notes.map((n) => n.id)).size).toBe(2);
+  });
 });

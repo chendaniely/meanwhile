@@ -392,12 +392,16 @@ export function mergeNotes(
       const note = result;
       const fingerprint = JSON.stringify([note.at, note.duration, note.tz, note.people, note.photo, note.author, note.text, note.extra]);
       if (!note.id) {
-        note.id = mintNoteId();
+        let candidate = mintNoteId();
+        while (seen.has(candidate)) candidate = mintNoteId();
+        note.id = candidate;
       } else if (seen.has(note.id)) {
         // The same row in two files is one note. A different row wearing the
         // same id is a copy, and gets its own identity.
         if (seen.get(note.id) === fingerprint) return;
-        note.id = mintNoteId();
+        let candidate = mintNoteId();
+        while (seen.has(candidate)) candidate = mintNoteId();
+        note.id = candidate;
       }
       seen.set(note.id, fingerprint);
       notes.push(note);
