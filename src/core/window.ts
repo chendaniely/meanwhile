@@ -126,6 +126,31 @@ export function densestWindow(placed: readonly PlacedItem[], opts: ClusterOption
 }
 
 /**
+ * The single range covering several chosen stretches.
+ *
+ * A range is contiguous by definition, so choosing two non-adjacent clusters
+ * necessarily sweeps up whatever sits between them. That is a real
+ * consequence rather than a bug — but it must be visible, so the UI marks
+ * swept-up clusters distinctly instead of letting them look excluded while
+ * their photos are on screen.
+ */
+export function unionSpan(
+  windows: readonly TimeWindow[],
+  padRatio = 0.02,
+): TimeWindow | null {
+  if (windows.length === 0) return null;
+  let from = Number.POSITIVE_INFINITY;
+  let to = Number.NEGATIVE_INFINITY;
+  for (const w of windows) {
+    if (w.from < from) from = w.from;
+    if (w.to > to) to = w.to;
+  }
+  // A little air so the first and last items are not flush against an edge.
+  const pad = Math.max((to - from) * padRatio, 60_000);
+  return { from: from - pad, to: to + pad };
+}
+
+/**
  * The window a GPX implies: the ride itself, plus a margin either side to
  * catch the start line and the finish.
  */

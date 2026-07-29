@@ -339,6 +339,16 @@ impossible. Fixed by giving the slider an **extent** that is normally just the
 part being looked at, plus **cluster chips** that jump between the stretches
 the data actually forms.
 
+> i think the only smaller change we can make is when we are selecting the
+> dates above the slider, we can use those as a multi select so we can
+> potentially pick multiple days to span over, but that's all
+
+**DECISION — chips are toggles.** The range becomes the union span of what is
+chosen. Since a range is contiguous, picking two non-adjacent stretches
+sweeps up whatever sits between them; rather than hide that, a swept-up
+cluster gets a dashed "included" chip. A control must not lie about what is
+on screen.
+
 The core-purity test also earned its keep here: it refused the field name
 `window` for shadowing a host global, and the first wiring did indeed contain
 `{placement && bounds && window && ...}` — testing the browser's

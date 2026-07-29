@@ -282,6 +282,14 @@ automatically.
 **The histogram behind the handles is load-bearing, not decoration.** Across a
 mostly-empty span there is no other way to see where the photos are.
 
+**The chips are multi-select toggles.** Picking several spans them all, so
+the pre-race night plus the race is two clicks. The result is a union SPAN,
+because a range is contiguous by definition — so picking two non-adjacent
+stretches necessarily sweeps up whatever sits between them. That is handled
+by SHOWING it: a swept-up cluster gets a dashed "included" chip rather than
+looking unselected while its photos are on screen. Never let a control lie
+about what is visible.
+
 **Two scales, and this is the part that was got wrong first.** Drawn linearly
 over the whole folder, the single 42-day gap ate 90% of the track: handles
 crowded into the last few pixels, one pixel was about seven hours, and

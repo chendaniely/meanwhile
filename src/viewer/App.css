@@ -499,3 +499,24 @@
   font-weight: 700;
   color: var(--mw-fg);
 }
+
+/* Chosen by clicking. Chips are toggles, so several stretches can span. */
+.chip--active {
+  border-color: var(--mw-accent);
+  color: var(--mw-fg);
+  background: rgb(242 101 34 / 10%);
+}
+
+/* Not chosen, but between two that were — so its photos are on screen
+   anyway. A contiguous range cannot skip the middle, and a chip that looked
+   "off" while its items showed would be a lie. */
+.chip--swept {
+  border-color: var(--mw-fg-faint);
+  border-style: dashed;
+  color: var(--mw-fg-muted);
+}
+
+.chip--plain[aria-pressed='true'] {
+  border-color: var(--mw-fg-faint);
+  color: var(--mw-fg);
+}

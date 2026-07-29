@@ -10,6 +10,7 @@ import {
   isWithin,
   itemsInWindow,
   placeItems,
+  unionSpan,
   windowFromCourse,
   type PlacedItem,
 } from '../src/core/window.ts';
@@ -126,6 +127,44 @@ describe('windowFromCourse', () => {
   it('takes a custom pad', () => {
     const w = windowFromCourse({ from: 0, to: HOUR }, 5 * 60_000);
     expect(w.from).toBe(-5 * 60_000);
+  });
+});
+
+describe('unionSpan', () => {
+  it('spans several chosen stretches', () => {
+    const span = unionSpan([
+      { from: 10 * HOUR, to: 12 * HOUR },
+      { from: 30 * HOUR, to: 34 * HOUR },
+    ]) as { from: number; to: number };
+    expect(span.from).toBeLessThanOrEqual(10 * HOUR);
+    expect(span.to).toBeGreaterThanOrEqual(34 * HOUR);
+  });
+
+  it('sweeps up whatever sits between non-adjacent choices', () => {
+    // A range is contiguous by definition, so this is unavoidable. It is
+    // handled by SHOWING it — the swept-up cluster gets its own chip state —
+    // not by pretending it did not happen.
+    const middle = { from: 20 * HOUR, to: 21 * HOUR };
+    const span = unionSpan([
+      { from: 10 * HOUR, to: 12 * HOUR },
+      { from: 30 * HOUR, to: 34 * HOUR },
+    ]) as { from: number; to: number };
+    expect(isWithin(middle.from, span)).toBe(true);
+  });
+
+  it('accepts a single stretch', () => {
+    const span = unionSpan([{ from: 10 * HOUR, to: 12 * HOUR }]) as { from: number; to: number };
+    expect(span.from).toBeLessThan(10 * HOUR);
+    expect(span.to).toBeGreaterThan(12 * HOUR);
+  });
+
+  it('gives a zero-width stretch some width', () => {
+    const span = unionSpan([{ from: HOUR, to: HOUR }]) as { from: number; to: number };
+    expect(span.to - span.from).toBeGreaterThan(0);
+  });
+
+  it('returns null for nothing chosen', () => {
+    expect(unionSpan([])).toBeNull();
   });
 });
 

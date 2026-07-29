@@ -5,6 +5,7 @@ import {
   clusters as findClusters,
   histogram,
   isWithin,
+  unionSpan,
   type PlacedItem,
   type TimeWindow,
 } from '../../core/window.ts';
@@ -70,12 +71,29 @@ export function TimeWindowSlider({
   const clusters = useMemo(() => findClusters(placed), [placed]);
   const [extent, setExtent] = useState<TimeWindow>(() => framedAround(range, bounds));
 
+  /**
+   * Which chips the author actually clicked.
+   *
+   * `null` means "nobody has clicked yet, work it out from the range" — which
+   * is also what dragging a handle returns us to, since after a free drag the
+   * range no longer corresponds to any set of clusters.
+   */
+  const [picked, setPicked] = useState<ReadonlySet<number> | null>(null);
+
   // Re-frame when a different folder is loaded, but not on every drag — the
   // extent must hold still while the handles move inside it.
   useEffect(() => {
     setExtent(framedAround(range, bounds));
+    setPicked(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bounds.from, bounds.to]);
+
+  /** Clusters wholly inside the range, i.e. the ones actually being shown. */
+  const inRange = useMemo(
+    () => new Set(clusters.filter((c) => c.from >= range.from && c.to <= range.to).map((c) => c.from)),
+    [clusters, range],
+  );
+  const chosen = picked ?? inRange;
 
   const counts = useMemo(() => histogram(placed, extent, BINS), [placed, extent]);
   const peak = Math.max(1, ...counts);
@@ -88,11 +106,36 @@ export function TimeWindowSlider({
   // minute, coarse enough that a keyboard arrow does something visible.
   const step = Math.max(1, Math.round(total / 1000));
 
-  const set = (next: Partial<TimeWindow>) => onChange(clampWindow({ ...range, ...next }, extent));
+  const set = (next: Partial<TimeWindow>) => {
+    // A free drag no longer matches any set of chips, so hand the chip state
+    // back to being derived from wherever the handles ended up.
+    setPicked(null);
+    onChange(clampWindow({ ...range, ...next }, extent));
+  };
 
-  const pick = (next: TimeWindow) => {
-    setExtent(framedAround(next, bounds));
-    onChange(clampWindow(next, bounds));
+  /**
+   * Chips are toggles, so several stretches can be spanned at once — the
+   * pre-race night plus the race, say.
+   *
+   * The resulting range is the union SPAN of what is chosen, because a range
+   * is contiguous by definition. Picking two non-adjacent stretches therefore
+   * sweeps up whatever sits between them; that is why a swept-up cluster gets
+   * its own "included" chip state rather than looking unselected. Nothing is
+   * shown without a chip saying so.
+   */
+  const toggle = (key: number) => {
+    const next = new Set(chosen);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    // Deselecting the last one would show nothing at all; keep it selected.
+    if (next.size === 0) return;
+
+    const united = unionSpan(clusters.filter((c) => next.has(c.from)));
+    if (!united) return;
+
+    setPicked(next);
+    setExtent(framedAround(united, bounds));
+    onChange(clampWindow(united, bounds));
   };
 
   const shown = placed.filter((p) => isWithin(p.instant, range)).length;
@@ -115,15 +158,27 @@ export function TimeWindowSlider({
       </div>
 
       {clusters.length > 1 && (
-        <div className="chips" role="group" aria-label="Jump to a stretch of time">
+        <div className="chips" role="group" aria-label="Stretches of time to show">
           {clusters.map((cluster) => {
-            const active = range.from <= cluster.from && range.to >= cluster.to;
+            const selected = chosen.has(cluster.from);
+            // Not chosen, but sitting between two that were, so it is on
+            // screen regardless. Saying so beats a chip that looks off while
+            // its photos are visible.
+            const swept = !selected && inRange.has(cluster.from);
             return (
               <button
                 key={cluster.from}
                 type="button"
-                className={active ? 'chip chip--active' : 'chip'}
-                onClick={() => pick(cluster)}
+                aria-pressed={selected}
+                className={
+                  selected ? 'chip chip--active' : swept ? 'chip chip--swept' : 'chip'
+                }
+                onClick={() => toggle(cluster.from)}
+                title={
+                  swept
+                    ? 'Shown because it falls between the stretches you picked'
+                    : `${cluster.count} items · ${formatSpan(cluster.to - cluster.from)}`
+                }
               >
                 <span className="chip__count mw-mono">{cluster.count}</span>
                 <span className="chip__when">{formatDateTime(cluster.from, timezone)}</span>
@@ -132,8 +187,10 @@ export function TimeWindowSlider({
           })}
           <button
             type="button"
-            className={showingWholeFolder ? 'chip chip--active' : 'chip'}
+            className="chip chip--plain"
+            aria-pressed={showingWholeFolder}
             onClick={() => setExtent(bounds)}
+            title="Widen the slider to cover the whole folder, without changing what is shown"
           >
             <span className="chip__when">Whole folder</span>
           </button>
