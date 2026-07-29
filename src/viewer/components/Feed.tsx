@@ -1,10 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { assignLaneColors } from '../../core/palette.ts';
 import type { Manifest, PersonId } from '../../core/schema.ts';
-import { isVisible, type AppState } from '../../core/state.ts';
 import { formatClock, formatDateTime } from '../../core/time.ts';
-import { isWithin, type PlacedItem, type TimeWindow } from '../../core/window.ts';
-import { Lightbox } from './Lightbox.tsx';
+import type { PlacedItem } from '../../core/window.ts';
 import { MediaTile } from './MediaTile.tsx';
 
 /**
@@ -23,10 +21,13 @@ import { MediaTile } from './MediaTile.tsx';
 
 interface Props {
   manifest: Manifest;
-  placed: readonly PlacedItem[];
-  range: TimeWindow;
-  /** Shared with every other view: hiding a lane hides it here too. */
-  state: AppState;
+  /**
+   * Already cropped to the range and to the visible people. Filtering happens
+   * once, in App, so every view is looking at exactly the same set — which is
+   * what makes switching between them mean anything.
+   */
+  items: readonly PlacedItem[];
+  onOpen: (entry: PlacedItem) => void;
 }
 
 /** Gap that separates one moment from the next. */
@@ -52,7 +53,7 @@ function toMoments(placed: readonly PlacedItem[]): Moment[] {
   return out;
 }
 
-export function Feed({ manifest, placed, range, state }: Props) {
+export function Feed({ manifest, items, onOpen }: Props) {
   const zone = manifest.event.timezone;
   const colors = useMemo(() => assignLaneColors(manifest.people), [manifest.people]);
   const names = useMemo(
@@ -60,24 +61,7 @@ export function Feed({ manifest, placed, range, state }: Props) {
     [manifest.people],
   );
 
-  /**
-   * The flat, in-order list the lightbox steps through.
-   *
-   * Kept separate from the moment grouping on purpose: arrow keys should walk
-   * the whole event, not stop at the edge of whichever moment you opened
-   * from.
-   */
-  const visible = useMemo(
-    () => placed.filter((p) => isWithin(p.instant, range) && isVisible(state, p.item.person)),
-    [placed, range, state],
-  );
-  const moments = useMemo(() => toMoments(visible), [visible]);
-
-  const [openIndex, setOpenIndex] = useState<number | null>(null);
-  const indexOf = useMemo(
-    () => new Map(visible.map((entry, i) => [entry.item.id, i])),
-    [visible],
-  );
+  const moments = useMemo(() => toMoments(items), [items]);
 
   if (moments.length === 0) {
     return (
@@ -91,18 +75,6 @@ export function Feed({ manifest, placed, range, state }: Props) {
 
   return (
     <div className="feed">
-      {openIndex !== null && (
-        <Lightbox
-          items={visible}
-          index={openIndex}
-          onIndex={setOpenIndex}
-          onClose={() => setOpenIndex(null)}
-          colors={colors}
-          names={names}
-          {...(zone ? { timezone: zone } : {})}
-        />
-      )}
-
       {moments.map((moment) => {
         const day = formatDateTime(moment.at, zone).replace(/,.*$/, '');
         const newDay = day !== lastDay;
@@ -140,7 +112,7 @@ export function Feed({ manifest, placed, range, state }: Props) {
                   item={item}
                   {...(colors.get(item.person) ? { color: colors.get(item.person) as string } : {})}
                   caption={formatClock(instant, zone)}
-                  onOpen={() => setOpenIndex(indexOf.get(item.id) ?? 0)}
+                  onOpen={() => onOpen({ item, instant })}
                 />
               ))}
             </div>

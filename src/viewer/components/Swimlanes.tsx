@@ -3,10 +3,11 @@ import { useMemo, useRef, useState } from 'react';
 import { assignLaneColors, orderPeople } from '../../core/palette.ts';
 import type { Manifest, PersonId } from '../../core/schema.ts';
 import { isVisible, type AppState } from '../../core/state.ts';
-import { laneBins, peopleAround } from '../../core/timeline.ts';
+import { laneBins } from '../../core/timeline.ts';
 import { formatClock, formatDateTime, formatSpan } from '../../core/time.ts';
 import type { Instant } from '../../core/time.ts';
 import type { PlacedItem, TimeWindow } from '../../core/window.ts';
+import { MomentStrip, momentRadius } from './MomentStrip.tsx';
 
 /**
  * One lane per person on a shared clock.
@@ -32,18 +33,36 @@ interface Props {
   state: AppState;
   onCursor: (instant: Instant | null) => void;
   onTogglePerson: (person: PersonId) => void;
+  onOpen?: (entry: PlacedItem) => void;
 }
 
 const LANE_HEIGHT = 44;
 /** Roughly one mark per two pixels at a typical width. */
 const BINS = 480;
-/** Two people shooting inside this window counts as "at the same time". */
-const SIMULTANEITY_MS = 3 * 60_000;
 
-export function Swimlanes({ manifest, placed, range, state, onCursor, onTogglePerson }: Props) {
+export function Swimlanes({
+  manifest,
+  placed,
+  range,
+  state,
+  onCursor,
+  onTogglePerson,
+  onOpen,
+}: Props) {
   const zone = manifest.event.timezone;
   const track = useRef<HTMLDivElement>(null);
-  const [hover, setHover] = useState<Instant | null>(null);
+
+  /**
+   * Where the scrub is. Deliberately NOT cleared when the pointer leaves the
+   * track: the photographs for that moment appear below, and you have to be
+   * able to move down to them without the thing you were looking at vanishing
+   * on the way.
+   *
+   * Clicking pins it into the shared cursor, which is what goes in the URL and
+   * survives a view switch.
+   */
+  const [scrub, setScrub] = useState<Instant | null>(state.cursor);
+  const [overTrack, setOverTrack] = useState(false);
 
   const people = useMemo(() => orderPeople(manifest.people), [manifest.people]);
   const colors = useMemo(() => assignLaneColors(manifest.people), [manifest.people]);
@@ -73,27 +92,31 @@ export function Swimlanes({ manifest, placed, range, state, onCursor, onTogglePe
     return range.from + ratio * total;
   };
 
-  const readout = hover ?? state.cursor;
-  const together = readout === null ? null : peopleAround(placed, readout, SIMULTANEITY_MS);
+  const at = scrub ?? state.cursor;
+  const radius = momentRadius(total);
 
   return (
     <section className="lanes" aria-label="Swimlanes">
       <header className="lanes__head">
         <div className="lanes__readout">
-          {readout === null ? (
-            <span className="lanes__hint">Move across the lanes to read a moment.</span>
+          {at === null ? (
+            <span className="lanes__hint">
+              Move across the lanes to see what everyone was looking at.
+            </span>
           ) : (
-            <>
-              <time className="lanes__time mw-mono">{formatDateTime(readout, zone)}</time>
-              {together && together.size > 1 && (
-                <span className="lanes__together">{together.size} people at once</span>
-              )}
-            </>
+            <time className="lanes__time mw-mono">{formatDateTime(at, zone)}</time>
           )}
         </div>
-        {state.cursor !== null && (
-          <button type="button" className="window__reset" onClick={() => onCursor(null)}>
-            Clear cursor
+        {at !== null && (
+          <button
+            type="button"
+            className="window__reset"
+            onClick={() => {
+              setScrub(null);
+              onCursor(null);
+            }}
+          >
+            Clear
           </button>
         )}
       </header>
@@ -137,9 +160,16 @@ export function Swimlanes({ manifest, placed, range, state, onCursor, onTogglePe
         <div
           className="lanes__track"
           ref={track}
-          onPointerMove={(e) => setHover(instantAt(e.clientX))}
-          onPointerLeave={() => setHover(null)}
-          onPointerDown={(e) => onCursor(instantAt(e.clientX))}
+          onPointerMove={(e) => {
+            setOverTrack(true);
+            setScrub(instantAt(e.clientX));
+          }}
+          onPointerLeave={() => setOverTrack(false)}
+          onPointerDown={(e) => {
+            const next = instantAt(e.clientX);
+            setScrub(next);
+            onCursor(next);
+          }}
           role="presentation"
         >
           <div className="lanes__gridlines" aria-hidden="true">
@@ -179,12 +209,24 @@ export function Swimlanes({ manifest, placed, range, state, onCursor, onTogglePe
             />
           ))}
 
-          {hover !== null && (
-            <span className="lanes__hover" style={{ left: `${percentOf(hover)}%` }} aria-hidden="true" />
+          {/* The window the strip below is showing, so the connection between
+              "here" and "these photographs" is visible rather than implied. */}
+          {at !== null && (
+            <span
+              className="lanes__band"
+              style={{
+                left: `${percentOf(at - radius)}%`,
+                width: `${(radius * 2 * 100) / total}%`,
+              }}
+              aria-hidden="true"
+            />
           )}
-          {state.cursor !== null && (
-            <span className="lanes__cursor" style={{ left: `${percentOf(state.cursor)}%` }}>
-              <span className="lanes__cursor-label mw-mono">{formatClock(state.cursor, zone)}</span>
+          {at !== null && (
+            <span
+              className={overTrack ? 'lanes__cursor lanes__cursor--live' : 'lanes__cursor'}
+              style={{ left: `${percentOf(at)}%` }}
+            >
+              <span className="lanes__cursor-label mw-mono">{formatClock(at, zone)}</span>
             </span>
           )}
         </div>
@@ -197,6 +239,18 @@ export function Swimlanes({ manifest, placed, range, state, onCursor, onTogglePe
           </span>
         ))}
       </div>
+
+      {at !== null && (
+        <MomentStrip
+          people={shown}
+          colors={colors}
+          placed={placed}
+          at={at}
+          radiusMs={radius}
+          {...(zone ? { timezone: zone } : {})}
+          {...(onOpen ? { onOpen } : {})}
+        />
+      )}
 
       {shown.length < people.length && (
         <p className="lanes__hidden">

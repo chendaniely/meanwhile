@@ -326,6 +326,26 @@ would leave pixel-level gaps to the accident of where a boundary fell.
 - **D3 is used for tick placement only.** `scaleTime().ticks()` knows that
   every three hours beats every 2.8 hours. Nothing else goes through it.
 
+**The lanes alone are not enough**, and the owner was right to say so:
+
+> "just looking at when there are photos and events are not useful"
+
+Marks on a track say activity happened without saying what it was, which is
+most of the value. So `MomentStrip` sits underneath, showing the actual
+photographs for whatever the cursor is on, **one row per lane and aligned
+with the lane above** — the simultaneity claim made visible rather than
+argued for. A person with nothing in the window gets a row saying "nothing",
+because that absence is as much the story as the pictures.
+
+Two details that make it usable rather than merely correct:
+
+- **The scrub is NOT cleared when the pointer leaves the track.** The photos
+  are below it; you have to be able to move down to them without the thing
+  you were looking at vanishing on the way.
+- **The window scales with the zoom** (`momentRadius`). A fixed radius fails
+  at both ends: five minutes is invisible across two days, half an hour
+  swallows everything when zoomed into one climb.
+
 ### Verifying in a browser: the tab must be VISIBLE
 
 Chrome pauses `requestAnimationFrame` **and IntersectionObserver delivery**

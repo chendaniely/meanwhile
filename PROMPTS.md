@@ -353,3 +353,20 @@ The core-purity test also earned its keep here: it refused the field name
 `window` for shadowing a host global, and the first wiring did indeed contain
 `{placement && bounds && window && ...}` — testing the browser's
 always-truthy `window` object rather than the value. Renamed to `range`.
+
+---
+
+> i like the swim lanes. i feel like as we hover over all the images around
+> that time should pop up or something. just looking at when tehre are photos
+> and events are not useful
+
+**DECISION — the photographs go under the lanes.** A correct critique: marks
+on a track tell you *when* without telling you *what*, and "what" is most of
+the value. `MomentStrip` shows the media for whatever the cursor is on, one
+row per lane and aligned with the lane above, so "Sam was on the climb while
+Dan was at the aid station" is seen rather than inferred. Empty rows say
+"nothing" rather than being dropped, because the absence is the story.
+
+This also folded the moment grid (M8) into the swimlanes rather than leaving
+it a separate view — better than the original design, which would have made
+you switch views to answer "what was happening here".

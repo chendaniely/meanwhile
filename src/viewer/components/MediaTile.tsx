@@ -20,6 +20,12 @@ interface Props {
   caption?: string;
   /** Opens the item full size. Video plays there rather than in the grid. */
   onOpen?: () => void;
+  /**
+   * 'aspect' keeps each item's own shape, which suits a browsing grid.
+   * 'square' makes every tile identical, which suits a strip you scan across
+   * — there, mixed heights read as misalignment rather than as variety.
+   */
+  fit?: 'aspect' | 'square';
 }
 
 /**
@@ -49,7 +55,7 @@ function displayAspect(item: Item): number {
 
 type State = 'idle' | 'loading' | 'ready' | 'undecodable';
 
-export function MediaTile({ item, color, caption, onOpen }: Props) {
+export function MediaTile({ item, color, caption, onOpen, fit = 'aspect' }: Props) {
   const { store } = useMedia();
   const { ref, inView } = useInView<HTMLDivElement>();
   const [url, setUrl] = useState<string | null>(null);
@@ -98,7 +104,10 @@ export function MediaTile({ item, color, caption, onOpen }: Props) {
 
   return (
     <figure className="tile" ref={ref}>
-      <div className="tile__frame" style={{ aspectRatio: String(aspect) }}>
+      <div
+        className="tile__frame"
+        style={{ aspectRatio: fit === 'square' ? '1' : String(aspect) }}
+      >
         {url && <img className="tile__image" src={url} alt="" loading="lazy" decoding="async" />}
         {state === 'undecodable' && <Undecodable item={item} />}
         {state === 'loading' && !url && <div className="tile__pending" aria-hidden="true" />}

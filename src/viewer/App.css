@@ -1077,18 +1077,19 @@
 
 .lanes__labels {
   flex: none;
-  width: 13rem;
+  width: 14rem;
 }
 
 .lanes__label {
   display: flex;
-  align-items: center;
-  gap: var(--mw-space-2);
+  flex-direction: column;
+  justify-content: center;
   overflow: hidden;
-  /* Line-height is reset because the body's 1.75 makes two items taller than
-     the lane, and a label that does not line up with its lane is worse than
-     no label. */
-  line-height: 1.2;
+  /* Two lines fit inside a 44px lane ONLY with the line-height reset: the
+     body's 1.75 makes them 45.5px and the labels drift out of step with the
+     marks they name. Stacking rather than sitting side by side is what lets
+     a name like "Samsung SM-F721W" be read in full. */
+  line-height: 1.15;
 }
 
 .lanes__name {
@@ -1123,11 +1124,10 @@
 }
 
 .lanes__gap {
-  flex: none;
-  margin-left: auto;
   font-size: var(--mw-text-xs);
   color: var(--mw-fg-faint);
-  line-height: 1.2;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 .lanes__track {
@@ -1210,7 +1210,7 @@
 .lanes__axis {
   position: relative;
   height: 1.5rem;
-  margin-left: calc(13rem + var(--mw-space-3));
+  margin-left: calc(14rem + var(--mw-space-3));
 }
 
 .lanes__tick {
@@ -1224,4 +1224,88 @@
 
 .lanes__hidden .chip {
   margin-left: var(--mw-space-2);
+}
+
+/* ---- moment strip ------------------------------------------------------ */
+
+/* The photographs for whatever the cursor is on. Without this the swimlanes
+   only say that activity happened, not what it was — which is most of the
+   value. */
+.moment-strip {
+  margin-top: var(--mw-space-4);
+  padding-top: var(--mw-space-3);
+  border-top: 1px solid var(--mw-border);
+}
+
+.moment-strip__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--mw-space-3);
+  margin-bottom: var(--mw-space-2);
+}
+
+.moment-strip__time {
+  font-weight: 700;
+}
+
+.moment-strip__window,
+.moment-strip__hint {
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-muted);
+}
+
+.moment-strip__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--mw-space-3);
+  padding: var(--mw-space-2) 0;
+  border-bottom: 1px solid var(--mw-border);
+  min-height: 2.5rem;
+}
+
+.moment-strip__who {
+  flex: none;
+  width: 14rem;
+  display: flex;
+  align-items: center;
+  gap: var(--mw-space-2);
+  font-size: var(--mw-text-sm);
+  line-height: 1.2;
+  min-width: 0;
+  padding-top: var(--mw-space-1);
+}
+
+/* Said plainly rather than left blank: an empty row is a fact about the race,
+   and dropping it would quietly delete the most interesting part. */
+.moment-strip__quiet {
+  font-size: var(--mw-text-sm);
+  color: var(--mw-fg-faint);
+  font-style: italic;
+  padding-top: var(--mw-space-1);
+}
+
+.moment-strip__tiles {
+  display: flex;
+  gap: var(--mw-space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.moment-strip__tile {
+  width: 104px;
+  flex: none;
+}
+
+/* The slice of time the strip is showing, drawn behind the lanes so "here"
+   and "these photographs" are visibly the same thing. */
+.lanes__band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgb(242 101 34 / 12%);
+  pointer-events: none;
+}
+
+.lanes__cursor--live {
+  opacity: 0.75;
 }

@@ -1,15 +1,19 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { GroupingInfo } from '../core/assemble.ts';
 import type { Manifest, PersonId } from '../core/schema.ts';
-import { toggleVisible, VIEW_NAMES } from '../core/state.ts';
+import { isVisible, toggleVisible, VIEW_NAMES } from '../core/state.ts';
+import { assignLaneColors } from '../core/palette.ts';
 import {
   clampWindow,
   densestWindow,
   fullSpan,
+  isWithin,
   placeItems,
+  type PlacedItem,
   type TimeWindow,
 } from '../core/window.ts';
 import { Feed } from './components/Feed.tsx';
+import { Lightbox } from './components/Lightbox.tsx';
 import { Swimlanes } from './components/Swimlanes.tsx';
 import { FilePicker, FolderPicker } from './components/FolderPicker.tsx';
 import { IngestReport } from './components/IngestReport.tsx';
@@ -161,6 +165,23 @@ export function App() {
     return densestWindow(placement.placed) ?? bounds;
   }, [manifest, placement, bounds]);
 
+  /**
+   * The one set every view works from: inside the crop, and belonging to
+   * someone whose lane is showing. Computed once here rather than per view,
+   * so switching between them cannot show different things.
+   */
+  const items: readonly PlacedItem[] = useMemo(() => {
+    if (!placement || !range) return [];
+    return placement.placed.filter(
+      (entry) => isWithin(entry.instant, range) && isVisible(view, entry.item.person),
+    );
+  }, [placement, range, view]);
+
+  // The lightbox belongs to the app, not to a view: you can open a photo from
+  // the feed or from the lanes, and stepping through it walks the same list.
+  const [openId, setOpenId] = useState<string | null>(null);
+  const openIndex = openId === null ? -1 : items.findIndex((e) => e.item.id === openId);
+
   const setWindow = (next: TimeWindow | null) => {
     // Kept in both places on purpose: the manifest so it survives export, the
     // URL so it survives being sent to someone.
@@ -307,14 +328,28 @@ export function App() {
                       visible: toggleVisible(view, person, stage.manifest.people.map((p) => p.id)),
                     })
                   }
+                  onOpen={(entry) => setOpenId(entry.item.id)}
                 />
               )}
               {view.view === 'feed' && (
                 <Feed
                   manifest={stage.manifest}
-                  placed={placement.placed}
-                  range={range}
-                  state={view}
+                  items={items}
+                  onOpen={(entry) => setOpenId(entry.item.id)}
+                />
+              )}
+
+              {openIndex >= 0 && (
+                <Lightbox
+                  items={items}
+                  index={openIndex}
+                  onIndex={(next) => setOpenId(items[next]?.item.id ?? null)}
+                  onClose={() => setOpenId(null)}
+                  colors={assignLaneColors(stage.manifest.people)}
+                  names={new Map(stage.manifest.people.map((p) => [p.id, p.name]))}
+                  {...(stage.manifest.event.timezone
+                    ? { timezone: stage.manifest.event.timezone }
+                    : {})}
                 />
               )}
               <UnplacedTray manifest={stage.manifest} unplaced={placement.unplaced} />
