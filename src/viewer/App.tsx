@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GroupingInfo } from '../core/assemble.ts';
 import type { Manifest } from '../core/schema.ts';
 import {
@@ -127,21 +127,35 @@ export function App() {
   const manifest = stage.name === 'loaded' ? stage.manifest : null;
 
   /**
-   * One store per folder, and the old one is disposed when it is replaced.
+   * One store per folder, created and disposed together.
    *
-   * Skipping that disposal would leak every object URL from the previous
-   * folder — nothing else revokes them.
+   * Both halves have to live in the SAME effect. Two wrong versions of this
+   * were shipped before it was right, and each broke differently:
+   *
+   *   - Create in `useMemo`, dispose in an effect cleanup. StrictMode runs
+   *     effect cleanups on mount, so the store that was just created got
+   *     disposed and every thumbnail came back null.
+   *   - Create in `useMemo`, dispose the previous one inside the same
+   *     factory. Worse: StrictMode double-invokes memo factories precisely to
+   *     surface impurity, so the second invocation disposed the store the
+   *     first had just made — and every tile read "cannot display this file".
+   *
+   * An effect keyed on `files` is the only shape that survives, because
+   * create and dispose are then always paired on the same instance.
    */
-  const previousStore = useRef<MediaStore | null>(null);
-  const store = useMemo(() => {
-    // Dispose the OUTGOING store here rather than in an effect cleanup.
-    // StrictMode runs effect cleanups on mount, which would dispose the store
-    // that was just created and is about to be used — the same class of bug
-    // as the observer in useInView.
-    previousStore.current?.dispose();
-    const next = files ? new MediaStore(files) : null;
-    previousStore.current = next;
-    return next;
+  const [store, setStore] = useState<MediaStore | null>(null);
+  useEffect(() => {
+    if (!files) {
+      setStore(null);
+      return;
+    }
+    const next = new MediaStore(files);
+    setStore(next);
+    return () => {
+      // Nothing else revokes this folder's object URLs.
+      next.dispose();
+      setStore(null);
+    };
   }, [files]);
 
   // One resolution pass per manifest, shared by the slider and the report, so

@@ -190,6 +190,20 @@ describe('MediaStore memory discipline', () => {
   });
 });
 
+describe('MediaStore use after dispose', () => {
+  it('throws rather than quietly returning null', async () => {
+    // Returning null would be indistinguishable from "the browser cannot
+    // decode this file", which is exactly how a lifecycle bug once made
+    // every tile claim the photo was unreadable.
+    decodeThumbnail.mockResolvedValue(blobOf(10));
+    const store = storeOf(['a.jpg']);
+    store.dispose();
+
+    await expect(store.acquireThumbnail(photo('a.jpg'))).rejects.toThrow(/after dispose/);
+    expect(() => store.acquireOriginal('a.jpg')).toThrow(/after dispose/);
+  });
+});
+
 describe('MediaStore originals', () => {
   it('revokes as soon as the last holder lets go', async () => {
     // Unlike thumbnails these are NOT cached: one multi-gigabyte clip pinned

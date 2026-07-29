@@ -82,7 +82,11 @@ export class MediaStore {
    * the picture is missing.
    */
   async acquireThumbnail(item: Item): Promise<string | null> {
-    if (this.disposed) return null;
+    // Using a disposed store is a lifecycle BUG, not a file the browser
+    // cannot read — and returning null for both is how a StrictMode mistake
+    // once disguised itself as "cannot display this file" on every single
+    // tile. Fail loudly so the next one is obvious.
+    this.assertUsable();
 
     const existing = this.entries.get(item.id);
     if (existing) {
@@ -160,7 +164,7 @@ export class MediaStore {
    * revoking the URL under a playing <video> stops playback dead.
    */
   acquireOriginal(id: string): string | null {
-    if (this.disposed) return null;
+    this.assertUsable();
     const existing = this.originals.get(id);
     if (existing) {
       existing.refs++;
@@ -205,6 +209,15 @@ export class MediaStore {
     // If everything is still referenced there is nothing to free; that means
     // more tiles are on screen than the budget allows, which is a layout
     // problem rather than a leak.
+  }
+
+  private assertUsable(): void {
+    if (this.disposed) {
+      throw new Error(
+        'MediaStore used after dispose. The store outlived its folder, or was ' +
+          'disposed while still mounted — check how it is created and torn down.',
+      );
+    }
   }
 
   /** Bounded parallelism per lane, so slow video cannot starve fast images. */

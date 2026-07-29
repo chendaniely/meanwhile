@@ -61,17 +61,26 @@ export function MediaTile({ item, color, caption, onOpen }: Props) {
     let cancelled = false;
     setState('loading');
 
-    void store.acquireThumbnail(item).then((next) => {
-      if (cancelled) {
-        // Scrolled away mid-decode: hand it straight back rather than
-        // holding a reference no tile is showing.
-        if (next) store.release(item.id);
-        return;
-      }
-      held.current = item.id;
-      setUrl(next);
-      setState(next ? 'ready' : 'undecodable');
-    });
+    void store
+      .acquireThumbnail(item)
+      .then((next) => {
+        if (cancelled) {
+          // Scrolled away mid-decode: hand it straight back rather than
+          // holding a reference no tile is showing.
+          if (next) store.release(item.id);
+          return;
+        }
+        held.current = item.id;
+        setUrl(next);
+        setState(next ? 'ready' : 'undecodable');
+      })
+      .catch((error: unknown) => {
+        // A thrown error means the store is unusable, which is OUR bug — not
+        // a file the browser cannot read. Saying "cannot display this file"
+        // here would blame the user's photo for our mistake.
+        if (!cancelled) setState('idle');
+        console.error('meanwhile: could not load a thumbnail', error);
+      });
 
     return () => {
       cancelled = true;
