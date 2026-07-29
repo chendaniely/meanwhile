@@ -327,6 +327,26 @@ This was 4MB per photo until it was measured. On the real 2GB folder:
 
 Every file resolved to the same time from the same source, verified by diff.
 
+### Why display is fast, for the same reason *(measured)*
+
+- **Thumbnails**: `createImageBitmap(file, { resizeWidth })` decodes AND
+  resizes in one step on a worker thread, so the full-size buffer never
+  exists on the main thread. A 4080x3072 photo is ~47MB decoded; the 480px
+  thumbnail is ~41KB as a blob and ~0.6MB decoded. 60x smaller as bytes,
+  80x smaller in memory.
+- **Lightbox and video**: `URL.createObjectURL(file)` is **O(1)** — it
+  registers a reference, it does not copy. Measured in Chrome: 1MB blob
+  0.14ms, 50MB 0.55ms, 500MB 0.25ms. The differences are noise. The browser
+  then reads from disk with its own native pipeline, which is why full-size
+  photos open instantly and video scrubs.
+- **The cost of that**: an object URL pins its blob until revoked. That is
+  the whole reason `MediaStore` exists and why its test fails on any URL
+  created and not revoked.
+
+The user-facing version of all this is in `README.md` under "Why it's fast".
+Keep the two in step — the numbers are measured, not estimated, so if the
+read sizes change, re-measure rather than adjusting the prose.
+
 ### Two StrictMode hazards, both found the hard way
 
 React runs every effect mount → cleanup → mount in development. Two patterns

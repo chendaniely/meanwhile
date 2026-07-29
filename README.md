@@ -130,6 +130,84 @@ There's also a report of how much to trust the times, and `make inspect`
 
 Still missing: the swimlane view, the moment grid, and the map.
 
+## Why it's fast, and why nothing is uploaded
+
+meanwhile opens a folder of hundreds of photos and gigabytes of video in
+about a second, on a website that has no server. That sounds like it
+shouldn't work. Here's what's actually going on — it's three separate tricks,
+and none of them involve copying your files.
+
+### It reads slivers of your files, not your files
+
+When you pick a folder, the browser doesn't hand meanwhile your photos. It
+hands over a **list of handles** — the equivalent of a shelf reference rather
+than the book. Nothing is copied, nothing moves, and nothing touches the
+network.
+
+Then it reads only the few kilobytes it needs from each one, because
+timestamps live in known, predictable places:
+
+- **In a photo**, the date sits in a block right at the front of the file. By
+  the format's own rules that block can't be bigger than about 64KB, however
+  huge the photo — so meanwhile reads the first 128KB and stops.
+- **In a video**, the information is usually at the *very end* (a camera
+  doesn't know how long a recording is until you stop it). Rather than read
+  the whole file to get there, meanwhile follows a chain of signposts: each
+  chunk of a video file begins by stating its own length, so it can hop from
+  one to the next, reading 16 bytes each hop, until it lands on the part it
+  wants. Finding the metadata in a 122MB clip costs about three hops.
+
+On the real race folder — 231 files, 2GB:
+
+| | |
+|---|---|
+| Media on disk | 2,034 MB |
+| **Actually read** | **26.6 MB** — 1.3% |
+| Time | about a tenth of a second |
+
+The 98.7% it skipped is the photographs themselves, which it has no reason to
+look at yet.
+
+### Thumbnails are shrunk *while* being decoded
+
+A 4080×3072 photo takes about **47MB of memory** once opened — that's the
+pixels, not the file. Fifty of those on screen would be 2.4GB and a dead tab.
+
+So meanwhile never opens one at full size. It asks the browser to decode
+*and* shrink in a single step, on a background thread, so the full-size
+version never exists at all. What comes out is about **41KB** — around 60×
+smaller than the file and 80× smaller than the opened image.
+
+It also only does this for tiles near your screen, a few at a time, and keeps
+what it made in case you scroll back.
+
+### The lightbox is fast because it does almost nothing
+
+This is the surprising one. When you click a photo, meanwhile doesn't load
+it. It creates a **temporary address that points at the file on your disk**,
+and hands that to the browser — which then reads and displays it with the same
+built-in machinery that opens any image, written in C++ and tuned for
+decades.
+
+Making that address costs the same whether the file is 1MB or 500MB, because
+nothing is being copied. Measured in the browser:
+
+```
+  1 MB file  ->  0.14 ms
+ 50 MB file  ->  0.55 ms
+500 MB file  ->  0.25 ms      (the differences are just noise)
+```
+
+Video works the same way, which is why a clip starts playing immediately and
+you can scrub it: the browser streams from the file on disk exactly as a
+video player would.
+
+The one catch is that those temporary addresses **hold the file in memory
+until they're explicitly thrown away** — nothing cleans them up for you. Get
+that wrong and the tab swells until it dies. So every one of them is handed
+out and taken back in a single place in the code, with a test that fails if
+any is created and not released.
+
 ### How to arrange your folder
 
 **Two ways, and you don't have to do anything special for either.**
