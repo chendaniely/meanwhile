@@ -85,3 +85,73 @@ commit hash when done.
 - **Photo dots on the map when the track is untimed.** They already plot by
   their own GPS, but there is no cursor linking them to a position on the
   course, so clicking one cannot scrub anything.
+
+## Aid stations on the course
+
+> "for ultra races, i'd like the map to also tag where the aid stations are,
+> and whether those are AS that are crew accessible. i'm not sure how best to
+> get that information into the app, and then save the results (since this is
+> a static site)"
+
+**Worth doing, and probably the highest-value annotation this app could
+have** — because an aid station is exactly where the crew's lanes and the
+runner's lane meet. "Crew boiling water at Cottonwood while the runner is two
+hours out on the climb" is the simultaneity claim in its most concrete form,
+and a crew-accessible flag is what separates the aid stations that generate
+photographs from the ones that do not.
+
+### Saving it is already solved
+
+The owner flagged this as the hard part. It is not: **the manifest is the
+answer**, and it is the same answer as notes, clock offsets, and hand-placed
+timestamps. The site stays a renderer; the author's work lives in the file
+they export and re-load. Nothing server-side, consistent with the whole
+architecture.
+
+`Marker { label, at?, atDistance? }` **already exists in `schema.ts` and is
+already validated** — it is just never rendered. So this is mostly wiring,
+plus one schema addition:
+
+```ts
+interface Marker {
+  label: string;
+  at?: string;          // wall-clock
+  atDistance?: number;  // metres along the course
+  crew?: boolean;       // NEW: crew-accessible
+  kind?: 'aid' | 'start' | 'finish' | 'note';   // NEW
+}
+```
+
+Adding optional fields is a compatible change and needs no schema version
+bump. Re-ingest must preserve markers the same way it preserves names and
+captions — they are author work, not metadata read from a file.
+
+### Getting it in: three routes, cheapest first
+
+1. **Type the mile numbers.** Races publish aid stations as a table — "Mile
+   40.2, Cottonwood, crew access" — and `atDistance()` already converts
+   metres along the course into a lat/lon. So the most common published
+   format needs **no GPS at all**, and `Marker.atDistance` exists for exactly
+   this. Note the unit mismatch to handle: race tables are in miles, the
+   schema is in metres.
+2. **Read GPX `<wpt>` elements.** Organiser-provided course files often carry
+   named waypoints, and `course.ts` currently parses only `<trkpt>` — adding
+   `<wpt>` is a few lines in the same scanner and would populate the whole
+   list for free. **The owner's Strava export has zero `<wpt>`**, so this
+   helps for an organiser's file, not for this one.
+3. **Click the map or the elevation profile** to drop one, name it, tick
+   "crew accessible". Needed anyway as the correction path for 1 and 2.
+
+### Design notes for whoever picks this up
+
+- **Aid stations belong on the elevation profile as much as the map.** "The
+  climb between mile 40 and mile 52" is how an ultra is actually discussed,
+  and the profile is where that reads.
+- **Crew-accessible needs a non-colour encoding** — a different marker shape
+  or a label — for the same reason map dots carry names. Do not encode it as
+  colour alone.
+- **They make the swimlanes legible.** Vertical rules at each aid station
+  turn the lanes from "when people shot" into "who was where, when", which is
+  the closest thing to a headline this app has.
+- An aid station visited twice on a lollipop course is two markers at two
+  distances with one label. Do not assume labels are unique.
