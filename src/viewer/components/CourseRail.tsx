@@ -135,7 +135,7 @@ export function CourseRail({
           )}
         </div>
 
-        {onPick && <span className="rail__note-hint">Click the course to note it</span>}
+        {onPick && <span className="rail__note-hint">Click the course to add a note</span>}
 
         {profile && (
           <svg

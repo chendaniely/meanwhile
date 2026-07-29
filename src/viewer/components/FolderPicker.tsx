@@ -21,7 +21,7 @@ interface Props {
  * works. The user should not have to know which they are getting, so the
  * difference is one branch here and nothing anywhere else.
  */
-export function FolderPicker({ onPicked, onError, label = 'Open a folder', variant = 'primary' }: Props) {
+export function FolderPicker({ onPicked, onError, label = 'Open folder', variant = 'primary' }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const modern = supportsDirectoryPicker();
 
@@ -83,7 +83,7 @@ export function FolderPicker({ onPicked, onError, label = 'Open a folder', varia
 export function FilePicker({
   onPicked,
   onError,
-  label = 'Pick files instead',
+  label = 'Choose files',
 }: Pick<Props, 'onPicked' | 'onError' | 'label'>) {
   const inputRef = useRef<HTMLInputElement>(null);
 

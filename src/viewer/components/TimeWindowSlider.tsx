@@ -183,7 +183,7 @@ export function TimeWindowSlider({
   const showingWholeFolder = extent.from <= bounds.from && extent.to >= bounds.to;
 
   return (
-    <section className="window" aria-label="Visible time range">
+    <section className="window" aria-label="Visible time window">
       <div className="window__head">
         <div>
           <span className="window__count mw-mono">{shown.toLocaleString()}</span>
@@ -230,7 +230,7 @@ export function TimeWindowSlider({
             className="chip chip--plain"
             aria-pressed={showingWholeFolder}
             onClick={() => setExtent(bounds)}
-            title="Widen the slider to cover the whole folder, without changing what is shown"
+            title="Widen the slider to reach the whole folder, without changing what is shown"
           >
             <span className="chip__when">Whole folder</span>
           </button>
@@ -265,7 +265,7 @@ export function TimeWindowSlider({
           onPointerUp={onPanEnd}
           onPointerCancel={onPanEnd}
           role="presentation"
-          title="Drag to move the whole range"
+          title="Drag to move the whole window"
         />
 
         <input
@@ -276,7 +276,7 @@ export function TimeWindowSlider({
           step={step}
           value={Math.max(extent.from, Math.min(range.from, extent.to))}
           onChange={(e) => set({ from: Number(e.target.value) })}
-          aria-label="Start of visible range"
+          aria-label="Start of the time window"
           aria-valuetext={formatDateTime(range.from, timezone)}
         />
         <input
@@ -287,7 +287,7 @@ export function TimeWindowSlider({
           step={step}
           value={Math.max(extent.from, Math.min(range.to, extent.to))}
           onChange={(e) => set({ to: Number(e.target.value) })}
-          aria-label="End of visible range"
+          aria-label="End of the time window"
           aria-valuetext={formatDateTime(range.to, timezone)}
         />
       </div>

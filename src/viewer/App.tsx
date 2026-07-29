@@ -643,8 +643,12 @@ export function App() {
             map and elevation profile appear too. There is no separate step for it.
           </p>
           <div className="app__actions">
-            <FolderPicker onPicked={(f) => void handlePicked(f)} onError={setError} />
-            <FilePicker onPicked={(f) => void handlePicked(f)} onError={setError} />
+            <FolderPicker onPicked={(f) => void handlePicked(f, 'replace')} onError={setError} />
+            <FilePicker
+              onPicked={(f) => void handlePicked(f, 'replace')}
+              onError={setError}
+              label="Choose files"
+            />
           </div>
         </main>
       )}
@@ -714,7 +718,6 @@ export function App() {
                 manifest={stage.manifest}
                 grouping={stage.grouping}
                 {...(range ? { range } : {})}
-                onExport={() => downloadManifest(stage.manifest)}
                 onRename={renamePerson}
                 onRole={setRole}
               />
@@ -938,7 +941,9 @@ export function App() {
             * the course but inline under the lanes, which meant scrolling to
             * reach it there and a different shape in each place.
             */}
-          {placement && (
+          {/* Hidden while the lightbox is up: a floating button over a
+              full-screen photograph is noise, and it cannot be used there. */}
+          {placement && openIndex < 0 && (
             <NoteDock
               manifest={stage.manifest}
               cursor={view.cursor}

@@ -748,3 +748,27 @@ filtered.
 Right — it had drifted into three placements and two shapes for one action.
 The dock is now in every view, same corner, and the inline composer under the
 lanes is gone.
+
+
+---
+
+> loop through the site to make sure everythign is consistant and no conflicts.
+> [...] "save manifest" but the expanded event settings has "export
+> manifest.json" i perfer the simplier term, but it needs to be consistent.
+> [...] let's keep doing passes until you find no more irregularities
+
+Six passes, auditing rather than eyeballing — strip comments, extract every
+JSX text node and label/title/placeholder/aria-label, and read the list.
+
+Found and fixed: the duplicate export control under two names (the report now
+has no buttons; the top bar owns opening, adding and saving); "Open a folder"
+vs "Open folder" and "Pick files instead" vs "Add files", resolved by making
+the VERB carry the meaning — "Open" always replaces, "Add" always merges;
+three phrasings of "click the course to add a note"; "range" leaking into
+labels for what the docs call the time window; **the note dock floating over
+the lightbox**, because it had been raised to clear Leaflet and passed the
+modal; "Clear" in the swimlanes not releasing the pin, leaving a cleared
+cursor that was still pinned; and fifteen orphaned CSS selectors left by
+earlier refactors.
+
+Stacking is now a named scale rather than numbers that happened to work.

@@ -420,6 +420,39 @@ The note dock was `z-index: 50` and opened UNDERNEATH the map on the course
 page. Leaflet's own panes and controls run up to 1000, so anything meant to
 float over a map has to clear that. The dock is 1200.
 
+### One action, one name, one control *(consistency pass)*
+
+> "the top menu says 'save manifest' but the expanded event settings has
+> 'export manifest.json' i perfer the simplier term, but it needs to be
+> consistent"
+
+Two controls for one action, under two names. The rules that came out of
+auditing every user-visible string:
+
+- **One control per action.** Opening, adding and saving all live in the top
+  bar; the report has no buttons at all. A second control is a second name
+  waiting to happen.
+- **The verb carries the meaning, not the location.** "Open" always replaces
+  what is loaded; "Add" always merges into it. The empty state therefore says
+  *Open folder* / *Choose files* — both replace, because there is nothing to
+  add to — and the loaded state says *Open folder* / *Add files*.
+- **One word per concept in the UI.** The crop is a "time window" everywhere;
+  `range` is the internal field name and had leaked into labels.
+
+**Audit it, do not eyeball it.** Strip comments, extract every JSX text node
+and `label`/`title`/`placeholder`/`aria-label`, and read the list. Two passes
+of that found the duplicate export, three phrasings of one instruction, and
+fifteen orphaned CSS selectors left behind by refactors.
+
+### Stacking is a named scale, not a number that worked *(consistency pass)*
+
+`--mw-z-content` / `-rail` / `-header` / `-float` / `-modal` in `tokens`, and
+anything that floats picks from them. Ad-hoc values are how the note dock —
+raised to 1200 to clear Leaflet's 1000 — ended up floating **over the
+lightbox**, which was on 100. The dock is also hidden outright while the
+lightbox is open, because a floating button over a full-screen photograph is
+noise whichever layer it is on.
+
 ### Nothing persistent may sit after the content *(UI pass)*
 
 > "after i upload 200+ images all the things on the bottom of the site are

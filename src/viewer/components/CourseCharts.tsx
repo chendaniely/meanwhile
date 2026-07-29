@@ -324,7 +324,7 @@ export function CourseCharts({
             {timed ? 'Move across to read the race.' : 'Move across to read the course.'}
           </span>
         )}
-        {onPick && <span className="charts__note-hint">Click to note something here</span>}
+        {onPick && <span className="charts__note-hint">Click the course to add a note</span>}
         {crop && <span className="charts__cropnote">shaded = current time window</span>}
         <span className="charts__total">
           {(course.length / 1000).toFixed(1)} km · {Math.round(course.ascent)} m climb

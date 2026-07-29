@@ -32,14 +32,12 @@ interface Props {
   grouping: GroupingInfo;
   /** Counts describe what is inside this, since that is the working set. */
   range?: TimeWindow;
-  onExport: () => void;
   /** Renaming a device to a person. The whole point of the callout below. */
   onRename?: (person: PersonId, name: string) => void;
   onRole?: (person: PersonId, role: 'runner' | undefined) => void;
-  children?: React.ReactNode;
 }
 
-export function IngestReport({ manifest, grouping, range, onExport, children,
+export function IngestReport({ manifest, grouping, range,
   onRename,
   onRole,
 }: Props) {
@@ -167,12 +165,10 @@ export function IngestReport({ manifest, grouping, range, onExport, children,
         </p>
       )}
 
-      <div className="report__actions">
-        <button type="button" className="button button--primary" onClick={onExport}>
-          Export manifest.json
-        </button>
-        {children}
-      </div>
+      {/* No buttons here. Opening, adding and saving all live in the top bar,
+          which is always reachable — two controls for one action, under two
+          names, is how "Save manifest" and "Export manifest.json" ended up
+          side by side. */}
     </section>
   );
 }

@@ -192,6 +192,9 @@ export function Swimlanes({
             onClick={() => {
               setScrub(null);
               onCursor(null);
+              // Also let go of the pin: a cleared cursor that is still pinned
+              // is a state with nothing on screen to explain it.
+              setLocked(false);
             }}
           >
             Clear

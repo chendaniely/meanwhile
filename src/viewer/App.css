@@ -6,10 +6,25 @@
 
 /* Sticky, because the actions it carries have to stay reachable no matter how
    far down a 200-photo feed you are. */
+/*
+ * STACKING ORDER, in one place.
+ *
+ * Ad-hoc z-indexes are how the note dock ended up floating over the lightbox:
+ * it was raised to clear Leaflet (whose own controls reach 1000) and thereby
+ * passed the modal. Anything that floats picks a name from here.
+ */
+:root {
+  --mw-z-content: 2;      /* marks and bands inside a view   */
+  --mw-z-rail: 20;        /* the sticky course rail          */
+  --mw-z-header: 40;      /* the sticky top bar              */
+  --mw-z-float: 1200;     /* the note dock — must beat Leaflet's 1000 */
+  --mw-z-modal: 2000;     /* the lightbox, above everything  */
+}
+
 .app__header {
   position: sticky;
   top: 0;
-  z-index: 40;
+  z-index: var(--mw-z-header);
   padding: var(--mw-space-3) var(--mw-space-6);
   border-bottom: 1px solid var(--mw-border);
   display: flex;
@@ -292,13 +307,6 @@
   flex: none;
 }
 
-.report__name {
-  flex: 1;
-  display: flex;
-  align-items: baseline;
-  gap: var(--mw-space-2);
-}
-
 .report__tag {
   font-size: var(--mw-text-xs);
   text-transform: uppercase;
@@ -313,13 +321,6 @@
 .bars__count {
   color: var(--mw-fg-muted);
   font-size: var(--mw-text-sm);
-}
-
-.report__actions {
-  display: flex;
-  gap: var(--mw-space-3);
-  margin-top: var(--mw-space-8);
-  flex-wrap: wrap;
 }
 
 /* ---- breakdown bars ---------------------------------------------------- */
@@ -584,7 +585,7 @@
   position: sticky;
   top: 0;
   background: var(--mw-bg);
-  z-index: 2;
+  z-index: var(--mw-z-content);
 }
 
 .moment {
@@ -658,13 +659,6 @@
 }
 
 .tile__image,
-.tile__video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
 /* Deliberately plain: a spinner per tile in a grid of hundreds is visual
    noise, and the frame already reserves the right shape. */
 .tile__pending {
@@ -741,7 +735,7 @@
 .lightbox {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: var(--mw-z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1098,16 +1092,6 @@
   color: var(--mw-fg-muted);
 }
 
-/* Two lanes active at one moment is the app's entire premise, so it is said
-   in words rather than left to be inferred from the marks. */
-.lanes__together {
-  font-size: var(--mw-text-xs);
-  color: var(--mw-accent);
-  border: 1px solid var(--mw-accent);
-  border-radius: 999px;
-  padding: 0 var(--mw-space-2);
-}
-
 .lanes__grid {
   display: flex;
   gap: var(--mw-space-3);
@@ -1212,15 +1196,6 @@
   width: 1px;
   background: var(--mw-fg-faint);
   border-left: 1px dashed var(--mw-fg-faint);
-}
-
-.lanes__hover {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--mw-fg-muted);
-  pointer-events: none;
 }
 
 .lanes__cursor {
@@ -1540,7 +1515,7 @@
   position: sticky;
   /* Clears the sticky page header. */
   top: var(--mw-space-2);
-  z-index: 20;
+  z-index: var(--mw-z-rail);
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: var(--mw-space-3);
@@ -1697,68 +1672,15 @@ button.report__tag--on {
   margin: 0 0 var(--mw-space-1);
 }
 
-.notes__lead,
 .notes__empty {
   color: var(--mw-fg-muted);
   font-size: var(--mw-text-sm);
   margin: 0 0 var(--mw-space-3);
 }
 
-.notes__compose {
-  display: flex;
-  flex-direction: column;
-  gap: var(--mw-space-2);
-  margin-bottom: var(--mw-space-4);
-}
-
-.notes__text {
-  width: 100%;
-  font: inherit;
-  color: var(--mw-fg);
-  background: var(--mw-surface);
-  border: 1px solid var(--mw-border);
-  border-radius: var(--mw-radius-md);
-  padding: var(--mw-space-2);
-  resize: vertical;
-}
-
-.notes__text:focus-visible,
 .notes__edit:focus-visible {
   border-color: var(--mw-accent);
   outline: none;
-}
-
-.notes__fields {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--mw-space-3);
-  align-items: flex-end;
-}
-
-.notes__field {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: var(--mw-text-xs);
-  color: var(--mw-fg-muted);
-}
-
-.notes__field input,
-.notes__field select {
-  font: inherit;
-  color: var(--mw-fg);
-  background: var(--mw-surface);
-  border: 1px solid var(--mw-border);
-  border-radius: var(--mw-radius-sm);
-  padding: var(--mw-space-1) var(--mw-space-2);
-  /* Chrome renders the date picker's icon dark-on-dark otherwise. */
-  color-scheme: dark;
-}
-
-.notes__hint {
-  font-size: var(--mw-text-xs);
-  color: var(--mw-fg-muted);
-  margin: 0;
 }
 
 .notes__list {
@@ -1921,7 +1843,7 @@ button.report__tag--on {
   bottom: var(--mw-space-4);
   /* Above Leaflet, which puts its own controls as high as 1000 — at 50 the
      composer opened UNDERNEATH the map on the course page. */
-  z-index: 1200;
+  z-index: var(--mw-z-float);
   display: flex;
   flex-direction: column;
   align-items: flex-end;
