@@ -46,8 +46,15 @@ function toLocalInput(instant: Instant, timezone?: string): string {
   return `${get('year')}-${get('month')}-${get('day')}T${hour}:${get('minute')}`;
 }
 
-/** Read a `datetime-local` value back as an instant in the event's zone. */
-function fromLocalInput(value: string, timezone?: string): Instant | null {
+/**
+ * Read a typed local time back as an instant in the event's zone.
+ *
+ * Accepts either separator, so `2026-07-25 15:45` and `2026-07-25T15:45` both
+ * work — the field shows a space because it reads better, but a value pasted
+ * from anywhere else in the app will carry the T.
+ */
+function fromLocalInput(raw: string, timezone?: string): Instant | null {
+  const value = raw.trim().replace(' ', 'T');
   if (!value) return null;
   if (!timezone) {
     const direct = Date.parse(`${value}:00Z`);
@@ -82,6 +89,11 @@ export function NoteComposer({ manifest, cursor, timezone, onAdd, onDone }: Comp
   // stored so scrubbing the timeline keeps the field in step.
   const defaultWhen = cursor === null ? '' : toLocalInput(cursor, timezone);
   const whenValue = when || defaultWhen;
+
+  // Shown while typing rather than only on submit, so a half-typed date is
+  // visibly not-yet-valid instead of a button that silently does nothing.
+  const whenOk = whenValue === '' || fromLocalInput(whenValue, timezone) !== null;
+  const spanOk = span === '' || fromLocalInput(span, timezone) !== null;
 
   const submit = () => {
     const body = text.trim();
@@ -124,21 +136,35 @@ export function NoteComposer({ manifest, cursor, timezone, onAdd, onDone }: Comp
         }}
       />
       <div className="compose__fields">
+        {/*
+          * A plain text field rather than `<input type="datetime-local">`.
+          *
+          * Chrome renders that control in the BROWSER's locale and ignores the
+          * element's `lang`, so on a US machine it shows 3:45 PM — the only
+          * 12-hour clock in an app that is `hourCycle: 'h23'` everywhere else.
+          * A time that reads differently from the photo beside it is worse
+          * than a lost date picker, and the value is usually pre-filled from
+          * the cursor anyway, so what is left is editing minutes.
+          */}
         <label className="compose__field">
           <span>When</span>
           <input
-            type="datetime-local"
-            className="mw-mono"
-            value={whenValue}
+            type="text"
+            className={`mw-mono${whenOk ? '' : ' compose__input--bad'}`}
+            value={whenValue.replace('T', ' ')}
+            placeholder="YYYY-MM-DD HH:MM"
+            aria-invalid={!whenOk}
             onChange={(e) => setWhen(e.target.value)}
           />
         </label>
         <label className="compose__field">
           <span>Until (optional)</span>
           <input
-            type="datetime-local"
-            className="mw-mono"
-            value={span}
+            type="text"
+            className={`mw-mono${spanOk ? '' : ' compose__input--bad'}`}
+            value={span.replace('T', ' ')}
+            placeholder="YYYY-MM-DD HH:MM"
+            aria-invalid={!spanOk}
             onChange={(e) => setSpan(e.target.value)}
           />
         </label>
@@ -155,11 +181,16 @@ export function NoteComposer({ manifest, cursor, timezone, onAdd, onDone }: Comp
           Add note
         </button>
       </div>
-      {cursor !== null && !when && (
+      {!whenOk || !spanOk ? (
+        <p className="compose__hint compose__hint--bad">
+          Times go in as <span className="mw-mono">YYYY-MM-DD HH:MM</span>, on a
+          24-hour clock.
+        </p>
+      ) : cursor !== null && !when ? (
         <p className="compose__hint mw-mono">
           Using the cursor: {formatDateTime(cursor, timezone)}
         </p>
-      )}
+      ) : null}
     </div>
   );
 }

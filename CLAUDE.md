@@ -356,6 +356,53 @@ matter:
 `visible: null` means everyone, which is deliberately distinct from an empty
 set meaning every lane hidden. `who=` in a URL is the latter.
 
+### Scroll tracking: measure, do not trust observer order *(UI pass)*
+
+> "sometimes when i'm scrolling with the note screen open the time is jumping
+> like crazy sometimes is jumping between hours and minutes"
+
+The feed's scroll-spy reported the **first intersecting entry** from an
+`IntersectionObserver` over a thin band. **The `entries` array is not ordered
+by position on the page.** Scroll quickly and several moments cross the band
+between callbacks, so "the first one" is arbitrary among them — on a folder
+spanning days that reads as the time jumping by hours.
+
+The observer is now used only for what it is good at, knowing cheaply which
+sections are on screen; the choice among those is made by **measuring against
+the centre line of the viewport**, which is also the rule the owner asked for.
+Distance is to the centre LINE, not to a section's midpoint, so a grid taller
+than the screen still wins. Only the few visible sections are measured, and it
+is throttled to an animation frame. A `scroll` listener is needed as well as
+the observer: scrolling *within* one long moment fires no intersection events.
+
+### Everything is 24-hour, including the inputs *(UI pass)*
+
+`time.ts` sets `hourCycle: 'h23'` everywhere. The one exception was
+`<input type="datetime-local">`, which Chrome renders in the **browser's**
+locale and which **ignores the element's `lang`** — so a US machine showed
+`3:45 PM` in the middle of an otherwise 24-hour app.
+
+Replaced with a plain text field in `YYYY-MM-DD HH:MM`, validated as you type.
+The native picker is worth less here than consistency: the value is normally
+pre-filled from the cursor, so what is left is editing minutes. A 12/24-hour
+setting is in `TODO.md`, deferred by the owner.
+
+### The timeline's bounds include NOTES, not just photos *(UI pass)*
+
+Found by writing a note after the last photograph and watching it vanish.
+`bounds` came from `fullSpan(placement.placed)` — photos only — and
+`clampWindow` clamps every requested crop to it, so a note outside the
+photographic span could not be shown **at any window setting**. Widening did
+nothing, which looked like the crop being broken.
+
+A note is an event on the timeline, so it belongs in the timeline's extent.
+Related: the `range` memo read `view.range` without depending on it, so the
+crop only refreshed when something else happened to change.
+
+**Notes still follow the crop like photos do** — but a note that lands outside
+it says so, with a "Show it" action. Writing something and watching it
+disappear is the one outcome worth spending UI on.
+
 ### Nothing persistent may sit after the content *(UI pass)*
 
 > "after i upload 200+ images all the things on the bottom of the site are

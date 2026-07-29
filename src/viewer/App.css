@@ -2008,3 +2008,37 @@ button.report__tag--on {
 .rail {
   top: calc(var(--mw-space-2) + 3.5rem);
 }
+
+/* A time that will not parse yet. Shown while typing rather than only on
+   submit, so the field says so instead of the button doing nothing. */
+.compose__input--bad {
+  border-color: var(--mw-danger);
+}
+
+.compose__hint--bad {
+  color: var(--mw-danger);
+}
+
+.dock__notice {
+  display: flex;
+  align-items: center;
+  gap: var(--mw-space-2);
+  max-width: min(28rem, calc(100vw - 2 * var(--mw-space-4)));
+  padding: var(--mw-space-2) var(--mw-space-3);
+  border: 1px solid var(--mw-accent);
+  border-radius: var(--mw-radius-md);
+  background: var(--mw-surface);
+  font-size: var(--mw-text-sm);
+  box-shadow: 0 4px 20px rgb(0 0 0 / 50%);
+}
+
+.dock__notice-action {
+  flex: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--mw-accent);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+}

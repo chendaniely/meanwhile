@@ -24,9 +24,15 @@ interface Props {
   onAdd: (note: Note) => void;
   /** Notes already written, purely for the count on the button. */
   count: number;
+  /**
+   * Shown when the note just written landed outside the visible window, with
+   * the way to reveal it. Writing something and watching it vanish is the
+   * worst outcome here, and silently widening the crop would be a surprise.
+   */
+  notice?: { text: string; action: string; onAction: () => void; onDismiss: () => void } | undefined;
 }
 
-export function NoteDock({ manifest, cursor, timezone, onAdd, count }: Props) {
+export function NoteDock({ manifest, cursor, timezone, onAdd, count, notice }: Props) {
   const [open, setOpen] = useState(false);
   const panel = useRef<HTMLDivElement>(null);
 
@@ -44,6 +50,23 @@ export function NoteDock({ manifest, cursor, timezone, onAdd, count }: Props) {
 
   return (
     <div className="dock">
+      {notice && (
+        <div className="dock__notice" role="status">
+          <span>{notice.text}</span>
+          <button type="button" className="dock__notice-action" onClick={notice.onAction}>
+            {notice.action}
+          </button>
+          <button
+            type="button"
+            className="dock__close"
+            onClick={notice.onDismiss}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {open && (
         <div className="dock__panel" ref={panel} role="dialog" aria-label="Add a note">
           <div className="dock__head">

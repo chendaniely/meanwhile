@@ -3,7 +3,7 @@ import type { GroupingInfo } from '../core/assemble.ts';
 import { anchorItems, simplify, type Anchor, type Course } from '../core/course.ts';
 import type { Manifest, Note, PersonId } from '../core/schema.ts';
 import { isVisible, toggleVisible, VIEW_NAMES, type ViewName } from '../core/state.ts';
-import type { Instant } from '../core/time.ts';
+import { formatClock, type Instant } from '../core/time.ts';
 import { assignLaneColors } from '../core/palette.ts';
 import {
   clampWindow,
@@ -248,9 +248,20 @@ export function App() {
     [editManifest],
   );
 
+  /** A note that landed outside the crop, so it can be pointed at. */
+  const [noteOutside, setNoteOutside] = useState<Instant | null>(null);
+  const rangeRef = useRef<TimeWindow | null>(null);
+
   const addNote = useCallback(
-    (note: Note) =>
-      editManifest((m) => ({ ...m, notes: [...(m.notes ?? []), note] })),
+    (note: Note) => {
+      editManifest((m) => ({ ...m, notes: [...(m.notes ?? []), note] }));
+      const at = Date.parse(note.at);
+      // The crop hides photos from outside the event, and notes follow it for
+      // consistency — but a note you JUST wrote disappearing is indefensible.
+      // Read through a ref: the range is derived further down the component.
+      const crop = rangeRef.current;
+      setNoteOutside(!Number.isNaN(at) && crop && !isWithin(at, crop) ? at : null);
+    },
     [editManifest],
   );
 
@@ -279,7 +290,28 @@ export function App() {
   // every part of the screen agrees about where things sit.
   const placement = useMemo(() => (manifest ? placeItems(manifest) : null), [manifest]);
   const notes = useMemo(() => (manifest ? placeNotes(manifest) : []), [manifest]);
-  const bounds = useMemo(() => (placement ? fullSpan(placement.placed) : null), [placement]);
+
+  /**
+   * The outer limit of the timeline — what the slider can reach.
+   *
+   * Photos AND notes, because a note is an event on the timeline too. Taking
+   * it from photos alone meant `clampWindow` silently clamped any window back
+   * to the last photograph, so a note written after the finish could not be
+   * shown at all: you could widen the crop and nothing happened.
+   */
+  const bounds = useMemo(() => {
+    if (!placement) return null;
+    const span = fullSpan(placement.placed);
+    if (notes.length === 0) return span;
+    let from = span?.from ?? Number.POSITIVE_INFINITY;
+    let to = span?.to ?? Number.NEGATIVE_INFINITY;
+    for (const n of notes) {
+      if (n.instant < from) from = n.instant;
+      const end = n.until ?? n.instant;
+      if (end > to) to = end;
+    }
+    return Number.isFinite(from) && Number.isFinite(to) ? { from, to } : span;
+  }, [placement, notes]);
 
   /**
    * The track thinned once, for both the map and the charts.
@@ -392,7 +424,9 @@ export function App() {
       if (!Number.isNaN(from) && !Number.isNaN(to)) return clampWindow({ from, to }, bounds);
     }
     return densestWindow(placement.placed) ?? bounds;
-  }, [manifest, placement, bounds]);
+    // `view.range` is read above, so it must be a dependency — without it the
+    // crop only refreshed when something else happened to change.
+  }, [manifest, placement, bounds, view.range]);
 
   /**
    * The one set every view works from: inside the crop, and belonging to
@@ -425,6 +459,8 @@ export function App() {
         .filter(Boolean)
         .join(' · ')
     : '';
+
+  rangeRef.current = range;
 
   /** Notes inside the crop, so they follow the window like the photos do. */
   const visibleNotes = useMemo(
@@ -821,6 +857,22 @@ export function App() {
               cursor={view.cursor}
               onAdd={addNote}
               count={notes.length}
+              notice={
+                noteOutside === null || !range
+                  ? undefined
+                  : {
+                      text: `Added at ${formatClock(noteOutside, stage.manifest.event.timezone)} — outside the window, so it is not shown.`,
+                      action: 'Show it',
+                      onAction: () => {
+                        setWindow({
+                          from: Math.min(range.from, noteOutside - 60_000),
+                          to: Math.max(range.to, noteOutside + 60_000),
+                        });
+                        setNoteOutside(null);
+                      },
+                      onDismiss: () => setNoteOutside(null),
+                    }
+              }
               {...(stage.manifest.event.timezone
                 ? { timezone: stage.manifest.event.timezone }
                 : {})}

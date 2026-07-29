@@ -155,3 +155,11 @@ captions — they are author work, not metadata read from a file.
   the closest thing to a headline this app has.
 - An aid station visited twice on a lollipop course is two markers at two
   distances with one label. Do not assume labels are unique.
+
+- **A 12/24-hour clock setting.** Everything is 24-hour today, which the owner
+  asked for explicitly: *"we could have a setting somewhere to toggle the time,
+  but for now let's keep it 24-hour."* It would belong in the manifest's
+  `event`, so a shared link reads the way its author meant it to. Note that
+  `<input type="datetime-local">` cannot be made to follow it — Chrome formats
+  that control from the browser's locale and ignores `lang` — which is why the
+  note fields are plain text.

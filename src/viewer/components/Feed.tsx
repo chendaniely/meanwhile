@@ -75,13 +75,24 @@ export function Feed({ manifest, items, onOpen, onActive, notes = [] }: Props) {
   const moments = useMemo(() => toMoments(items), [items]);
 
   /**
-   * Report whichever moment is nearest the top of the viewport.
+   * Report whichever moment sits at the CENTRE of the screen.
    *
-   * The reading position is the TOP, not the middle: you look at the thing you
-   * have just scrolled to. The margins keep only a thin band, so exactly one
-   * moment qualifies at a time — with a full-height root the observer fires
-   * for a whole screenful at once and whichever entry happens to come last
-   * wins, which reads as the rail jumping around at random.
+   * The obvious implementation — an IntersectionObserver over a thin band,
+   * reporting the first intersecting entry — is subtly and badly wrong, and
+   * shipped once. **The `entries` array is not ordered by position on the
+   * page.** Scroll quickly and several moments cross the band between
+   * callbacks, so "the first one" is effectively arbitrary among them. On a
+   * folder spanning days that means the reported time jumps by hours, which is
+   * exactly what it looked like.
+   *
+   * So the observer is used only for what it is good at — knowing cheaply
+   * which sections are on screen at all — and the choice among those is made
+   * by measuring. Distance is to the centre LINE rather than to the section's
+   * own midpoint, so a tall grid taller than the viewport still counts as the
+   * thing you are looking at.
+   *
+   * The measuring pass touches only the handful of sections currently
+   * visible, never all two thousand, and is throttled to one animation frame.
    */
   const byId = useMemo(() => new Map<string, Moment>(), [moments]);
   const active = useRef<string | null>(null);
@@ -99,25 +110,64 @@ export function Feed({ manifest, items, onOpen, onActive, notes = [] }: Props) {
 
   useEffect(() => {
     if (!onActive) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          const key = (entry.target as HTMLElement).dataset['at'] ?? '';
-          if (active.current === key) continue;
-          const moment = byId.get(key);
-          if (!moment) continue;
-          active.current = key;
-          report.current?.(moment.items);
-          break;
+
+    const onScreen = new Set<HTMLElement>();
+    let frame = 0;
+
+    const pick = () => {
+      frame = 0;
+      const centre = window.innerHeight / 2;
+      let best: HTMLElement | null = null;
+      let bestGap = Number.POSITIVE_INFINITY;
+      for (const node of onScreen) {
+        const box = node.getBoundingClientRect();
+        // Zero when the centre line falls inside the section, so a section
+        // taller than the screen wins outright rather than losing to a short
+        // neighbour whose midpoint happens to be nearer.
+        const gap =
+          box.top > centre ? box.top - centre : box.bottom < centre ? centre - box.bottom : 0;
+        if (gap < bestGap) {
+          bestGap = gap;
+          best = node;
         }
-      },
-      { rootMargin: '-20% 0px -70% 0px', threshold: 0 },
-    );
+      }
+      if (!best) return;
+      const key = best.dataset['at'] ?? '';
+      if (key === active.current) return;
+      const moment = byId.get(key);
+      if (!moment) return;
+      active.current = key;
+      report.current?.(moment.items);
+    };
+
+    const schedule = () => {
+      if (frame === 0) frame = requestAnimationFrame(pick);
+    };
+
+    const io = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const node = entry.target as HTMLElement;
+        if (entry.isIntersecting) onScreen.add(node);
+        else onScreen.delete(node);
+      }
+      schedule();
+    });
     for (const node of document.querySelectorAll<HTMLElement>('.feed .moment')) {
       io.observe(node);
     }
-    return () => io.disconnect();
+
+    // The observer only fires when something enters or leaves the viewport.
+    // Scrolling WITHIN a long moment fires nothing, so the centre would go
+    // stale exactly where the sections are biggest.
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule, { passive: true });
+
+    return () => {
+      if (frame !== 0) cancelAnimationFrame(frame);
+      io.disconnect();
+      window.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', schedule);
+    };
   }, [onActive, byId, moments]);
 
   if (moments.length === 0) {
