@@ -149,6 +149,53 @@ hand-rolling EXIF, ISOBMFF and GPX parsing for the same reason.
 Import stays loose files, so no zip *reader* is needed: you unzip, edit in a
 spreadsheet, and drop the CSVs back in the folder.
 
+## The composer must write exactly these columns
+
+> "we should make sure that in the UI the note button is also matching this set
+> of specs, so when it is used to create a note it is writing the corret
+> information to the correct file."
+
+The note dock is the only way most people will ever create a note, so the
+mapping is part of the format, not an implementation detail:
+
+| Composer field | Column | Change needed |
+|---|---|---|
+| What happened | `text` | — |
+| When | `at` | — |
+| Until (optional) | `until` | — |
+| Whose | `people` | **Now multi-select.** See below. |
+| — | `author` | **New.** See below. |
+| — | `photo` | Filled only when captioning from the lightbox. |
+| — | `id` | Minted at creation. Never shown. |
+
+### `people` becomes a searchable multi-select
+
+Today it is a single `<select>` with an "Everyone" option. `people` is plural
+now, so it becomes a **searchable multi-select** — the same control pattern as
+the timezone picker, which the owner asked for on the same grounds: a list you
+filter by typing beats a list you scroll. Choosing nobody means the note
+belongs to the event rather than to a person, which is what "Everyone" meant.
+
+### `author` comes from a "you are…" setting, and never blocks writing
+
+The site has never known who is using it. It gets a **"you are…" picker**,
+defaulting to **unset**:
+
+- Unset, you can still write notes; they are saved with `author` blank.
+- On save, if any note has a blank author, it asks once and stamps them all.
+- Set it, and every note you write is stamped as you go.
+
+Kept in the browser's local storage, **not in the manifest** — it is a fact
+about who is at this laptop, not about the event, and would be wrong the moment
+the file is handed to someone else. This is the only thing the site persists
+locally, and it holds no event data.
+
+### Captions come from the lightbox
+
+The caption field in the lightbox writes a note row with `photo` set to the
+item's id, rather than writing `items[].note` in the manifest. Same file, same
+merge, same round trip as every other note.
+
 ## Display
 
 Three requirements, from the owner:
