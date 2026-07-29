@@ -272,3 +272,53 @@ export function resolveItemInstant(
 
   return { ...base, instant: recorded + offset, offsetApplied: offset };
 }
+
+// ---------------------------------------------------------------------------
+// Display
+// ---------------------------------------------------------------------------
+
+/**
+ * Every view shows times in the EVENT's timezone, not the reader's.
+ *
+ * A crew member opening this from another timezone must still see "2am on the
+ * climb", because 2am is what the story is about. Showing their local time
+ * would silently renumber the whole race.
+ */
+function formatIn(instant: Instant, timeZone: string | undefined, opts: Intl.DateTimeFormatOptions): string {
+  try {
+    return new Intl.DateTimeFormat('en-GB', timeZone ? { ...opts, timeZone } : opts).format(
+      new Date(instant),
+    );
+  } catch {
+    // An unknown zone should degrade to UTC rather than blank the timeline.
+    return new Intl.DateTimeFormat('en-GB', { ...opts, timeZone: 'UTC' }).format(new Date(instant));
+  }
+}
+
+/** "06:12" — the lane and cursor label. */
+export function formatClock(instant: Instant, timeZone?: string): string {
+  return formatIn(instant, timeZone, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+}
+
+/** "Sat 22 Aug, 06:12" — for feed entries and tooltips. */
+export function formatDateTime(instant: Instant, timeZone?: string): string {
+  return formatIn(instant, timeZone, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  });
+}
+
+/** "4h 12m", "12s" — for an event span or a clip length. */
+export function formatSpan(milliseconds: number): string {
+  const total = Math.max(0, Math.round(milliseconds / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  if (minutes > 0) return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  return `${seconds}s`;
+}

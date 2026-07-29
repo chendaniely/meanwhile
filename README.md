@@ -109,14 +109,36 @@ even after you delete it.
 
 ## What works today
 
-- The timeline maths: the manifest format, its validation, and all the
-  clock-offset and timezone handling.
-- Reading timestamps, GPS, and durations out of photos and videos — JPEG,
-  HEIC, MOV, and MP4.
-- `make inspect`, which prints what it found (see below).
-- A page that loads, in the right typeface and colors.
+**You can load a folder and get a manifest out of it.** Run `make dev`, click
+**Open a folder**, and meanwhile reads every photo and video in it, works out
+when each one was taken, and shows you a report: how many landed on the
+timeline, how many didn't, who shot what, and how much to trust the times.
+Then **Export manifest.json** saves it.
 
-There's no way to *see* a timeline yet. That's next.
+Also working: the manifest format and validation, all the clock-offset and
+timezone handling, metadata reading for JPEG, HEIC, MOV, and MP4, and
+`make inspect` (below) for checking a folder from the terminal.
+
+**There's no way to *see* a timeline yet** — no swimlanes, no feed, no photos
+on screen. That's next.
+
+### How to arrange your folder
+
+Give each person their own subfolder. The folder name becomes their name:
+
+```
+cascade-crest-100/
+  sam/       <- the runner
+    IMG_4417.jpg
+  dan/
+    IMG_0001.jpg
+  priya/
+    VID_20260822_021500.mp4
+```
+
+Files sitting loose at the top level still get read — they just land under
+"Unsorted", which you can sort out later. If you only have a handful of files
+and no folders, **Pick files instead** works too.
 
 ### Checking your media before you build anything
 

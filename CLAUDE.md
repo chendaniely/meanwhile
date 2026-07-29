@@ -4,14 +4,16 @@
 
 As of 2026-07-28 the repo builds, tests, and serves an empty shell.
 
-**Built:** Vite + React + TS scaffold, brand tokens, `tests/core-purity.test.ts`,
-`Makefile`, and the kernel so far — `schema.ts`, `time.ts`, `bytes.ts`,
-`exif.ts`, `isobmff.ts`, `metadata.ts`. Plus `scripts/inspect-media.ts`
-(`make inspect DIR=...`), which runs the real extraction over a real folder.
-114 tests pass.
+**Built:** the whole ingest path. Scaffold, brand tokens,
+`tests/core-purity.test.ts`, `Makefile`. Kernel: `schema.ts`, `time.ts`,
+`bytes.ts`, `exif.ts`, `isobmff.ts`, `metadata.ts`, `assemble.ts`,
+`palette.ts`. Viewer: folder/file picking, metadata extraction, an ingest
+report, and manifest export. Plus `scripts/inspect-media.ts`
+(`make inspect DIR=...`). 138 tests pass.
 
-**Not built:** every view, folder ingest in the browser, the course spine.
-`src/viewer/App.tsx` is a shell with an empty state.
+**Not built:** every view (feed, swimlanes, grid, map), the media/blob
+pipeline, app state and URL sync, the unplaced tray, notes, the course spine.
+Loading a folder gets you a report and a `manifest.json` — no timeline yet.
 
 **Do not describe anything below as implemented unless it is in the "Built"
 list.** Check before you cite.
@@ -20,8 +22,9 @@ list.** Check before you cite.
 
 The v1 plan is 12 milestones, M0-M11, each independently verifiable. The full
 plan with per-milestone verification criteria is in the session plan file; the
-milestone list also lives in the task list. Current position: **M3 (browser
-folder ingest) is next.**
+milestone list also lives in the task list. Current position: **M4 (the media
+pipeline: blob lifecycle, downscale-on-decode, lazy loading, video posters)
+is next.**
 
 Build order is not arbitrary — see "The course spine is built LAST" below.
 
@@ -153,6 +156,45 @@ Things a future session will otherwise rediscover the hard way:
 - **Node's type-stripping cannot handle TS parameter properties or `enum`.**
   `scripts/` and anything it imports must avoid both, or `make inspect`
   breaks.
+
+### Lane colors are validated, not chosen *(M3)*
+
+`src/core/palette.ts` holds eight fixed hues. They are not a taste decision —
+they were run through the dataviz skill's validator against this app's exact
+surface (`#171512`) and pass the lightness band, chroma floor, CVD
+separation, normal-vision floor, and contrast checks.
+
+```
+node scripts/validate_palette.js "<the eight>" --mode dark --surface "#171512"
+```
+
+Three rules that must not be broken:
+
+1. **Color follows the person, never their position.** Hiding a lane must not
+   repaint the others, so assignment keys off the manifest's people list.
+2. **Never invent a ninth hue.** Person nine gets a neutral gray and the UI
+   says so. A generated hue silently breaks every guarantee above.
+3. **Adjacent-pair safety is not all-pairs safety.** Lanes, feed, and grid
+   only put neighbors together, so adjacent is the right test and it passes.
+   **The map is different** — any two dots can land side by side, and under
+   `--pairs all` this palette fails past three people (worst pair ΔE 1.6
+   under deuteranopia). **Map dots must carry the person's name as a direct
+   label.** That is the secondary encoding that makes the map legible; it is
+   not optional polish. Do not discover this again at M10.
+
+### Ingest conventions *(M3)*
+
+- **The top-level folder name is the person.** Loose files go to `unsorted`,
+  which is visible and reassignable rather than silently dropped.
+- **An item's id is its relative path.** Stable across re-ingests, which is
+  what lets captions and hand-placed times survive re-reading the bytes. A
+  counter or a content hash would lose them on any rename or re-save.
+- **Re-ingest preserves author work, not stale metadata.** Names, clock
+  offsets, notes, and `timeSource: 'manual'` placements carry over; an
+  automatic timestamp is always re-read from the file.
+- **`event.timezone` is not cosmetic.** It is what turns a naive camera
+  timestamp into an instant, so changing it moves items in and out of the
+  unplaced tray.
 
 ### Media with no usable timestamp goes to an unplaced tray *(session 2)*
 
