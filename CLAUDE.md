@@ -572,6 +572,11 @@ Three decisions worth keeping:
 ergonomic trick: scrub to 3am in the lanes, and the compose box is already at
 3am. Typing a timestamp is the fallback, not the path.
 
+**Scrolling the feed moves that same cursor** — the feed was the one view not
+taking part in "one cursor, four projections", so you could scrub in the lanes
+and flip to the feed but not the reverse. Its scroll-spy fires once per moment
+crossed rather than per scroll event, so this does not churn the URL.
+
 Notes are carried across a re-ingest **wholesale**, not merged per item, since
 they belong to no file. `existingNotes` in `ingest.ts` exists for exactly
 that; without it a re-read of the folder silently dropped every one.

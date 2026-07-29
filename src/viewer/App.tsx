@@ -649,26 +649,42 @@ export function App() {
                   items={items}
                   notes={visibleNotes}
                   onOpen={(entry) => setOpenId(entry.item.id)}
-                  {...(stage.course
-                    ? {
-                        onActive: (moment: readonly PlacedItem[]) => {
-                          // The first item in the moment that can be placed on
-                          // the course at all. Some carry no GPS and some fall
-                          // outside a timed track's span; those simply do not
-                          // move the marker rather than moving it wrongly.
-                          for (const entry of moment) {
-                            const anchor = anchors.get(entry.item.id);
-                            if (anchor) {
-                              setFocus(anchor.distance);
-                              setUnplaceable(false);
-                              return;
-                            }
-                          }
-                          setFocus(null);
-                          setUnplaceable(true);
-                        },
+                  onActive={(moment: readonly PlacedItem[]) => {
+                    const first = moment[0];
+                    if (!first) return;
+
+                    /*
+                     * Scrolling the feed moves the SHARED cursor.
+                     *
+                     * The premise of this app is one cursor and four
+                     * projections of it, and the feed was the one view not
+                     * taking part: you could scrub in the lanes and flip to
+                     * the feed, but not the other way. It also gives the note
+                     * composer a sensible default time — scroll to the small
+                     * hours, and a new note is already in the small hours.
+                     *
+                     * Fires once per moment crossed, not per scroll event —
+                     * the observer in Feed dedupes — so this does not churn
+                     * the URL.
+                     */
+                    setView({ cursor: first.instant });
+
+                    if (!stage.course) return;
+                    // The first item in the moment that can be placed on the
+                    // course at all. Some carry no GPS and some fall outside a
+                    // timed track's span; those simply do not move the marker
+                    // rather than moving it wrongly.
+                    for (const entry of moment) {
+                      const anchor = anchors.get(entry.item.id);
+                      if (anchor) {
+                        setFocus(anchor.distance);
+                        setUnplaceable(false);
+                        return;
                       }
-                    : {})}
+                    }
+                    setFocus(null);
+                    setUnplaceable(true);
+                  }}
                 />
               )}
 
