@@ -24,6 +24,7 @@
  */
 
 import { formatDuration, hasZone, parseDuration, parseZonedInstant, zonedToInstant } from './time.ts';
+import { parseCsv } from './csv.ts';
 
 export interface Note {
   id: string;
@@ -356,4 +357,58 @@ function instantPartsInZone(
     hour: get('hour') % 24,
     minute: get('minute'),
   };
+}
+
+// ---------------------------------------------------------------------------
+// mergeNotes
+// ---------------------------------------------------------------------------
+
+/**
+ * Row-bind every notes file into one list.
+ *
+ * **This is why no version control is needed.** Ids are globally unique in
+ * practice, so merging is concatenate-and-dedupe with no conflict resolution,
+ * no locking and no merge UI. Two people who edited a copy of the same note
+ * produce two notes at the same time, which the timeline shows one after the
+ * other — accepted, not an error.
+ */
+export function mergeNotes(
+  files: ReadonlyArray<{ name: string; text: string }>,
+  eventTimezone?: string,
+): { notes: Note[]; problems: string[] } {
+  const notes: Note[] = [];
+  const problems: string[] = [];
+  const seen = new Map<string, string>(); // id -> a fingerprint of its content
+
+  for (const file of files) {
+    const table = parseCsv(file.text);
+    table.rows.forEach((row, i) => {
+      const result = rowToNote(row, eventTimezone);
+      if ('error' in result) {
+        // Reported, never dropped silently — the same rule as unplaced media.
+        problems.push(`${file.name} row ${i + 2}: ${result.error}`);
+        return;
+      }
+      const note = result;
+      const fingerprint = JSON.stringify([note.at, note.duration, note.tz, note.people, note.photo, note.author, note.text, note.extra]);
+      if (!note.id) {
+        note.id = mintNoteId();
+      } else if (seen.has(note.id)) {
+        // The same row in two files is one note. A different row wearing the
+        // same id is a copy, and gets its own identity.
+        if (seen.get(note.id) === fingerprint) return;
+        note.id = mintNoteId();
+      }
+      seen.set(note.id, fingerprint);
+      notes.push(note);
+    });
+  }
+
+  notes.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  return { notes, problems };
+}
+
+/** Short, opaque and unique enough that two people never collide. */
+export function mintNoteId(): string {
+  return `n_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 }

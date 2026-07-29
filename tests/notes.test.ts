@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { noteToRow, rowToNote, type Note } from '../src/core/notes.ts';
+import { mergeNotes, noteToRow, rowToNote, type Note } from '../src/core/notes.ts';
 
 const ZONE = 'America/Denver';
 const row = (over: Record<string, string> = {}) => ({
@@ -114,5 +114,48 @@ describe('noteToRow', () => {
       photo: 'a.jpg', tags: 'night',
     }), ZONE) as Note;
     expect(rowToNote(noteToRow(note, ZONE), ZONE)).toEqual(note);
+  });
+});
+
+describe('mergeNotes', () => {
+  const file = (name: string, body: string) => ({
+    name,
+    text: 'id,year,month,day,hour,minute,duration,tz,people,photo,author,text\n' + body,
+  });
+
+  it('row-binds several files and sorts by time', () => {
+    const { notes } = mergeNotes([
+      file('notes-dan.csv', 'n_b,2026,7,25,16,0,,,,,Dan,second\n'),
+      file('notes-priya.csv', 'n_a,2026,7,25,15,0,,,,,Priya,first\n'),
+    ], ZONE);
+    expect(notes.map((n) => n.text)).toEqual(['first', 'second']);
+  });
+
+  it('mints an id for a row typed by hand', () => {
+    const { notes } = mergeNotes([file('n.csv', ',2026,7,25,15,0,,,,,Dan,typed\n')], ZONE);
+    expect(notes[0]?.id).toMatch(/^n_/);
+  });
+
+  it('re-mints a duplicated id, because a duplicate is a copied row', () => {
+    const { notes } = mergeNotes([
+      file('a.csv', 'same,2026,7,25,15,0,,,,,Dan,one\n'),
+      file('b.csv', 'same,2026,7,25,16,0,,,,,Priya,two\n'),
+    ], ZONE);
+    expect(notes).toHaveLength(2);
+    expect(new Set(notes.map((n) => n.id)).size).toBe(2);
+  });
+
+  it('keeps an identical id-and-content row only once', () => {
+    const body = 'n_a,2026,7,25,15,0,,,,,Dan,one\n';
+    const { notes } = mergeNotes([file('a.csv', body), file('b.csv', body)], ZONE);
+    expect(notes).toHaveLength(1);
+  });
+
+  it('reports a bad row and still loads the rest of the file', () => {
+    const { notes, problems } = mergeNotes([
+      file('a.csv', 'n_a,nineteen,7,25,15,0,,,,,Dan,bad\nn_b,2026,7,25,15,0,,,,,Dan,good\n'),
+    ], ZONE);
+    expect(notes.map((n) => n.text)).toEqual(['good']);
+    expect(problems[0]).toContain('a.csv');
   });
 });
