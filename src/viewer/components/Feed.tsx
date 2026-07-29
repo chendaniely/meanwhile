@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { assignLaneColors } from '../../core/palette.ts';
 import type { Manifest, PersonId } from '../../core/schema.ts';
 import { formatClock, formatDateTime } from '../../core/time.ts';
@@ -28,6 +28,11 @@ interface Props {
    */
   items: readonly PlacedItem[];
   onOpen: (entry: PlacedItem) => void;
+  /**
+   * The moment currently at the top of the viewport, so the course rail can
+   * follow the scroll. Optional: the feed is perfectly useful without one.
+   */
+  onActive?: (moment: readonly PlacedItem[]) => void;
 }
 
 /** Gap that separates one moment from the next. */
@@ -53,7 +58,7 @@ function toMoments(placed: readonly PlacedItem[]): Moment[] {
   return out;
 }
 
-export function Feed({ manifest, items, onOpen }: Props) {
+export function Feed({ manifest, items, onOpen, onActive }: Props) {
   const zone = manifest.event.timezone;
   const colors = useMemo(() => assignLaneColors(manifest.people), [manifest.people]);
   const names = useMemo(
@@ -62,6 +67,52 @@ export function Feed({ manifest, items, onOpen }: Props) {
   );
 
   const moments = useMemo(() => toMoments(items), [items]);
+
+  /**
+   * Report whichever moment is nearest the top of the viewport.
+   *
+   * The reading position is the TOP, not the middle: you look at the thing you
+   * have just scrolled to. The margins keep only a thin band, so exactly one
+   * moment qualifies at a time — with a full-height root the observer fires
+   * for a whole screenful at once and whichever entry happens to come last
+   * wins, which reads as the rail jumping around at random.
+   */
+  const byId = useMemo(() => new Map<string, Moment>(), [moments]);
+  const active = useRef<string | null>(null);
+  const report = useRef(onActive);
+  report.current = onActive;
+
+  const stamp = useCallback(
+    (node: HTMLElement | null, moment: Moment) => {
+      if (!node) return;
+      node.dataset['at'] = String(moment.at);
+      byId.set(String(moment.at), moment);
+    },
+    [byId],
+  );
+
+  useEffect(() => {
+    if (!onActive) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const key = (entry.target as HTMLElement).dataset['at'] ?? '';
+          if (active.current === key) continue;
+          const moment = byId.get(key);
+          if (!moment) continue;
+          active.current = key;
+          report.current?.(moment.items);
+          break;
+        }
+      },
+      { rootMargin: '-20% 0px -70% 0px', threshold: 0 },
+    );
+    for (const node of document.querySelectorAll<HTMLElement>('.feed .moment')) {
+      io.observe(node);
+    }
+    return () => io.disconnect();
+  }, [onActive, byId, moments]);
 
   if (moments.length === 0) {
     return (
@@ -81,7 +132,7 @@ export function Feed({ manifest, items, onOpen }: Props) {
         lastDay = day;
 
         return (
-          <section key={moment.at} className="moment">
+          <section key={moment.at} className="moment" ref={(node) => stamp(node, moment)}>
             {newDay && <h2 className="feed__day">{day}</h2>}
 
             <header className="moment__head">

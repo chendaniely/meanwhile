@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GroupingInfo } from '../core/assemble.ts';
-import { simplify, type Course } from '../core/course.ts';
+import { anchorItems, simplify, type Anchor, type Course } from '../core/course.ts';
 import type { Manifest, PersonId } from '../core/schema.ts';
 import { isVisible, toggleVisible, VIEW_NAMES, type ViewName } from '../core/state.ts';
+import type { Instant } from '../core/time.ts';
 import { assignLaneColors } from '../core/palette.ts';
 import {
   clampWindow,
@@ -14,6 +15,7 @@ import {
   type TimeWindow,
 } from '../core/window.ts';
 import { CourseCharts } from './components/CourseCharts.tsx';
+import { CourseRail } from './components/CourseRail.tsx';
 import { Feed } from './components/Feed.tsx';
 import { Lightbox } from './components/Lightbox.tsx';
 import { Swimlanes } from './components/Swimlanes.tsx';
@@ -210,6 +212,23 @@ export function App() {
   }, [available, view.view, setView]);
 
   /**
+   * Each item's position along the course — time first, GPS as a fallback.
+   *
+   * This is what lets scrolling the feed move the map. Computed against the
+   * SIMPLIFIED track for the GPS path, which is a scan per item; time-based
+   * anchoring is a binary search and costs nothing.
+   */
+  const anchors = useMemo(() => {
+    if (!course || !placement) return new Map<string, Anchor>();
+    return anchorItems(
+      placement.placed.map((e) => e.item),
+      course,
+      new Map(placement.placed.map((e) => [e.item.id, e.instant])),
+      track,
+    );
+  }, [course, placement, track]);
+
+  /**
    * Where the reader is pointing along the course, in metres.
    *
    * Deliberately NOT in the URL alongside the cursor: a hover is a transient
@@ -217,6 +236,36 @@ export function App() {
    * to the address bar on every mouse move would be absurd.
    */
   const [focus, setFocus] = useState<number | null>(null);
+  /** Something is selected but has no place on the course. See CourseRail. */
+  const [unplaceable, setUnplaceable] = useState(false);
+
+  /**
+   * Point the rail at whatever is nearest a moment in time.
+   *
+   * The swimlanes have a cursor rather than a scroll position, so this is
+   * their equivalent of the feed's scroll-spy. On a timed track the cursor
+   * alone would do, but this also works on an untimed one by falling back to
+   * the nearest item that could be anchored at all.
+   */
+  const focusAt = useCallback(
+    (cursor: Instant) => {
+      if (!placement) return;
+      let best: number | null = null;
+      let bestGap = Number.POSITIVE_INFINITY;
+      for (const entry of placement.placed) {
+        const anchor = anchors.get(entry.item.id);
+        if (!anchor) continue;
+        const gap = Math.abs(entry.instant - cursor);
+        if (gap < bestGap) {
+          bestGap = gap;
+          best = anchor.distance;
+        }
+      }
+      setFocus(best);
+      setUnplaceable(best === null);
+    },
+    [placement, anchors],
+  );
 
   /**
    * The visible range: what the manifest says, or a sensible guess.
@@ -425,6 +474,26 @@ export function App() {
             </>
           )}
 
+          {/* The course, riding along with the photographs. The Course tab
+              answers "what did the race look like"; this answers the question
+              you have while scrolling, which is "where was this taken". */}
+          {stage.course && range && view.view !== 'course' && (
+            <CourseRail
+              manifest={stage.manifest}
+              course={stage.course}
+              track={track}
+              items={items}
+              focus={focus}
+              onFocus={setFocus}
+              at={view.cursor}
+              onCursor={(cursor) => setView({ cursor })}
+              unplaceable={unplaceable}
+              {...(stage.manifest.event.timezone
+                ? { timezone: stage.manifest.event.timezone }
+                : {})}
+            />
+          )}
+
           {placement && range && store && (
             <MediaProvider store={store}>
               {view.view === 'lanes' && (
@@ -433,7 +502,11 @@ export function App() {
                   placed={placement.placed}
                   range={range}
                   state={view}
-                  onCursor={(cursor) => setView({ cursor })}
+                  onCursor={(cursor) => {
+                    setView({ cursor });
+                    // A null cursor is the scrub being cleared, not a moment.
+                    if (stage.course && cursor !== null) focusAt(cursor);
+                  }}
                   onTogglePerson={(person: PersonId) =>
                     setView({
                       visible: toggleVisible(view, person, stage.manifest.people.map((p) => p.id)),
@@ -448,6 +521,26 @@ export function App() {
                   manifest={stage.manifest}
                   items={items}
                   onOpen={(entry) => setOpenId(entry.item.id)}
+                  {...(stage.course
+                    ? {
+                        onActive: (moment: readonly PlacedItem[]) => {
+                          // The first item in the moment that can be placed on
+                          // the course at all. Some carry no GPS and some fall
+                          // outside a timed track's span; those simply do not
+                          // move the marker rather than moving it wrongly.
+                          for (const entry of moment) {
+                            const anchor = anchors.get(entry.item.id);
+                            if (anchor) {
+                              setFocus(anchor.distance);
+                              setUnplaceable(false);
+                              return;
+                            }
+                          }
+                          setFocus(null);
+                          setUnplaceable(true);
+                        },
+                      }
+                    : {})}
                 />
               )}
 

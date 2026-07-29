@@ -1456,3 +1456,87 @@
   margin-left: auto;
   color: var(--mw-fg);
 }
+
+/* ---------------------------------------------------------------------------
+   The course rail: the map and elevation profile riding along beside the
+   photographs, sticky so they stay in view while the feed scrolls past.
+   --------------------------------------------------------------------------- */
+
+.rail {
+  position: sticky;
+  /* Clears the sticky page header. */
+  top: var(--mw-space-2);
+  z-index: 20;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--mw-space-3);
+  align-items: stretch;
+  margin: var(--mw-space-3) 0;
+  padding: var(--mw-space-2);
+  border: 1px solid var(--mw-border);
+  border-radius: var(--mw-radius-lg);
+  /* Opaque: the feed scrolls underneath and must not show through. */
+  background: var(--mw-surface);
+}
+
+.rail__map,
+.rail__side {
+  min-width: 0;
+}
+
+.rail__side {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--mw-space-2);
+}
+
+.rail__readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mw-space-3);
+  align-items: baseline;
+  font-size: var(--mw-text-sm);
+}
+
+.rail__km {
+  font-size: var(--mw-text-lg);
+  font-weight: 700;
+  color: var(--mw-accent);
+}
+
+.rail__ele,
+.rail__at {
+  color: var(--mw-fg-muted);
+}
+
+.rail__hint {
+  font-size: var(--mw-text-xs);
+  color: var(--mw-fg-muted);
+}
+
+.rail__profile {
+  width: 100%;
+  height: 44px;
+  display: block;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+/* The rail's map is a reference, not the subject: short, and no basemap
+   chips competing for attention with the photographs. */
+.coursemap--compact .coursemap__canvas {
+  height: 180px;
+}
+
+/* Narrow screens: the map on top, the readout under it. A two-column rail
+   would leave the map too small to read. */
+@media (max-width: 720px) {
+  .rail {
+    grid-template-columns: 1fr;
+    position: static;
+  }
+  .coursemap--compact .coursemap__canvas {
+    height: 150px;
+  }
+}

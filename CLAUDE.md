@@ -235,6 +235,43 @@ Three rules that must not be broken:
    label.** That is the secondary encoding that makes the map legible; it is
    not optional polish. Do not discover this again at M10.
 
+### The course line is CASED, and the colour is measured *(M10)*
+
+The owner: *"the orange line on the orange topo map is barely visible."*
+Correct, and measurable. Sampling `#F26522` against real tiles:
+
+| Basemap | share of tile below 3:1 |
+|---|---|
+| OpenTopoMap | **87.6%** |
+| Esri satellite | **99.4%** |
+
+**No single colour fixes this**, which is the important part — white disappears
+on the pale topo map (99.9% failing), dark disappears on dark satellite
+imagery (53% failing). Map imagery is arbitrary, so contrast against it cannot
+be solved by choosing a hue.
+
+The fix is a **casing**: a dark stroke under a lighter core, so the line's
+silhouette carries both a light and a dark edge and one of them always
+contrasts. With a `#171512` casing at weight 7, the most saturated
+brand-consistent core that clears 3:1 across both basemaps is **`#F7A37A`**
+(brand orange mixed 40% toward white) at weight 3 — 0.0% of either tile below
+3:1, worst case 3.89 on topo and 4.28 on satellite.
+
+Method: fetch a tile covering the course, compute the WCAG contrast ratio per
+pixel against the candidate, and take the share below 3:1 — the worst patch is
+what matters, not the average, because a line is unreadable wherever it
+crosses that patch. **If the colour changes, re-measure. Do not eyeball it.**
+
+Photo dots and the runner marker carry the same dark ring for the same reason.
+
+### The map wheel zooms, deliberately *(M10)*
+
+The conventional choice is to require ctrl/⌘ so the page can scroll past the
+map. Reversed at the owner's request: *"an app like this is mostly going to be
+used with only a mouse/trackpad."* Exploring the course IS the reason to be
+here, so putting the primary interaction behind a modifier gets it backwards.
+Keyboard zoom remains for accessibility.
+
 ### Identifying people in a FLAT folder *(M3, corrected against real data)*
 
 The design assumed each person hands over a folder. **The real folder was a
@@ -475,6 +512,35 @@ browser's always-truthy `window` object instead of the value.
 - **`event.timezone` is not cosmetic.** It is what turns a naive camera
   timestamp into an instant, so changing it moves items in and out of the
   unplaced tray.
+
+### Placing media ON the course: time first, GPS only as a fallback *(M10)*
+
+`anchorItems()` gives each item a distance along the course, which is what
+lets scrolling the feed drive the map. The precedence is not arbitrary, and
+the owner named the reason:
+
+> "sometimes the phone GPS gets points all wrong and weird. and for videos
+> (especially videos taken on an action cam) there may not be GPS coordinates"
+
+1. **Time**, when the track is timed. Every item has a timestamp — that is the
+   spine of this whole app — so this places an action-cam clip with no GPS
+   receiver at all, and every Android video that carries no location.
+2. **GPS**, only when the track has NO times. That is a real case, not a
+   degenerate one: a Strava route export has none. Here GPS is a measurement
+   rather than a guess, which is the only reason it is acceptable.
+
+Clock error is a constant offset, correctable once per device via
+`clockOffset`. GPS error is per-shot and not correctable at all, so the clock
+wins whenever both exist.
+
+`ON_COURSE_TOLERANCE_M` (750m) rejects items too far off the line. This is
+load-bearing on real data: a cluster of the owner's photos sits **19.3 km**
+from the course — a hotel, not the race — and without the threshold each one
+would pin a marker to a mountain nobody visited.
+
+Disagreement between the two sources is signal, not noise: an item whose GPS
+is far from where the track says the runner was at that moment is evidence of
+a clock offset, which is the basis of automatic alignment.
 
 ### Media with no usable timestamp goes to an unplaced tray *(session 2)*
 

@@ -231,7 +231,11 @@ Run `make dev`, click **Open a folder**, and:
 9. **The map and the profile follow each other.** Run the pointer along the
    elevation profile and a marker tracks it around the map; run it along the
    course on the map and the profile's crosshair follows, reading out
-   elevation and gradient at that point.
+   elevation and gradient at that point. The map zooms on the scroll wheel.
+10. **The course rides along with the photos.** With a track loaded, a strip
+   showing the map and the elevation profile sticks to the top of the feed
+   and follows what you scroll past, so you can see where each photo was
+   taken without leaving the timeline.
 
 There's also a report of how much to trust the times, an expandable list of
 any files that arrived without a timestamp (with who to ask for the

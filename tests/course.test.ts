@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  anchorItems,
   atDistance,
   atTime,
   haversine,
   nearestDistance,
+  nearestPoint,
   parseCourse,
   simplify,
   type Course,
@@ -399,5 +401,89 @@ describe('nearestDistance', () => {
     const point = atDistance(course, metres) as CoursePoint;
     expect(point.lat).toBeCloseTo(target.lat, 5);
     expect(point.lon).toBeCloseTo(target.lon, 5);
+  });
+});
+
+describe('anchorItems', () => {
+  const samples: Sample[] = Array.from({ length: 200 }, (_, i) => ({
+    lat: 45 + i * 0.001,
+    lon: -110,
+    distance: i * 111,
+  }));
+  const untimed: Course = {
+    samples, length: 199 * 111, timed: false, from: null, to: null,
+    bounds: { minLat: 45, maxLat: 45.199, minLon: -110, maxLon: -110 },
+    has: { elevation: false, hr: false, cadence: false }, ascent: 0,
+  };
+  const none = new Map<string, number>();
+
+  describe('when the track has no times, GPS is the only option', () => {
+    it('places an item taken on the course', () => {
+      const a = anchorItems([{ id: 'a', gps: [45.05, -110] as const }], untimed, none);
+      expect(a.get('a')?.distance).toBeCloseTo(50 * 111, -1);
+      expect(a.get('a')?.from).toBe('gps');
+    });
+
+    it('ignores an item with no GPS rather than guessing', () => {
+      // An action camera has no receiver at all. Nothing honest to do here.
+      expect(anchorItems([{ id: 'a' }], untimed, none).size).toBe(0);
+    });
+
+    it('rejects an item taken nowhere near the course', () => {
+      expect(anchorItems([{ id: 'far', gps: [46.5, -111.5] as const }], untimed, none).size).toBe(0);
+    });
+
+    it('accepts an item just off the trail, like an aid station', () => {
+      expect(anchorItems([{ id: 'aid', gps: [45.05, -109.99745] as const }], untimed, none).has('aid')).toBe(true);
+    });
+  });
+
+  describe('when the track is timed, time wins', () => {
+    const timed = parseCourse(gpx(LINE)) as Course;
+
+    it('places an item with NO GPS at all — which GPS never could', () => {
+      // The case that matters most: action-cam video, and every Android clip
+      // that carries no location.
+      const at = new Map([['clip', (timed.from as number) + 600_000]]);
+      const a = anchorItems([{ id: 'clip' }], timed, at);
+      expect(a.get('clip')?.from).toBe('time');
+      expect(a.get('clip')?.distance).toBeGreaterThan(0);
+    });
+
+    it('prefers time even when GPS is present and plausible', () => {
+      const at = new Map([['p', (timed.from as number) + 600_000]]);
+      const a = anchorItems([{ id: 'p', gps: [45.8, -110.5] as const }], timed, at);
+      expect(a.get('p')?.from).toBe('time');
+    });
+
+    it('is not fooled by a wildly wrong GPS fix', () => {
+      // A stale fix can land a photo on the wrong side of a ridge. The clock
+      // does not fail that way, so the clock decides.
+      const at = new Map([['p', (timed.from as number) + 600_000]]);
+      const viaTime = anchorItems([{ id: 'p', gps: [12, 100] as const }], timed, at);
+      expect(viaTime.get('p')?.from).toBe('time');
+      expect(viaTime.get('p')?.distance).toBeGreaterThan(0);
+    });
+
+    it('falls back to GPS for an item outside the track span', () => {
+      // Shot before the start or after the finish: there is no
+      // position-at-time, but the photo still knows where it was taken.
+      const at = new Map([['before', (timed.from as number) - 86_400_000]]);
+      const a = anchorItems([{ id: 'before', gps: [45.81, -110.5] as const }], timed, at);
+      expect(a.get('before')?.from).toBe('gps');
+    });
+
+    it('drops an item that is outside the span and has no GPS', () => {
+      const at = new Map([['x', (timed.from as number) - 86_400_000]]);
+      expect(anchorItems([{ id: 'x' }], timed, at).size).toBe(0);
+    });
+  });
+
+  it('measures the off-course distance honestly across longitudes', () => {
+    // A degree of longitude is ~78km at 45N, not 111km. Ranking without that
+    // correction picks the wrong sample on an east-west course.
+    const near = nearestPoint(samples, 45.05, -110.001) as { metresAway: number };
+    expect(near.metresAway).toBeGreaterThan(50);
+    expect(near.metresAway).toBeLessThan(100);
   });
 });

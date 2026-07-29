@@ -508,33 +508,138 @@ export function simplify(samples: readonly Sample[], toleranceM: number): Sample
 }
 
 /**
- * Metres along the course at the track point nearest a position.
+ * The point on the course nearest a position, and how far off it is.
  *
- * This is what links the map to the elevation profile: point at somewhere on
- * the course and this says how far into the race that is, which is the one
- * quantity both views understand — an untimed track has no clock to share.
+ * Two jobs. It links the map to the profile — point anywhere on the course
+ * and `distance` says how far into the race that is, the one quantity both
+ * views understand. And it **places a PHOTO on the course from its own GPS**,
+ * which is how a timeline of photographs can drive a map even when the track
+ * carries no timestamps at all: the photo knows where it was taken, so no
+ * interpolation is involved and nothing is invented.
  *
- * Squared degrees rather than haversine, because only the ORDERING matters
- * here and this runs on every mouse move. Over a race-sized area the two rank
- * candidates identically; longitude degrees being shorter than latitude ones
- * would only matter for a track spanning a continent.
+ * `metresAway` is what makes that safe. A photo shot at home, or at the
+ * airport on the way there, is nearest to *some* point on the course, and
+ * without the distance to reject it that photo would pin a marker to a
+ * mountain the photographer never visited. Callers must threshold it.
  *
- * Give it the SIMPLIFIED track. Scanning 120k points per pointer move is
- * wasted work for an answer that moves by less than a pixel.
+ * Candidates are ranked in scaled squared degrees — no trigonometry per
+ * sample, which matters when this runs on every pointer move — and only the
+ * winner is measured properly.
+ *
+ * Give it the SIMPLIFIED track: scanning 120k points for an answer that moves
+ * by less than a pixel is wasted work.
  */
+export function nearestPoint(
+  samples: readonly Sample[],
+  lat: number,
+  lon: number,
+): { distance: number; metresAway: number } | null {
+  if (samples.length === 0) return null;
+  // Longitude degrees are shorter than latitude ones away from the equator;
+  // without this the ranking is stretched east-west and picks the wrong point.
+  const scale = Math.cos((lat * Math.PI) / 180);
+  let best: Sample | null = null;
+  let bestGap = Number.POSITIVE_INFINITY;
+  for (const sample of samples) {
+    const dLat = sample.lat - lat;
+    const dLon = (sample.lon - lon) * scale;
+    const gap = dLat * dLat + dLon * dLon;
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = sample;
+    }
+  }
+  if (!best) return null;
+  return { distance: best.distance, metresAway: haversine(lat, lon, best.lat, best.lon) };
+}
+
+/** Metres along the course at the track point nearest a position. */
 export function nearestDistance(
   samples: readonly Sample[],
   lat: number,
   lon: number,
 ): number | null {
-  let best: number | null = null;
-  let bestGap = Number.POSITIVE_INFINITY;
-  for (const sample of samples) {
-    const gap = (sample.lat - lat) ** 2 + (sample.lon - lon) ** 2;
-    if (gap < bestGap) {
-      bestGap = gap;
-      best = sample.distance;
+  return nearestPoint(samples, lat, lon)?.distance ?? null;
+}
+
+/**
+ * How far off the course an item may be and still count as taken on it.
+ *
+ * Generous enough for GPS scatter, a switchback the simplified track cut, and
+ * an aid station just off the trail; tight enough to reject the pub
+ * afterwards.
+ */
+export const ON_COURSE_TOLERANCE_M = 750;
+
+/** Where an item's position on the course came from. Surfaced, never hidden. */
+export type AnchorSource = 'time' | 'gps';
+
+export interface Anchor {
+  /** Metres into the race. */
+  distance: number;
+  from: AnchorSource;
+  /** How far the item's own GPS sat from the course. Only for `gps`. */
+  metresAway?: number;
+}
+
+/**
+ * Place items along the course, so a timeline of media can drive a map.
+ *
+ * **TIME FIRST, GPS ONLY AS A FALLBACK.** The order matters and is not
+ * arbitrary:
+ *
+ * - **Every item has a timestamp** — that is the spine of this whole app —
+ *   whereas GPS is patchy. Android videos routinely carry none, and an action
+ *   camera strapped to a runner typically has no GPS receiver at all. Those
+ *   are exactly the clips worth placing, and time places them.
+ * - **A phone's GPS fix goes wrong in ways a clock does not.** A stale or
+ *   scattered fix can land a photo on the wrong side of a ridge. Clock error
+ *   is a constant offset, correctable once per device via `clockOffset`;
+ *   GPS error is per-shot and not correctable at all.
+ *
+ * So when the track is timed, position-at-time answers for everything. GPS is
+ * used only when the track has NO times — which is a real case, since a
+ * Strava route export has none — and there it is a measurement rather than a
+ * guess, which is what makes it acceptable at all.
+ *
+ * Items that can be placed neither way are absent from the result. An absent
+ * anchor shows nothing; a wrong one points at a mountain nobody climbed.
+ *
+ * Disagreement between the two is not noise, it is signal: an item whose GPS
+ * sits far from where the track says the runner was at that moment is
+ * evidence of a clock offset, which is the basis of automatic alignment.
+ */
+export function anchorItems<
+  T extends { id: string; gps?: readonly [number, number] },
+>(
+  items: readonly T[],
+  course: Course,
+  instants: ReadonlyMap<string, Instant>,
+  samples: readonly Sample[] = course.samples,
+  toleranceM: number = ON_COURSE_TOLERANCE_M,
+): Map<string, Anchor> {
+  const out = new Map<string, Anchor>();
+  if (course.samples.length === 0) return out;
+
+  for (const item of items) {
+    if (course.timed) {
+      const at = instants.get(item.id);
+      if (at !== undefined) {
+        const point = atTime(course, at);
+        if (point) {
+          out.set(item.id, { distance: point.distance, from: 'time' });
+          continue;
+        }
+      }
+      // Outside the track's own span — the runner was not out there yet, or
+      // had finished. Fall through rather than clamping to an end.
+    }
+
+    if (!item.gps) continue;
+    const near = nearestPoint(samples, item.gps[0], item.gps[1]);
+    if (near && near.metresAway <= toleranceM) {
+      out.set(item.id, { distance: near.distance, from: 'gps', metresAway: near.metresAway });
     }
   }
-  return best;
+  return out;
 }
