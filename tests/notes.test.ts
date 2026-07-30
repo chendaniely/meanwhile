@@ -199,6 +199,14 @@ describe('mergeNotes', () => {
     ], ZONE);
     expect(notes).toHaveLength(1);
   });
+
+  it('threads a rowIdentity map through to dedupeNotes, so a blank-id row keeps its id across two calls', () => {
+    const blankIdRow = ',2026,7,25,15,0,,,,,,hand-typed note\n';
+    const rowIdentity = new Map<string, string>();
+    const first = mergeNotes([file('notes.csv', blankIdRow)], ZONE, rowIdentity);
+    const second = mergeNotes([file('notes.csv', blankIdRow)], ZONE, rowIdentity);
+    expect(second.notes[0]?.id).toBe(first.notes[0]?.id);
+  });
 });
 
 describe('dedupeNotes', () => {
@@ -219,6 +227,61 @@ describe('dedupeNotes', () => {
   it('mints an id for a note with none', () => {
     const out = dedupeNotes([note({ id: '' })]);
     expect(out[0]?.id).toMatch(/^n_/);
+  });
+
+  /**
+   * The root-cause fix for a THIRD symptom of the same bug (a blank-id row
+   * has no identity of its own across parses): editing a hand-typed note
+   * and then deleting it used to resurrect it under the pre-edit text,
+   * because the delete tombstone recorded the EDITED content's fingerprint
+   * while the fresh re-parse still produced the original. Giving the row a
+   * STABLE id via `rowIdentity` fixes this and the two earlier symptoms
+   * (duplication on add, resurrection on delete) at their source, rather
+   * than patching a fourth one — every id-based mechanism downstream works
+   * unchanged once ids behave the way the rest of the design assumed.
+   */
+  describe('rowIdentity', () => {
+    const blank = (over: Partial<Note> = {}): Note => ({
+      id: '', at: '2026-07-25T21:45:00.000Z', people: [], author: [], text: 'x', ...over,
+    });
+
+    it('reuses the id from an earlier call for the same content, instead of minting a new one', () => {
+      const rowIdentity = new Map<string, string>();
+      const first = dedupeNotes([blank()], undefined, rowIdentity);
+      const second = dedupeNotes([blank()], undefined, rowIdentity);
+      expect(second[0]?.id).toBe(first[0]?.id);
+    });
+
+    it('does not let two identical blank-id rows in the SAME call collapse into one', () => {
+      // Content alone cannot distinguish two rows typed once from the same
+      // row read twice — only a row seen in an EARLIER call gets reused;
+      // rowIdentity is a snapshot taken at the start of each call, so a
+      // sibling row minting a fresh id moments earlier in this same loop
+      // must not be handed out to a second row that merely matches it.
+      const row = blank({ text: 'same text, typed twice' });
+      const out = dedupeNotes([row, row], undefined, new Map());
+      expect(out).toHaveLength(2);
+      expect(new Set(out.map((n) => n.id)).size).toBe(2);
+    });
+
+    it('mints a fresh id exactly as before when rowIdentity is omitted', () => {
+      const out = dedupeNotes([blank()]);
+      expect(out[0]?.id).toMatch(/^n_/);
+    });
+
+    it('gives a genuinely different note (even sharing an id-collision path) its own identity', () => {
+      // Sanity check that rowIdentity only ever affects the BLANK-id branch:
+      // an explicit-id collision with different content still re-mints, the
+      // same as without rowIdentity at all.
+      const rowIdentity = new Map<string, string>();
+      const out = dedupeNotes(
+        [note({ text: 'one' }), note({ text: 'two' })],
+        undefined,
+        rowIdentity,
+      );
+      expect(out).toHaveLength(2);
+      expect(new Set(out.map((n) => n.id)).size).toBe(2);
+    });
   });
 });
 

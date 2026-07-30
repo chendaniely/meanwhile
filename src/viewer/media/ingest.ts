@@ -15,7 +15,9 @@ import {
 } from '../../core/assemble.ts';
 import { parseCourse, type Course } from '../../core/course.ts';
 import { isManifestFile, isNotesFile, isPeopleFile, isTrackFile } from '../../core/metadata.ts';
-import { dedupeNotes, fingerprintNote, mergeNotes, resolveNotePhotos, type Note } from '../../core/notes.ts';
+import {
+  dedupeNotes, fingerprintNote, mergeNotes, resolveNotePhotos, type Note, type NoteRowIdentity,
+} from '../../core/notes.ts';
 import { parsePeopleCsv } from '../../core/people-csv.ts';
 import {
   validateManifest,
@@ -97,6 +99,25 @@ export interface IngestOptions {
    * photo, and extra together.
    */
   deletedNoteFingerprints?: ReadonlySet<string>;
+  /**
+   * The ROOT fix behind `deletedNoteFingerprints`/`sessionFingerprints`
+   * (see `mergeSessionNotes`'s doc comment) rather than another patch on
+   * top of them: a session-scoped map from a blank-`id` row's content
+   * fingerprint to the id minted for it, forwarded to `mergeNotes` →
+   * `dedupeNotes`. Reusing the SAME id for the SAME unsaved row across
+   * every re-ingest of one open folder is what lets every other
+   * id-based mechanism here — session-wins, the deletion tombstones,
+   * edit-preservation — work exactly as designed, because ids finally
+   * behave the way the rest of this design already assumed they did.
+   *
+   * MUTATED IN PLACE by `ingestFolder` (via `dedupeNotes`), unlike every
+   * other option here: the whole point is that the SAME `Map` object comes
+   * back in on the next call already carrying what the last one recorded.
+   * `App.tsx` owns one for the lifetime of an open folder and replaces it
+   * with a fresh, empty one when a genuinely different folder is opened —
+   * see the comment on `noteRowIdentity` there.
+   */
+  noteRowIdentity?: NoteRowIdentity;
   onProgress?: (progress: IngestProgress) => void;
   signal?: AbortSignal;
 }
@@ -280,6 +301,7 @@ export async function ingestFolder(
   const { notes: csvNotes, problems: csvNoteProblems } = mergeNotes(
     noteFiles,
     manifest.event.timezone,
+    opts.noteRowIdentity,
   );
   const migratedNotes = migrateLegacyNotes(manifest);
   // A folder can carry BOTH an old-style manifest.json (migratedNotes) and a
@@ -372,6 +394,31 @@ export async function ingestFolder(
  * under this time. Session-scoped exactly like `deletedIds` — cleared on
  * a genuinely different folder — so a fingerprint deleted in one session
  * cannot suppress an unrelated, later note that merely happens to match.
+ *
+ * **A still later review asked to fix the ROOT CAUSE instead of patching a
+ * third symptom** (an edited-then-deleted blank-id note resurrecting under
+ * its PRE-edit text, because the tombstone fingerprint was taken from the
+ * EDITED in-memory copy while the fresh re-parse still produced the
+ * original). That fix is `NoteRowIdentity` (see `dedupeNotes` in
+ * `core/notes.ts`): a blank-id row now keeps the SAME id across every
+ * re-parse of an unchanged file, for the lifetime of one open folder. With
+ * that in place, `sessionFingerprints` and `deletedFingerprints` above are
+ * no longer load-bearing for any path this application actually exercises —
+ * every note reaching this function now carries a stable id (literal from
+ * the file, deterministically derived for a migrated caption, or resolved
+ * through `NoteRowIdentity`), so the plain id-based checks this function
+ * had BEFORE either fingerprint patch existed are sufficient on their own.
+ *
+ * They were deliberately NOT deleted here, though, because doing so would
+ * require rewriting the four existing unit tests below that exercise this
+ * fingerprint matching directly, via synthetic notes with different
+ * explicit ids and matching content — inputs that do not correspond to any
+ * real code path once ids are stable, but that are still valid, passing
+ * tests of the mechanism as written. Removing a mechanism its own tests
+ * still cover felt like exactly the kind of change to flag rather than push
+ * through unilaterally. If a future session is comfortable updating those
+ * tests, both fingerprint parameters (and the `sessionFingerprints`/
+ * `deletedFingerprints` filtering below) can come out.
  *
  * Pure and independent of `ingestFolder`'s file-reading, so it is directly
  * testable with plain `Note[]` — no `File` mocking needed.

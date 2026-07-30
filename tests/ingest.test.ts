@@ -454,6 +454,115 @@ describe('ingestFolder — notes end to end', () => {
     expect(reopened.notes).toHaveLength(1);
     expect(reopened.notes[0]?.text).toBe(deletedText);
   });
+
+  /**
+   * A further review found the addendum-2 delete tombstone still had a
+   * hole: EDIT a blank-id note, then DELETE it, and it came back on the
+   * next "Add files" — `deleteNote` fingerprints the EDITED in-memory
+   * content, but the untouched CSV row still re-parses to the ORIGINAL
+   * text, so the tombstone fingerprint never matches. Rather than patch a
+   * fourth symptom, the fix is the root cause: `noteRowIdentity` gives a
+   * blank-id row a STABLE id across re-parses (keyed on the row's content
+   * AS THE FILE HAS IT, not on whatever the in-memory note has become), so
+   * every id-based mechanism here — including the plain `deletedNoteIds`
+   * check that predates every fingerprint patch — works without needing
+   * content to match at all.
+   */
+  it('an edited-then-deleted blank-id note stays deleted across "Add files"', async () => {
+    const notesCsv =
+      'id,year,month,day,hour,minute,duration,tz,people,photo,author,text\n' +
+      ',2026,7,25,9,0,,,Priya,,,original text\n';
+    const noteRowIdentity = new Map<string, string>();
+
+    const first = await ingestFolder([textFile('notes.csv', notesCsv)], {
+      title: 'x', noteRowIdentity,
+    });
+    expect(first.notes).toHaveLength(1);
+    const original = first.notes[0] as Note;
+
+    // Simulates editing in the app (App.tsx's editNote keeps `id`, changes
+    // only the field edited) and then deleting the EDITED copy — deleteNote
+    // records the fingerprint of what is in `notesRef.current` at that
+    // moment, which is the edited text, not the original.
+    const edited: Note = { ...original, text: 'edited text' };
+    const deletedNoteIds = new Set([edited.id]);
+    const deletedNoteFingerprints = new Set([fingerprintNote(edited)]);
+
+    // Re-ingest: the CSV row on disk is UNCHANGED (nothing has been saved),
+    // so this re-parses "original text" again. Passing the SAME
+    // noteRowIdentity map is what resolves it back to `original.id` rather
+    // than a fresh mint — proving the id-based deletedNoteIds check alone
+    // is sufficient once the id is stable, with no fingerprint match needed.
+    const second = await ingestFolder([textFile('notes.csv', notesCsv)], {
+      title: 'x',
+      sessionNotes: [], // deleted, so the session no longer carries it
+      deletedNoteIds,
+      deletedNoteFingerprints,
+      noteRowIdentity,
+    });
+    expect(second.notes).toEqual([]);
+  });
+
+  it('a blank-id row keeps the SAME id across two ingests', async () => {
+    const notesCsv =
+      'id,year,month,day,hour,minute,duration,tz,people,photo,author,text\n' +
+      ',2026,7,25,9,0,,,Priya,,,hand-typed note\n';
+    const noteRowIdentity = new Map<string, string>();
+
+    const first = await ingestFolder([textFile('notes.csv', notesCsv)], {
+      title: 'x', noteRowIdentity,
+    });
+    const firstId = first.notes[0]?.id;
+    expect(firstId).toBeDefined();
+
+    const second = await ingestFolder([textFile('notes.csv', notesCsv)], {
+      title: 'x', sessionNotes: first.notes, noteRowIdentity,
+    });
+    // Equality of the id itself, not just a count — the count alone cannot
+    // distinguish "the row kept its id" from "the row minted a new one and
+    // some OTHER mechanism happened to dedupe it back down to one".
+    expect(second.notes[0]?.id).toBe(firstId);
+  });
+
+  it('editing a blank-id note, then re-ingesting, keeps the edit as ONE note', async () => {
+    const notesCsv =
+      'id,year,month,day,hour,minute,duration,tz,people,photo,author,text\n' +
+      ',2026,7,25,9,0,,,Priya,,,original text\n';
+    const noteRowIdentity = new Map<string, string>();
+
+    const first = await ingestFolder([textFile('notes.csv', notesCsv)], {
+      title: 'x', noteRowIdentity,
+    });
+    const original = first.notes[0] as Note;
+    const edited: Note = { ...original, text: 'EDITED' };
+
+    const second = await ingestFolder([textFile('notes.csv', notesCsv)], {
+      title: 'x', sessionNotes: [edited], noteRowIdentity,
+    });
+    expect(second.notes).toHaveLength(1);
+    expect(second.notes[0]?.id).toBe(original.id);
+    expect(second.notes[0]?.text).toBe('EDITED');
+  });
+
+  it('a fresh (or omitted) noteRowIdentity map does not carry a stable id into a different ingest', async () => {
+    // What `mode: 'replace'` does: App.tsx reassigns the ref to a brand new
+    // `Map` before opening a genuinely different folder, so nothing from
+    // the old one leaks in. Simulated here by using an unrelated, empty map
+    // instead of the one the first call populated.
+    const notesCsv =
+      'id,year,month,day,hour,minute,duration,tz,people,photo,author,text\n' +
+      ',2026,7,25,9,0,,,Priya,,,hand-typed note\n';
+
+    const first = await ingestFolder([textFile('notes.csv', notesCsv)], {
+      title: 'x', noteRowIdentity: new Map(),
+    });
+    const firstId = first.notes[0]?.id;
+
+    const reopened = await ingestFolder([textFile('notes.csv', notesCsv)], {
+      title: 'x', noteRowIdentity: new Map(),
+    });
+    expect(reopened.notes[0]?.id).not.toBe(firstId);
+  });
 });
 
 describe('manifestForSave', () => {

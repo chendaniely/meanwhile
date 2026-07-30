@@ -445,24 +445,71 @@ export function fingerprintNote(note: Note, eventTimezone?: string): string {
  * `manifest.json` and a `notes.csv` saved from it both land back in the same
  * folder, which produces exact id collisions without this.
  */
-export function dedupeNotes(notes: readonly Note[], eventTimezone?: string): Note[] {
+/**
+ * `rowIdentity`'s type on its own: a session-scoped map from a blank-`id`
+ * row's content fingerprint (as parsed — see the `rowIdentity` param doc on
+ * `dedupeNotes`) to the id minted for it the first time it was seen. Mutated
+ * in place by `dedupeNotes`, which is why it is a plain `Map` here rather
+ * than the `Readonly*` shapes the rest of this module's session inputs use —
+ * this one is a two-way channel, not a snapshot.
+ */
+export type NoteRowIdentity = Map<string, string>;
+
+export function dedupeNotes(
+  notes: readonly Note[],
+  eventTimezone?: string,
+  /**
+   * A blank-`id` row has no identity of its own to key off — `rowToNote`
+   * gives it `id: ''` and this function has always minted a fresh RANDOM id
+   * for it. Without `rowIdentity`, that mint is gone the moment this
+   * function returns: the identical, unsaved row in the file mints a
+   * DIFFERENT random id on every re-parse, which is the root cause behind
+   * three separate bugs found in review (a note duplicating across "Add
+   * files", a deleted note resurrecting, and an edited-then-deleted note
+   * resurrecting under its PRE-edit text) — every one of them a symptom of
+   * the same thing: a blank-id row's id was never actually stable.
+   *
+   * When supplied, a blank-id row's content fingerprint is looked up here
+   * first; a hit reuses that id instead of minting a new one, and a miss
+   * mints one and records it for next time. The caller (`ingestFolder`,
+   * `App.tsx`) owns this map for the lifetime of one open folder and resets
+   * it when a genuinely different folder is opened — see the comment there.
+   *
+   * Looked up from a SNAPSHOT taken at the start of this call, not the live
+   * map: a fingerprint recorded by one row earlier in this SAME parse must
+   * not be "reused" by a second row that merely shares it, or two rows
+   * someone typed once — a coincidence, not the same row re-read — would
+   * silently collapse into one note. Only a fingerprint known from an
+   * EARLIER call (a previous ingest of the same session) resolves to a
+   * stable id; within one call, content alone still never merges two rows.
+   */
+  rowIdentity?: NoteRowIdentity,
+): Note[] {
   const out: Note[] = [];
-  const seen = new Map<string, string>(); // id -> a fingerprint of its content
+  const seen = new Map<string, string>(); // id -> a fingerprint of its content, within this call
+  const priorIdentity = rowIdentity ? new Map(rowIdentity) : undefined;
+
+  const mintUnique = (): string => {
+    let candidate = mintNoteId();
+    while (seen.has(candidate)) candidate = mintNoteId();
+    return candidate;
+  };
 
   for (const note of notes) {
     const next = { ...note };
     const fingerprint = fingerprintNote(next, eventTimezone);
+
     if (!next.id) {
-      let candidate = mintNoteId();
-      while (seen.has(candidate)) candidate = mintNoteId();
-      next.id = candidate;
+      const stable = priorIdentity?.get(fingerprint);
+      // Reused only if nothing in THIS call has already claimed it — see
+      // the note above about two rows sharing a fingerprint in one parse.
+      next.id = stable !== undefined && !seen.has(stable) ? stable : mintUnique();
+      rowIdentity?.set(fingerprint, next.id);
     } else if (seen.has(next.id)) {
       // The same row seen twice is one note. A different row wearing the
       // same id is a copy, and gets its own identity.
       if (seen.get(next.id) === fingerprint) continue;
-      let candidate = mintNoteId();
-      while (seen.has(candidate)) candidate = mintNoteId();
-      next.id = candidate;
+      next.id = mintUnique();
     }
     seen.set(next.id, fingerprint);
     out.push(next);
@@ -483,6 +530,8 @@ export function dedupeNotes(notes: readonly Note[], eventTimezone?: string): Not
 export function mergeNotes(
   files: ReadonlyArray<{ name: string; text: string }>,
   eventTimezone?: string,
+  /** Forwarded to `dedupeNotes` unchanged — see its doc comment. */
+  rowIdentity?: NoteRowIdentity,
 ): { notes: Note[]; problems: string[] } {
   const rows: Note[] = [];
   const problems: string[] = [];
@@ -500,7 +549,7 @@ export function mergeNotes(
     });
   }
 
-  const notes = dedupeNotes(rows, eventTimezone);
+  const notes = dedupeNotes(rows, eventTimezone, rowIdentity);
   notes.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   return { notes, problems };
 }

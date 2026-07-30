@@ -11,7 +11,8 @@ import {
 } from '../core/course.ts';
 import { formatCsv } from '../core/csv.ts';
 import {
-  fingerprintNote, mintNoteId, noteHeadersFor, noteToRow, stampBlankAuthors, type Note,
+  fingerprintNote, mintNoteId, noteHeadersFor, noteToRow, stampBlankAuthors,
+  type Note, type NoteRowIdentity,
 } from '../core/notes.ts';
 import { formatPeopleCsv } from '../core/people-csv.ts';
 import type { Manifest, PersonId } from '../core/schema.ts';
@@ -213,6 +214,21 @@ export function App() {
   // practical purpose here, since it already covers time, text, people,
   // author, photo, and extra together.
   const deletedNoteFingerprints = useRef<Set<string>>(new Set());
+  /**
+   * The ROOT fix behind both tombstone fingerprints above (see the long
+   * comment on `mergeSessionNotes` in `ingest.ts`): a session-scoped map
+   * from a blank-id row's content-as-parsed to the id minted for it, so the
+   * SAME unsaved row resolves to the SAME id on every re-ingest of this
+   * folder instead of a fresh random one every time. Passed to EVERY
+   * ingest — including the first, "replace" one — because the map has to
+   * start recording from the very first parse of a session for the first
+   * "Add files" afterward to already find something in it. Reassigned to a
+   * fresh, empty `Map` on `mode === 'replace'`, same as the tombstones:
+   * `ingestFolder` mutates whatever map it is given in place, so simply not
+   * resetting it would let a stable id assigned in one folder leak into an
+   * unrelated one opened next.
+   */
+  const noteRowIdentity = useRef<NoteRowIdentity>(new Map());
 
   /**
    * Read a set of files into the app.
@@ -244,6 +260,7 @@ export function App() {
       if (mode === 'replace') {
         deletedNoteIds.current = new Set();
         deletedNoteFingerprints.current = new Set();
+        noteRowIdentity.current = new Map();
       }
 
       setFiles(merged);
@@ -262,6 +279,11 @@ export function App() {
                 ...(previous.current.notes ? { existingNotes: previous.current.notes } : {}),
               }
             : {}),
+          // Always passed, unlike the tombstones below: the map has to
+          // start recording from THIS parse (even on 'replace', the first
+          // ingest of a session) for the next "Add files" to find anything
+          // stable to reuse. See the doc comment on the ref above.
+          noteRowIdentity: noteRowIdentity.current,
           // CRITICAL: without these, re-ingesting replaces the live session's
           // notes and captions with whatever a stale re-read of the folder
           // produces — see the doc comment on `mergeSessionNotes`. Omitted on
