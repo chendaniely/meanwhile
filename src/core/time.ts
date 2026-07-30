@@ -233,9 +233,17 @@ export function inferEventTimezone(
  * this right across a DST transition.
  *
  * Ambiguous times during a fall-back hour resolve to the first (pre-shift)
- * occurrence; times skipped by a spring-forward shift resolve to the instant
- * the wall clock jumped to. Both are stable and neither is worth more code
- * for a single-day event.
+ * occurrence. Times that do not exist at all — skipped over by a
+ * spring-forward shift — resolve using the offset in effect BEFORE the
+ * shift, which reads back an hour EARLIER than what was typed: a nonexistent
+ * "02:30" resolves to 01:30, not to 03:30 or any other instant "the wall
+ * clock jumped to" (verified against `America/Denver`'s 2026 transition,
+ * every naive minute in the gap). Both outcomes are stable and neither is
+ * worth more code for a single-day event. Now that `notes*.csv` rows can
+ * carry `utc_offset_min`, this two-pass guess is only the fallback for a row
+ * that has none (see `resolveZoned` in `notes.ts`) — a row that must be
+ * exact through a DST boundary should carry the offset instead of relying on
+ * this.
  */
 export function zonedToInstant(naive: string, timeZone: string): Instant | null {
   const m = NAIVE_RE.exec(naive.trim());

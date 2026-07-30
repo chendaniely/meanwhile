@@ -2,7 +2,7 @@
 
 ## STATUS: M0-M11 done. Notes and people now live in CSV, not the manifest.
 
-As of 2026-07-29 you can point the site at a folder — with photos, an
+As of 2026-07-30 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
 the race. **643 tests pass** (`make check`).
 
@@ -24,9 +24,14 @@ now read from and write to `notes*.csv` and `people.csv` rather than the
 manifest — several people's files merge by row-binding, every file is
 editable by hand in a spreadsheet, and **Save** downloads one zip of
 `notes.csv`, `people.csv`, and `manifest.json` (a store-only ZIP writer,
-`src/viewer/media/zip.ts`, no dependency). Both CSVs carry a per-row `schema`
+`src/viewer/media/zip.ts`, no dependency), named with the event and the
+moment of saving (`filenameForSave()` in `src/viewer/App.tsx`, pinned by
+`tests/save-filename.test.ts`). Both CSVs carry a per-row `schema`
 version, a range-checked timestamp, and — for notes — `tz`/`utc_offset_min`,
 `written` and `deleted`; see "The format hardening" in the decision record.
+`EVENT.md` is the per-copy, gitignored pointer to where one owner's copy of
+the site keeps that event's data (a separate private repo, see below);
+`EVENT.example.md` is the committed template everyone else starts from.
 
 **Not built:** automatic clock alignment (no longer blocked — the owner
 supplied a real timed activity export on 2026-07-29 and it parses; the
@@ -482,8 +487,11 @@ Two controls for one action, under two names. The rules that came out of
 auditing every user-visible string:
 
 - **One control per action.** Opening, adding and saving all live in the top
-  bar; the report has no buttons at all. A second control is a second name
-  waiting to happen.
+  bar. The reference panel has buttons of its own — rename, the runner-role
+  toggle, the unplaced tray's disclosure and "Copy the list", a note's jump
+  and delete — but the rule is not "no buttons in the report," it is that
+  none of them duplicates a top-bar action. A second control for the SAME
+  action is a second name waiting to happen.
 - **The verb carries the meaning, not the location.** "Open" always replaces
   what is loaded; "Add" always merges into it. The empty state therefore says
   *Open folder* / *Choose files* — both replace, because there is nothing to
@@ -1130,7 +1138,8 @@ deliberately-not-reused rule, so two rows someone typed once stay two notes.
 **`mintNoteId` never ends in a digit.** Excel's fill handle increments a
 trailing number when a cell is dragged, so `n_abc12` becomes `n_abc13`,
 `n_abc14` — inventing ids for notes that do not exist. The base-36 mint ended
-in a digit 26.9% of the time.
+in a digit 27.8% of the time (10 of 36 base-36 characters are digits;
+measured at 27.79% over 2M samples, matching the 10/36 theoretical rate).
 
 **Migration is the part that matters, and it is pinned to a frozen fixture.**
 `tests/fixtures/csv-before-2026-07-30.ts` holds `notes.csv` and `people.csv`
@@ -1239,9 +1248,15 @@ does not reproduce:
 - **`event.title` / `event.timezone`**, and `person.color`.
 
 So `manifest.json` belongs under version control **alongside** the CSVs, not
-treated as scratch. It is *partly* derived, which is a different claim from
-derived, and the difference is somebody's crop and every photo they placed by
-hand.
+treated as scratch — but not in THIS repo. It belongs in the event's own
+private data repo (see `EVENT.md`; the owner's is
+`chendaniely/meanwhile-cm100-g`), the same place `notes.csv` and
+`people.csv` are committed. In the public `meanwhile` renderer repo this file
+is cloned from, `manifest.json` is gitignored exactly like the CSVs — see
+"Public from day one?" below — so `git add manifest.json` here would be a
+mistake, not the point being made. It is *partly* derived, which is a
+different claim from derived, and the difference is somebody's crop and
+every photo they placed by hand.
 
 Related and verified in the same review: **a folder reorganisation orphans
 every manual placement**, because carried-forward items are matched by `id`
@@ -1758,10 +1773,14 @@ thumbnails. Both additive.
 Ask these. Do not answer them unilaterally.
 
 1. ~~**Public from day one?**~~ **Answered 2026-07-29: public repo, private
-   manifest.** The renderer is published; photographs, `manifest.json` and the
-   track never enter git and stay on the author's disk. `.gitignore` enforces
-   it and a pre-publication audit confirmed nothing sensitive is tracked or in
-   history.
+   manifest.** The renderer (**this** repo, `meanwhile`) is published; inside
+   it, photographs, `manifest.json` and the track never enter git and stay on
+   the author's disk. `.gitignore` enforces it — verified with `git
+   check-ignore -v manifest.json notes.csv people.csv` — and a
+   pre-publication audit confirmed nothing sensitive is tracked or in
+   history. This is not in tension with "`manifest.json` belongs under
+   version control" above: that sentence is about a SEPARATE, private
+   per-event data repo (see `EVENT.md`), not this one.
 2. **Scope of an event.** One manifest per event. Does a multi-day event, or
    a series (training runs leading up to the race), need a collection
    concept, or is one file always enough? *(Assumed: one file is enough.

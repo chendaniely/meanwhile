@@ -644,13 +644,16 @@ function instantPartsInZone(
  *   spreadsheet is a completely ordinary edit, e.g. sorting the column. An
  *   unsorted fingerprint would treat that as a content change and re-mint a
  *   second note for what is still the same row.
- * - **`tz`.** `noteToRow` leaves the column blank when it matches the
- *   event's own zone (only an explicit disagreement earns the column), but
- *   `rowToNote` sets `note.tz` from whatever the cell literally says. A row
- *   that never had a `tz` column (`tz: undefined`) and a row that spelled out
- *   the event's own zone by hand (`tz: 'America/Denver'` where that IS the
- *   event zone) are the same note read two different ways, and must
- *   fingerprint identically or a Save-then-reload duplicates it.
+ * - **`tz`.** `noteToRow` now writes the zone into every row it produces,
+ *   even when it agrees with the event's own (see the doc on `Note.tz` for
+ *   why blank-when-matching turned out not to be free). But a row that
+ *   predates that change, or one a person added by hand with no `tz` cell at
+ *   all, leaves `note.tz` undefined on read; a row that carries the event's
+ *   own zone explicitly (`tz: 'America/Denver'` where that IS the event
+ *   zone — which is what every row gets once it has round-tripped through
+ *   `noteToRow` once) carries it. Those are the same note read two different
+ *   ways, and must fingerprint identically or a Save-then-reload duplicates
+ *   it.
  * - **`at`'s exact spelling.** `rowToNote` always produces
  *   `Date.toISOString()`'s canonical form, milliseconds included
  *   (`"...T09:00:00.000Z"`); `legacyNoteToNote` (see `viewer/media/ingest.ts`)
@@ -884,8 +887,9 @@ export function mergeNotes(
  * fill handle increments a trailing NUMBER when a cell is dragged, so
  * `n_abc12` dragged down a column becomes `n_abc13`, `n_abc14` — silently
  * inventing ids for notes that do not exist and detaching the rows it touched
- * from their own identity. The base-36 mint ended in a digit 26.9% of the
- * time; a letter is left alone by the fill handle.
+ * from their own identity. The base-36 mint ended in a digit 27.8% of the
+ * time (10 of 36 base-36 characters are digits); a letter is left alone by
+ * the fill handle.
  */
 export function mintNoteId(): string {
   const letters = 'abcdefghijklmnopqrstuvwxyz';
