@@ -30,7 +30,7 @@ import {
   formatDuration, hasZone, parseDuration, parseZonedInstant, zoneOffsetMinutes, zonedToInstant,
 } from './time.ts';
 import {
-  CSV_SCHEMA, parseCsv, preservedHeaders, schemaCellProblem, type PreservedRow,
+  CSV_SCHEMA, nfc, parseCsv, preservedHeaders, schemaCellProblem, type PreservedRow,
 } from './csv.ts';
 import type { Item } from './schema.ts';
 
@@ -158,22 +158,76 @@ export function noteHeadersFor(
  * because the row still lands within a day of where its author meant it.
  * Nothing reads this value back; the row is written from `cells` untouched.
  *
+ * **Loose about the calendar, exact about the ZONE.** Those are not the same
+ * licence, and reading the five integers as if they were UTC — which is what
+ * this did — is not a rounding error but a displacement of up to fourteen
+ * hours, because every note it is sorted against carries a true UTC instant.
+ * Measured on one refused row of `2026-07-25 12:00` sitting between two notes
+ * an hour either side of it: first in the file under `America/Denver`, right
+ * under `UTC`, last under `Asia/Tokyo`. Rolling a day over still lands the row
+ * within a day of where its author meant it; getting the zone wrong lands it
+ * on the other side of the race, which is exactly the "quarantined at the
+ * bottom" outcome `noteRowsForSave` exists to avoid.
+ *
+ * So the row is resolved through the same ladder a READABLE row is — its own
+ * `utc_offset_min`, else its own `tz`, else the event's zone (see
+ * `resolveZoned`, which shares `wallClockToInstant` with this) — and only
+ * falls back to UTC when none of them resolves.
+ *
  * Returns `NaN` when there is nothing to go on at all, which sorts the row to
  * the end rather than to 1970.
  */
-function preservedRowInstant(cells: Record<string, string>): number {
+function preservedRowInstant(cells: Record<string, string>, eventTimezone?: string): number {
   const int = (raw: string | undefined): number =>
     /^\d+$/.test((raw ?? '').trim()) ? Number(raw) : NaN;
   const y = int(cells['year']);
   const mo = int(cells['month']);
   const d = int(cells['day']);
+  const zone = preservedRowZone(cells, eventTimezone);
   if (!Number.isNaN(y) && !Number.isNaN(mo) && !Number.isNaN(d)) {
     const h = int(cells['hour']);
     const mi = int(cells['minute']);
-    return Date.UTC(y, mo - 1, d, Number.isNaN(h) ? 0 : h, Number.isNaN(mi) ? 0 : mi);
+    const parts = {
+      y, mo, d, h: Number.isNaN(h) ? 0 : h, mi: Number.isNaN(mi) ? 0 : mi,
+    };
+    // The fallback covers what the zone path cannot express at all rather
+    // than a zone problem: an `hour` of 100 pads to three digits and no
+    // naive timestamp can hold it, where `Date.UTC` still rolls it into a
+    // date within a day or so of the row's own.
+    return (
+      wallClockToInstant(parts, readOffsetCell(cells['utc_offset_min']), zone)
+      ?? Date.UTC(parts.y, parts.mo - 1, parts.d, parts.h, parts.mi)
+    );
   }
   const at = (cells['at'] ?? '').trim();
-  return at === '' ? NaN : Date.parse(at);
+  if (at === '') return NaN;
+  // Same rule as `resolveInstant`'s legacy `at` branch: a value carrying its
+  // own offset is already an instant, and one without is a wall clock that
+  // needs the zone. `Date.parse` is the last resort only — left in because it
+  // reads a few shapes neither of the two above does, and a sort key from one
+  // of those still beats sweeping the row to the end of the file.
+  if (hasZone(at)) return parseZonedInstant(at) ?? Date.parse(at);
+  return zonedToInstant(at, zone) ?? Date.parse(at);
+}
+
+/**
+ * The zone a preserved row's wall clock should be read in: its own `tz`, else
+ * the event's, else UTC — skipping any this runtime cannot resolve.
+ *
+ * A refused row is exactly where an unresolvable zone turns up (`MDT` is one
+ * of the things `rowToNote` refuses a row FOR), so falling through rather than
+ * failing is the point: the event's zone is a far better guess for a race's
+ * notes file than UTC, and UTC only has to catch a build with no event zone
+ * at all.
+ */
+function preservedRowZone(
+  cells: Record<string, string>,
+  eventTimezone: string | undefined,
+): string {
+  for (const candidate of [nonEmpty(cells['tz']), eventTimezone]) {
+    if (candidate !== undefined && zoneOffsetMinutes(0, candidate) !== null) return candidate;
+  }
+  return 'UTC';
 }
 
 /**
@@ -186,6 +240,11 @@ function preservedRowInstant(cells: Record<string, string>): number {
  * hour of the race it belongs to. Where the row says nothing about when it
  * happened, it goes last — after everything datable, which is the only honest
  * place left for it.
+ *
+ * `eventTimezone` is what a preserved row's wall clock falls back to when the
+ * row carries no zone of its own, exactly as for a readable note — see
+ * `preservedRowInstant`. Without it the row is filed as though its five
+ * integers were UTC, which is up to fourteen hours from where it belongs.
  *
  * Preserved rows are NOT notes and are counted nowhere: they never enter the
  * `Note[]` list, so nothing shows them, places them on a lane, or includes
@@ -208,7 +267,7 @@ export function noteRowsForSave(
       row: noteToRow(note, eventTimezone),
     })),
     ...preserved.map((row, i) => ({
-      at: preservedRowInstant(row.cells),
+      at: preservedRowInstant(row.cells, eventTimezone),
       order: notes.length + i,
       row: row.cells,
     })),
@@ -502,54 +561,101 @@ function resolveZoned(
 ): Resolved | { error: string } {
   const tz = nonEmpty(row.tz);
   const offsetRaw = nonEmpty(row.utc_offset_min);
+  // The zone the wall clock falls back to when the row carries no offset of
+  // its own: an older row, or one typed by hand. Resolving through it is what
+  // keeps every file written before the offset column existed reading to the
+  // same instant it always did.
+  const zone = tz ?? eventTimezone ?? 'UTC';
 
+  let offset: number | null = null;
   if (offsetRaw !== undefined) {
-    if (!/^[+-]?\d+$/.test(offsetRaw)) {
+    if (!OFFSET_CELL.test(offsetRaw)) {
       return {
         error:
           `note "${label}" has a utc_offset_min of "${offsetRaw}", which is not a whole ` +
           'number of minutes — write -360 for UTC-06:00',
       };
     }
-    const offset = Number(offsetRaw);
-    if (Math.abs(offset) > 18 * 60) {
+    offset = Number(offsetRaw);
+    if (Math.abs(offset) > MAX_UTC_OFFSET_MIN) {
       return {
         error:
           `note "${label}" has a utc_offset_min of ${offset}; real UTC offsets run from ` +
           '-720 to 840 minutes',
       };
     }
-    const naiveAsUtc = Date.UTC(parts.y, parts.mo - 1, parts.d, parts.h, parts.mi);
-    const instant = naiveAsUtc - offset * 60_000;
-    if (tz !== undefined) {
-      const inZone = zoneOffsetMinutes(instant, tz);
-      if (inZone === null) {
-        return { error: `note "${label}" could not be resolved in timezone "${tz}"` };
-      }
-      if (inZone !== offset) {
-        return {
-          error:
-            `note "${label}" says timezone "${tz}" and utc_offset_min ${offset} ` +
-            `(UTC${formatOffset(offset)}), but "${tz}" is UTC${formatOffset(inZone)} at that ` +
-            'moment — correct one of the two rather than have meanwhile pick',
-        };
-      }
-    }
-    return { instant, tz };
   }
 
-  // No offset column: an older row, or one typed by hand. Resolved through
-  // the zone exactly as before, which is what keeps every file written
-  // before this change reading to the same instant it always did.
-  const zone = tz ?? eventTimezone ?? 'UTC';
-  const naive =
-    `${pad(parts.y, 4)}-${pad(parts.mo, 2)}-${pad(parts.d, 2)}` +
-    `T${pad(parts.h, 2)}:${pad(parts.mi, 2)}:00`;
-  const instant = zonedToInstant(naive, zone);
+  const instant = wallClockToInstant(parts, offset, zone);
   if (instant === null) {
     return { error: `note "${label}" could not be resolved in timezone "${zone}"` };
   }
+
+  if (offset !== null && tz !== undefined) {
+    const inZone = zoneOffsetMinutes(instant, tz);
+    if (inZone === null) {
+      return { error: `note "${label}" could not be resolved in timezone "${tz}"` };
+    }
+    if (inZone !== offset) {
+      return {
+        error:
+          `note "${label}" says timezone "${tz}" and utc_offset_min ${offset} ` +
+          `(UTC${formatOffset(offset)}), but "${tz}" is UTC${formatOffset(inZone)} at that ` +
+          'moment — correct one of the two rather than have meanwhile pick',
+      };
+    }
+  }
   return { instant, tz };
+}
+
+/** `utc_offset_min`'s shape and bound, shared so the two readers cannot drift. */
+const OFFSET_CELL = /^[+-]?\d+$/;
+const MAX_UTC_OFFSET_MIN = 18 * 60;
+
+/**
+ * `utc_offset_min` as a number, or null when the cell is absent or says
+ * something no UTC offset could.
+ *
+ * The lenient half of the pair: `resolveZoned` REPORTS a bad offset cell,
+ * because a note whose timestamp is wrong must not be shown as if it were
+ * right. This is for `preservedRowInstant`, which has no way to report
+ * anything — its row has already been refused — and only needs to know
+ * whether there is an offset worth trusting before falling back to the zone.
+ */
+function readOffsetCell(raw: string | undefined): number | null {
+  const s = nonEmpty(raw);
+  if (s === undefined || !OFFSET_CELL.test(s)) return null;
+  const offset = Number(s);
+  return Math.abs(offset) > MAX_UTC_OFFSET_MIN ? null : offset;
+}
+
+/**
+ * The instant five wall-clock integers name — the one implementation of
+ * `notes*.csv`'s rule that the row's own offset wins and its zone is the
+ * fallback.
+ *
+ * Shared by `resolveZoned` (a row that reads cleanly) and
+ * `preservedRowInstant` (one that does not, and only needs a sort key). They
+ * differ in what they do with a problem, never in where a timestamp lands —
+ * a second implementation here is how a preserved row ends up filed hours away
+ * from the notes it was written between.
+ *
+ * Null only when `zone` is one this runtime cannot resolve, or when the
+ * integers will not fit a naive timestamp at all; with an offset there is
+ * nothing to look up and the answer is always a number.
+ */
+function wallClockToInstant(
+  parts: { y: number; mo: number; d: number; h: number; mi: number },
+  offsetMinutes: number | null,
+  zone: string,
+): number | null {
+  if (offsetMinutes !== null) {
+    return Date.UTC(parts.y, parts.mo - 1, parts.d, parts.h, parts.mi) - offsetMinutes * 60_000;
+  }
+  const naive =
+    `${pad(parts.y, 4)}-${pad(parts.mo, 2)}-${pad(parts.d, 2)}` +
+    `T${pad(parts.h, 2)}:${pad(parts.mi, 2)}:00`;
+  return zonedToInstant(naive, zone);
 }
 
 /**
@@ -1099,6 +1205,15 @@ export function partitionDeleted(notes: readonly Note[]): { live: Note[]; delete
  * `preserved` carries the unreadable rows THEMSELVES, so the writer can put
  * them back. Reporting a row and then deleting it on the next save is the
  * same silent loss under a different name — see `PreservedRow` in `csv.ts`.
+ * It is DEDUPED across files the way the notes are — see
+ * `dedupePreservedRows`, and the "count grew 2 → 3 → 4 → 5 → 6" note there,
+ * which is the same failure the notes themselves have already been fixed for
+ * twice.
+ *
+ * `problems` is NOT deduped alongside it, deliberately: a message names a
+ * file and a line, and both copies of a repeated row really are sitting in
+ * two files somebody may want to repair. The messages track the rows on disk;
+ * `preserved` tracks the rows to write.
  */
 export function mergeNotes(
   files: ReadonlyArray<{ name: string; text: string }>,
@@ -1108,7 +1223,7 @@ export function mergeNotes(
 ): { notes: Note[]; problems: string[]; preserved: PreservedRow[] } {
   const rows: Note[] = [];
   const problems: string[] = [];
-  const preserved: PreservedRow[] = [];
+  const refused: PreservedRow[] = [];
   // Kept per file, and only for this: a tombstone that cancels somebody else's
   // note has to be reported against the file and row it arrived in. See
   // `reportTombstoneRemovals`.
@@ -1133,7 +1248,7 @@ export function mergeNotes(
         // KEPT, not just reported. Until this existed, "meanwhile could not
         // read this row" and "meanwhile deleted this row on the next save"
         // were the same event — see `PreservedRow`.
-        preserved.push({ file: file.name, line, cells: row });
+        refused.push({ file: file.name, line, cells: row });
         problems.push(
           `${file.name} row ${line}: ${result.error}. The row is kept exactly as it is and ` +
             'written back when you save, so nothing in it is lost.',
@@ -1152,7 +1267,98 @@ export function mergeNotes(
 
   const notes = dedupeNotes(rows, eventTimezone, rowIdentity);
   notes.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-  return { notes, problems, preserved };
+  return { notes, problems, preserved: dedupePreservedRows(refused) };
+}
+
+/**
+ * A content fingerprint for a row this build refused to read, used to tell
+ * "the same row seen twice" from "two rows that merely look alike".
+ *
+ * The same job `fingerprintNote` does for a note, and the same shape — a
+ * canonicalised `JSON.stringify` — but it cannot reuse it: the whole reason
+ * the row is here is that nothing could turn it into a `Note`. All it has is
+ * cells, so the cells are the identity. Not `file` and not `line`: the same
+ * row in two people's copies of `notes.csv` sits at two different lines of two
+ * different files and is still one row, while two genuinely different rows
+ * routinely share a line number across files.
+ *
+ * Three canonicalisations, each earning its place:
+ *
+ * - **Sorted by column name.** Two files can declare the same columns in a
+ *   different order, which a spreadsheet's column drag produces for free.
+ * - **Empty cells dropped.** A file's header row decides which keys a row
+ *   even has: a crew member's older `notes.csv` with no `written` column
+ *   yields a row with no `written` key, and the copy this build saved beside
+ *   it yields `written: ''`. Same row, and they must fingerprint the same or
+ *   the dedupe below never fires on the second round. A cell under an EMPTY
+ *   header name is dropped for the same reason it is dropped on write, by
+ *   `preservedHeaders`: there is no column to put it back in.
+ * - **NFC.** `formatCsv` writes every cell composed, so a decomposed spelling
+ *   in a hand-edited file is a different JavaScript string from this build's
+ *   own saved copy of the very same row. Same reason `people-csv.ts` compares
+ *   names through `nameKey`.
+ */
+function fingerprintPreservedRow(cells: Record<string, string>): string {
+  const entries: Array<[string, string]> = [];
+  for (const [key, value] of Object.entries(cells)) {
+    if (key === '') continue;
+    const text = nfc(value);
+    if (text === '') continue;
+    entries.push([nfc(key), text]);
+  }
+  entries.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  return JSON.stringify(entries);
+}
+
+/**
+ * Collapse a refused row that several files carry into one, WITHOUT collapsing
+ * two copies that one file carries.
+ *
+ * **This is the note-clone bug, in the rows nobody can read.** A refused row
+ * lives in two people's copies of the notes file; a Save writes both into
+ * `notes.csv`; the next load reads two from there and one more from the crew's
+ * untouched copy, and writes three. Measured over five save-and-merge rounds
+ * with two files carrying one identical refused row: **2 → 3 → 4 → 5 → 6**,
+ * the same signature as the two note-id clone bugs already fixed above (see
+ * `deriveNoteId` and the `identified` map in `dedupeNotes`), and unbounded in
+ * exactly the same way — a file that grows every time it is saved.
+ *
+ * **Per file, the count is a MAXIMUM rather than a sum.** Deduping outright
+ * would be simpler and would quietly delete a row: somebody whose own file
+ * really does carry the same unreadable row twice — a copy-paste in a
+ * spreadsheet, which is how most of these get made — would find one of them
+ * gone after a Save, which is the silent loss `PreservedRow` exists to
+ * prevent. So each distinct row survives as many times as the file that
+ * carries the most of it, which both drops the duplicates that came from
+ * merging and keeps the ones somebody actually typed. It is also what makes
+ * the count FLAT rather than merely slower-growing: the saved file already
+ * holds the maximum, so the next round's maximum is the same number.
+ *
+ * Ties go to the first file read, and the surviving rows keep their input
+ * order, so a folder that has not changed saves byte-identically.
+ */
+function dedupePreservedRows(rows: readonly PreservedRow[]): PreservedRow[] {
+  // fingerprint -> file -> how many copies of that row the file carries.
+  const counts = new Map<string, Map<string, number>>();
+  for (const row of rows) {
+    const fingerprint = fingerprintPreservedRow(row.cells);
+    const perFile = counts.get(fingerprint) ?? new Map<string, number>();
+    perFile.set(row.file, (perFile.get(row.file) ?? 0) + 1);
+    counts.set(fingerprint, perFile);
+  }
+
+  const keeper = new Map<string, string>();
+  for (const [fingerprint, perFile] of counts) {
+    let best: { file: string; count: number } | undefined;
+    // Map iteration is insertion-ordered, so `>` (not `>=`) leaves a tie with
+    // the file that was read first — a stable answer rather than a lucky one.
+    for (const [file, count] of perFile) {
+      if (!best || count > best.count) best = { file, count };
+    }
+    if (best) keeper.set(fingerprint, best.file);
+  }
+
+  return rows.filter((row) => keeper.get(fingerprintPreservedRow(row.cells)) === row.file);
 }
 
 /**

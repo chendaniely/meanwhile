@@ -4,7 +4,7 @@
 
 As of 2026-07-30 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **749 tests pass** (`make check`).
+the race. **766 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -15,7 +15,9 @@ density histogram, the feed, the swimlanes with a moment strip and notes in
 the lanes, the lightbox, the unplaced tray, and the **course view** — Leaflet map with
 terrain basemaps, elevation/HR/cadence/pace charts, and a shared distance
 focus linking the two. Plus `scripts/inspect-media.ts` (`make inspect
-DIR=...`).
+DIR=...`), and two doc guards that gate `make check`:
+`scripts/check-test-count.mjs` and `scripts/check-owner-quotes.mjs`
+(`make check-quotes`).
 
 Also built: in-viewer notes and captions, people renaming and the runner
 role, and the Strava link/embed fallback. The Pages workflow is committed at
@@ -680,7 +682,11 @@ Every file resolved to the same time from the same source, verified by diff.
   photos open instantly and video scrubs.
 - **The cost of that**: an object URL pins its blob until revoked. That is
   the whole reason `MediaStore` exists and why its test fails on any URL
-  created and not revoked.
+  **it creates** that is not revoked. Scoped deliberately:
+  `tests/media-store.test.ts` mocks `thumbnails.ts` wholesale, so the URLs
+  `decodeThumbnail`/`decodeVideoPoster` create are outside what it can see —
+  see "Long-lived object URLs all come from MediaStore" above for why those
+  two are not a copy of this risk.
 
 The user-facing version of all this is in `README.md` under "Why it's fast".
 Keep the two in step — the numbers are measured, not estimated, so if the
@@ -1183,8 +1189,43 @@ line; `mergeNotes` and `parsePeopleCsv` collect them; `noteRowsForSave` and
   nothing shows them, places them on a lane, or counts them in the digest.
 - **Its own columns come too.** `preservedHeaders` adds them, because a newer
   build is exactly the thing likely to have added a column, and dropping it
-  would defeat the preservation. The one thing NOT byte-identical is Unicode
-  normalisation: `formatCsv` writes NFC, as it does for every other cell.
+  would defeat the preservation.
+
+**"Verbatim" means the cells, not the bytes.** Four things are NOT
+byte-identical across a read-and-save, all verified by execution rather than
+by reading the code — an earlier version of this section claimed only the
+first and was wrong three ways:
+
+1. **Unicode normalisation.** `cell()` in `src/core/csv.ts` runs `nfc()` over
+   every cell it writes — data, header names, `Note.extra`, preserved rows
+   alike — so a decomposed `José` comes back composed.
+2. **Surplus fields beyond the header are dropped.** `parseCsv` fills a row
+   only through `headers.forEach`, so a row with ten cells under an
+   eight-column header loses the last two. Admitted in `csv.ts` (~line 135)
+   and, until now, nowhere else.
+3. **A cell under a BLANK header name is dropped** — but only when nothing
+   except a preserved row carries that column. `preservedHeaders`
+   (`csv.ts:166`) skips `key === ''`; `noteHeadersFor` and `formatPeopleCsv`
+   do not, so a readable row keeps it.
+4. **Known-but-absent columns are ADDED, blank.** `noteHeadersFor` always
+   emits the full `NOTE_HEADERS` list, so a file that never had
+   `utc_offset_min` comes back with it — blank on preserved rows, filled on
+   readable ones. Same for `people.csv`'s `role`/`clock_offset`/
+   `also_known_as`.
+
+Below the level worth calling exceptions, but real and also measured: a BOM
+is added even when the input had none, CRLF becomes LF, needless quoting is
+dropped, columns are reordered into canonical order (unknown ones last,
+before `schema`), header names are trimmed, and duplicate header names
+collapse to the last one. None of these lose a cell's content.
+
+**One that DOES lose content, and is a genuine bug rather than a formatting
+difference:** `unguard()` strips a leading apostrophe unconditionally, so a
+cell a person typed as `'twas a long night` — or a name like `'Bama` — parses
+to the text without it, on the FIRST read, and saves that way. This
+contradicts the formula-guard bullet below, whose "the round trip is
+invisible to a person" holds only for files meanwhile itself wrote. Not fixed
+here; see `TODO.md`.
 
 The fallback considered and not taken was refusing to save at all. Preserving
 is strictly better: it needs no decision from the author and cannot strand a
@@ -1203,7 +1244,10 @@ something a stranger typed, not as trusted output from this app:
   a formula by Excel and Sheets the moment the file is opened. `formatCsv`
   writes a leading apostrophe on any such cell; `parseCsv` strips it back off
   on read, so the round trip is invisible to a person but the live formula
-  never reaches their spreadsheet. **Reversing this** means accepting that
+  never reaches their spreadsheet. **The strip is unconditional, which costs
+  a real apostrophe** in a file meanwhile did not write: `'twas` reads as
+  `twas`. Round-trip-stable for our own output, lossy once on someone else's
+  — see the round-trip exceptions above and `TODO.md`. **Reversing this** means accepting that
   anyone who receives a `notes.csv` — which is the entire point of the file
   — can have arbitrary formulas run in their spreadsheet by whoever wrote a
   note.
@@ -1575,8 +1619,8 @@ both pure and both exported for direct testing:
   memory, and neither substitutes for the other.
 
 **Display name resolution has one fallback chain, in one function.** The
-owner: *"the 'name' should be the default display name, the fallback is the
-'also_known-as' value to display on the site."* `displayName(person)` in
+owner: *"shoudl note that the "name" shoudl be the default display name, the
+fallback is the "also_known-as" value to display on the site"* `displayName(person)` in
 `core/people-csv.ts` is `name` → first `also_known_as` entry →
 `displayNameFor(id)` (the same device-slug prettifier `assembleManifest`
 already used for a never-renamed lane) — so a hand-added roster row that
@@ -1610,11 +1654,14 @@ with a join."* Two decisions follow:
 
 **`PersonId` was already flexible enough for future same-device splitting —
 verified, not changed.** The owner: *"assume in the future i might have
-multiple of the same device so we need to make sure things are flexible
-enough."* `deviceIdOf` (`core/metadata.ts`) still derives an id purely from
+multiple of the same device so we need to maeksure the id in people are
+unique so the rename can happen with a join or something"*, and separately
+*"we can pin this later on, but just make sure thigns are flexiable enough to
+handle multiple peopel with same devices"*.
+`deviceIdOf` (`core/metadata.ts`) still derives an id purely from
 make+model, so two physically identical phones collide into one id today —
 splitting them (e.g. minting `google-pixel-8-pro-2` for a second one) is
-explicitly NOT built here, per the owner's own "we can pin this later."
+explicitly NOT built here, per the owner's own "pin this later" above.
 What was checked instead: nothing downstream treats `PersonId` as anything
 but an opaque string key (`Map`/`Set` keys throughout `state.ts`,
 `palette.ts`, `window.ts`; sorted lexically, never parsed, in
@@ -1695,8 +1742,12 @@ a future session will be tempted to assume works. It does not.
 
 **The data-quality rule** — the highest-leverage sentence in the README:
 
-> **AirDrop or Drive. Never iMessage or WhatsApp.** Those recompress and strip
-> EXIF, and a photo with no timestamp has no lane to sit in.
+> **AirDrop, a shared Drive/Dropbox folder, or a Google Photos album.
+> Never iMessage, WhatsApp, Messenger, Instagram, or Slack.**
+
+Those apps recompress photos and strip EXIF, and a photo with no timestamp has
+no lane to sit in. (Quoted verbatim from `README.md` — if you shorten it here,
+you have created a second wording of the project's most-repeated rule.)
 
 ---
 
@@ -1751,6 +1802,19 @@ How to run one:
 - **Prefer a mechanical guard to fixing drift again.**
   `scripts/check-test-count.mjs` retired a number that had gone stale four
   times; it now gates `make check` and CI.
+  `scripts/check-owner-quotes.mjs` does the same for every owner quote in
+  this file, against `PROMPTS.md`, and gates `make check` too. It catches
+  three things by hand-checking is bad at: a quote with no source, a quote
+  **spliced** from two prompts, and a typo silently tidied up.
+- **A guard that lives in a scratch directory is not a guard.** The first
+  version of the quote checker was written, run once, and never committed —
+  so the next pass had nothing to run and four bad quotes survived. If a
+  check is worth writing during a review, it is worth wiring into
+  `make check` in the same commit.
+- **Audit every convention, not the first one you find.** That same checker
+  validated `> ` blockquotes only. This file quotes the owner **two** ways —
+  blockquote and inline `*"…"*` — and every one of the four bad quotes was
+  in the style nobody checked.
 - **Audit surface, not just claims.** Each pass tends to re-read whatever the
   last pass named. The two categories that stayed unexamined longest were the
   highest-yield: claims that can be EXECUTED (every documented CSV row,
@@ -1967,9 +2031,21 @@ bytes across four files, measured)
 so no font is fetched from a third party. That does NOT mean the page makes
 no external requests — three things do:
 
-1. **Map tiles**, on the course view (OpenTopoMap, Esri/ArcGIS, OSM, and
-   optionally Thunderforest — see `src/viewer/map/basemaps.ts`), loaded
-   unconditionally whenever a course is shown.
+1. **Map tiles** (OpenTopoMap, Esri/ArcGIS, OSM, and optionally Thunderforest
+   — see `src/viewer/map/basemaps.ts`), loaded unconditionally on **every
+   view** once a track is loaded, not just the course view.
+
+   **`CourseMap` has TWO mount sites, and this claim has now flipped three
+   times because people check the import and stop.** `App.tsx` mounts it
+   directly under `view.view === 'course'`; `CourseRail.tsx` mounts it a
+   second time, and `App.tsx` mounts *that* under `view.view !== 'course'`
+   — i.e. exactly Feed and Swimlanes. `CourseMap`'s basemap effect builds
+   the tile layer unconditionally; its `compact` prop gates a className and
+   one block of chrome, **not the tiles**. So the honest sentence is "once a
+   track is in the folder, map tiles load on every view", and the tempting
+   one ("only on the Course view") is false. Before editing this paragraph
+   again, grep for `CourseMap` and check every MOUNT site, not just the
+   import.
 2. **Google Analytics**, on the DEPLOYED site only — `googleAnalytics()` in
    `vite.config.ts` is `apply: 'build'`, so `make dev` loads no tag at all.
    That split is deliberate: local mode reads somebody's private photographs

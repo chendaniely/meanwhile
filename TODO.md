@@ -382,3 +382,28 @@ the case that needs it is rare and the one that does not is every note in a
 normal event, and a second timezone field in the compose box would be paid
 for on every note to serve a few. A person who needs it can set `tz` in the
 spreadsheet, which is read correctly.
+
+## A leading apostrophe someone else typed is eaten *(found 2026-07-30, pre-release gate pass 2)*
+
+`unguard()` in `src/core/csv.ts` strips one leading `'` from every cell,
+unconditionally. That is exactly right for a file meanwhile wrote — the
+apostrophe is our own formula guard going back off — and wrong for a file it
+did not: a note reading `'twas a long night`, or a person named `'Bama`,
+loses the apostrophe on the FIRST read and saves without it. The loss is
+silent and it is not recoverable from the saved file.
+
+Not fixed in the gate because the fix is a judgement call rather than a
+patch, and the gate was for verified regressions:
+
+- **Strip only when the next character is `=`, `+`, `-` or `@`** is the
+  obvious narrowing and is nearly right, but it is not a round trip:
+  `formatCsv` guards any cell whose FIRST character is one of those four, so
+  a cell someone typed as `'=x` (apostrophe deliberate) is indistinguishable
+  from one we guarded.
+- **Doubling our own guard on write** (`''twas`) round-trips exactly but
+  changes what a spreadsheet shows for every existing file.
+
+Whichever is picked, it needs a migration story for files already written,
+which is why it is a task rather than a one-liner. Note the size of the
+problem honestly: it costs an apostrophe at the start of a cell, and nothing
+else. See CLAUDE.md's "Verbatim means the cells, not the bytes".

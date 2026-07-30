@@ -93,7 +93,8 @@ Two media modes:
   as blob URLs. **Nothing leaves the machine** — a public site running a
   completely private session. Desktop only; see §7. **Corrected post-M10:**
   true of the photographs, video and notes, never true of the page as a
-  whole — the course view's map tiles, and, on the deployed build, Google
+  whole — map tiles (on every view once a track is loaded, not just the
+  course one), and, on the deployed build, Google
   Analytics, are both external requests regardless of media mode. See the
   corrections further down this document and CLAUDE.md's aesthetic section
   for the current, authoritative list.
@@ -238,7 +239,9 @@ A pure kernel module with no dependencies — GPX is just
    tiles are an optional later garnish, not a prerequisite. **Corrected
    post-M10:** this was reversed. The map is now Leaflet, and it fetches
    raster tiles from OpenTopoMap, Esri, OSM, and optionally Thunderforest
-   unconditionally on every render — a bare polyline of a mountain race shows
+   unconditionally on every render, and on every VIEW — the course rail
+   mounts a second `CourseMap` on Feed and Swimlanes — a bare polyline of a
+   mountain race shows
    no ridges, valleys or switchbacks. See the "no map library" rule's
    reversal in `CLAUDE.md`. **"Zero external requests" is doubly stale**: the
    deployed build also loads Google Analytics (`f904fff`), build-only via
@@ -540,10 +543,11 @@ aesthetic section and `src/viewer/styles/tokens.css`.
 
 Atkinson Hyperlegible is self-hosted (~56KB, an estimate — measured size is
 52,380 bytes across four files) so the app shell itself makes zero external
-requests. **Corrected post-M10:** the course view's map tiles
-(OpenTopoMap, Esri/ArcGIS, OSM, and optionally Thunderforest) are external
-and load unconditionally on every render — see the "no map library" rule's
-reversal in `CLAUDE.md`. The optional Strava embed iframe is external too,
+requests. **Corrected post-M10:** map tiles (OpenTopoMap, Esri/ArcGIS, OSM,
+and optionally Thunderforest) are external and load unconditionally on every
+render, and on every VIEW rather than only the course one — the course rail
+mounts a second `CourseMap` on Feed and Swimlanes. See the "no map library"
+rule's reversal in `CLAUDE.md`. The optional Strava embed iframe is external too,
 though it is click-to-load. **Corrected again (`f904fff`):** the deployed
 site also loads Google Analytics — `googleAnalytics()` in `vite.config.ts` is
 `apply: 'build'`, so `make dev` loads none of it. That makes three external

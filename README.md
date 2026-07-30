@@ -100,8 +100,9 @@ Two ways to use it:
   Google Analytics console rather than something a website can request for
   itself — see `CLAUDE.md` if you're the one who'd need to flip it. Once a
   track (GPX/TCX) is in the folder, **map tiles** load from OpenTopoMap, Esri
-  and OpenStreetMap — but only on the Course view, and only while it's open,
-  not on Feed or Swimlanes. If you would rather not be measured at all, run it
+  and OpenStreetMap on **every view** — the Course view draws the big map, and
+  Feed and Swimlanes draw a small one alongside the photos, so those tile
+  servers see you whichever tab you are on. If you would rather not be measured at all, run it
   locally with `make dev`, which loads no analytics whatsoever — `make
   preview` still serves the deployed build, Google Analytics included.
 - **Shared with others.** Publish the description file with links to your
@@ -235,7 +236,7 @@ Other commands:
 | `make help` | List every command |
 | `make inspect DIR=~/photos` | Report what meanwhile reads from a folder of media |
 | `make test` | Run the test suite |
-| `make check` | Type-check and test; CI also runs a clean install and build |
+| `make check` | Type-check, test, and check the docs' test count and owner quotes; CI also runs a clean install and build |
 | `make build` | Produce the publishable site in `dist/` |
 | `make preview` | Serve `dist/` so you can check it before publishing |
 | `make clean` | Delete `dist/` and the installed packages |

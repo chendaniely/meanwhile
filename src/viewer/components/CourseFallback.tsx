@@ -19,9 +19,10 @@ import type { CourseRef } from '../../core/schema.ts';
  * cannot be derived.
  *
  * THE IFRAME IS CLICK-TO-LOAD. That does NOT make it the only external
- * request meanwhile makes — the course view's map tiles (OpenTopoMap, Esri,
- * OSM, and optionally Thunderforest; see src/viewer/map/basemaps.ts) fetch
- * from four external hosts unconditionally, on every render. What click-to-
+ * request meanwhile makes — map tiles (OpenTopoMap, Esri, OSM, and
+ * optionally Thunderforest; see src/viewer/map/basemaps.ts) fetch from four
+ * external hosts unconditionally, on every render and on every VIEW: the
+ * course rail mounts a second CourseMap on Feed and Swimlanes. What click-to-
  * load buys is narrower: this iframe is the only one of those requests that
  * waits for a person to ask for it. Whoever pastes the URL consents to that
  * click; whoever they later send the manifest to did not, and loading it on

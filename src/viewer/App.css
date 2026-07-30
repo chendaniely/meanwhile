@@ -1275,11 +1275,30 @@
   overflow: hidden;
   /* This line-height is NOT what keeps two lines inside a 44px lane — both
      children set their own (.lanes__name 1.2, .lanes__gap 1.15), so this
-     reset never reaches any text; the real stack is one line of
-     .lanes__name (14px * 1.2 = 16.8px) plus one line of .lanes__gap
-     (12px * 1.15 = 13.8px) = 30.6px, well under 44px either way. Kept as a
-     safe default for any text that ever lands here without its own
-     line-height, not as a fix for a real overflow. Stacking rather than
+     reset never reaches any text.
+
+     The real stack, MEASURED in a browser against the built stylesheet
+     rather than read off these rules:
+
+       root / body     16px    (--mw-text-base: 1rem, base.css)
+       .lanes__name    14px    (--mw-text-sm: 0.875rem) x 1.2  = 16.80px
+       .lanes__gap     14.4px  (0.9em of the label's 16px) x 1.15 = 16.56px
+                                                          total = 33.36px
+
+     against LANE_HEIGHT = 44 in Swimlanes.tsx, so it fits either way.
+
+     The 14.4px is the part that is easy to get wrong, and an earlier
+     version of this comment did (it said 12px, and 30.6px total).
+     .lanes__gap is ALWAYS rendered with `mw-mono` beside it, and base.css's
+     `code, kbd, time, .mw-mono { font-size: 0.9em }` beats the
+     `--mw-text-xs` on .lanes__gap below: one class each, so equal
+     specificity, and base.css is emitted AFTER this file because main.tsx
+     imports ./App.tsx (line 3) before ./styles/base.css (line 4). 0.9em
+     resolves against the parent — this element, which inherits 16px — so
+     0.9 x 16 = 14.4px, not the 12px --mw-text-xs would give.
+
+     Kept as a safe default for any text that ever lands here without its
+     own line-height, not as a fix for a real overflow. Stacking rather than
      sitting side by side is what lets a name like "Samsung SM-F721W" be
      read in full. */
   line-height: 1.15;
@@ -1317,6 +1336,12 @@
 }
 
 .lanes__gap {
+  /* This font-size never applies as written: every .lanes__gap the app
+     renders also carries `mw-mono` (Swimlanes.tsx), and base.css's
+     `.mw-mono { font-size: 0.9em }` wins on equal specificity and later
+     source order, so the measured size is 14.4px rather than this 12px.
+     Left as the size this text would take without mw-mono; the full chain
+     and the arithmetic are on .lanes__label above. */
   font-size: var(--mw-text-xs);
   color: var(--mw-fg-muted);
   line-height: 1.15;

@@ -4,11 +4,11 @@
 # in the same commit — a Makefile that lies is worse than no Makefile.
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev build preview test test-watch typecheck check clean inspect check-test-count release
+.PHONY: help install dev build preview test test-watch typecheck check clean inspect check-test-count check-quotes release
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
-	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}'
+	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[1m%-17s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install dependencies (run once, and after pulling changes)
 	npm install
@@ -40,7 +40,10 @@ endif
 check-test-count: ## Confirm CLAUDE.md's "NNN tests pass" line matches the suite
 	node scripts/check-test-count.mjs
 
-check: typecheck test check-test-count ## Type-check and test; CI also runs a clean install and build
+check-quotes: ## Confirm every owner quote in CLAUDE.md is in PROMPTS.md verbatim
+	node scripts/check-owner-quotes.mjs
+
+check: typecheck test check-test-count check-quotes ## Type-check, test, and check the docs' test count and owner quotes
 
 clean: ## Remove build output and installed packages
 	rm -rf dist node_modules

@@ -8,6 +8,94 @@ already built, and the reasons are worth keeping.
 
 ## Unreleased
 
+### The pre-release gate, run twice
+
+> "can you dispatch some secutiry and privacy independent subagents to review?"
+
+The same review that produced 0.3.0, turned on the release itself and then —
+this is the part worth keeping — **turned on its own first pass**. Pass 2's
+findings were, almost entirely, things pass 1 introduced or missed while
+fixing pass 1's findings. Every item below was reproduced by execution before
+it was fixed, and every fix was then broken again to confirm a test catches
+it.
+
+**Data loss, found by running the gate (`71333d3`)**
+
+- **Save erased every row this build refused to READ.** A `notes.csv` row
+  carrying a `schema` this build doesn't know, or a day of 32, was reported at
+  load and then silently absent from the next file Save wrote — so the advice
+  it printed described a repair for data one button press had already
+  destroyed. Refused rows are now kept verbatim and written back: a note keeps
+  its place in time, a roster row goes after the roster, and its own columns
+  come with it. Losing a roster row was worse than losing text: it takes that
+  person's clock offset, which moves every photograph they took.
+- **"Add files" reverted an in-session rename**, orphaning every note the
+  rename had rewritten. It also dropped the crop, the course link and the
+  markers.
+- **Save threw and did nothing on an unrecognised timezone.** Typing `MDT` —
+  the obvious thing to type — produced no file and no message. It is a
+  sentence in the error callout now.
+- A malformed `manifest.json` handed the folder to a deeper one with nothing
+  said; a rename could give a contested name away.
+
+**Tests that were passing without testing anything (`23d309b`)**
+
+Found by deleting production code and watching the suite stay green.
+`deriveNoteId` could be replaced by a **constant** with all 178 relevant tests
+still passing — which is exactly the bug that caused the note-cloning growth
+in 0.3.0. Also uncovered: `locateBox`'s 64-bit branch, and the Android GPS
+fallback that is the only place a Pixel clip's position can come from. One
+test certified a dead end — a leap second parsed into a value nothing
+downstream could resolve, so the item failed to place in silence. Neither a
+usable value nor a visible gap, which is the one outcome this project refuses.
+
+**Documentation accuracy (`d1753b4`, then corrected below)**
+
+Owner quotes re-checked against `PROMPTS.md`, comments corrected against the
+code they describe, and a `Makefile` message that printed empty values fixed.
+
+**Pass 2: what pass 1 got wrong**
+
+- **The privacy claim was inverted into a false one.** Pass 1 rewrote README
+  and CLAUDE.md to say map tiles load "only on the Course view … not on Feed
+  or Swimlanes". That is false, and the text it replaced was true. `CourseMap`
+  has **two** mount sites — pass 1 checked the import, found one, and stopped.
+  The course rail mounts a second map on Feed and Swimlanes, so **once a track
+  is in the folder, tiles load on every view**. Six places now agree, and
+  CLAUDE.md records the second mount site by name so this stops flipping — it
+  had flipped three times.
+- **Preserved rows reintroduced unbounded merge growth**: two files carrying
+  the same refused row grew 2 → 3 → 4 → 5 → 6 over five rounds — the exact
+  signature of the clone bug 0.3.0 fixed. Deduped by content fingerprint, and
+  pinned by a five-round test.
+- **A preserved row sorted by the wrong clock.** Its position was computed
+  from wall-clock cells read as UTC, ignoring the row's own zone: the same row
+  sorted first in Denver and last in Tokyo, up to ±14h out of place. That
+  defeats the one thing preservation promises beyond not-deleting — that a
+  refused row keeps its place in time.
+- **The round-trip guarantee was understated three ways.** Saving a file also
+  drops fields past the header, drops a cell under a blank header name, and
+  adds known-but-absent columns. All four exceptions are now listed. A fifth
+  was found and is a genuine bug: a leading apostrophe someone else typed
+  (`'twas`) is eaten on the first read. Recorded in `TODO.md` rather than
+  patched, because the fix needs a migration story.
+- **Two comments pass 1 "corrected" were themselves wrong**, and re-deriving
+  the second found a real rendering bug: with Relief on, the hillshade raised
+  the map's zoom ceiling to 19 while the topo basemap stopped at 17, so
+  **topo blanked entirely at z18–19** — bare hillshade, no contours, no
+  trails, no labels — and the `maxNativeZoom` line meant to prevent that was
+  unreachable. Fixed.
+- **The quote audit missed a whole quoting convention.** Pass 1 checked `> `
+  blockquotes; CLAUDE.md also quotes inline. Four bad citations survived,
+  including one **spliced together from two different prompts** with the
+  owner's typos silently normalised. Fixed to the real text, typos intact; the
+  two that were never logged are appended to `PROMPTS.md` as a labelled
+  recovery entry. The checker now covers both conventions, catches splices and
+  silent typo corrections, and runs as part of `make check` — pass 1's lived
+  in a scratch directory and was never wired to anything, which is the other
+  reason it missed this.
+- A roster message read `"Bob" is now "Bob"` when only a clock offset changed.
+
 ## 0.3.0 — 2026-07-30 — hardened before it carries anything irreversible
 
 ### Security: a file from someone else was the way in

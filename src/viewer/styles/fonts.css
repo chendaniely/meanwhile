@@ -1,9 +1,10 @@
 /* Atkinson Hyperlegible, self-hosted (SIL OFL 1.1).
  *
  * Self-hosted rather than loaded from Google Fonts, so no FONT is fetched
- * from a third party. The page as a whole does make external requests: the
- * course view's map tiles (OpenTopoMap, Esri, OSM, and optionally
- * Thunderforest — see src/viewer/map/basemaps.ts) load unconditionally;
+ * from a third party. The page as a whole does make external requests: map
+ * tiles (OpenTopoMap, Esri, OSM, and optionally Thunderforest — see
+ * src/viewer/map/basemaps.ts) load unconditionally on every view once a
+ * track is loaded, the course rail putting a map on Feed and Swimlanes too;
  * Google Analytics loads on the deployed build only (see vite.config.ts);
  * and an optional Strava embed iframe loads on a click.
  *

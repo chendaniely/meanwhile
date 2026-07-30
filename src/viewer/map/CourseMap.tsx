@@ -100,6 +100,17 @@ interface Props {
   compact?: boolean;
 }
 
+/**
+ * The zoom ceiling the hillshade overlay declares when Relief is on.
+ *
+ * Hardcoded here rather than read from `hillshade().maxZoom` — that field is
+ * 16 and unused, as `basemaps.ts` says. Named because the basemap layer below
+ * has to declare the SAME number: Leaflet takes the map's ceiling as the
+ * maximum across its layers, so whatever the hillshade claims is what every
+ * other layer must be able to reach. See the long note by `maxZoom` below.
+ */
+const HILLSHADE_MAX_ZOOM = 19;
+
 export function CourseMap({
   manifest, course, track, items, at, focus, onFocus, onCursor, onPick,
   thumbnails, compact = false,
@@ -306,21 +317,56 @@ export function CourseMap({
 
     const layers: L.TileLayer[] = [];
     if (relief) {
-      layers.push(L.tileLayer(hillshade().url, { attribution: hillshade().attribution, maxZoom: 19 }));
+      layers.push(
+        L.tileLayer(hillshade().url, {
+          attribution: hillshade().attribution,
+          maxZoom: HILLSHADE_MAX_ZOOM,
+        }),
+      );
     }
     layers.push(
       L.tileLayer(chosen.url, {
         attribution: chosen.attribution,
-        maxZoom: chosen.maxZoom,
-        // `maxNativeZoom` normally lets Leaflet keep upscaling a layer's last
-        // fetched tiles past where the source stops serving new ones, rather
-        // than showing a grey grid. It is set here EQUAL to `maxZoom` above —
-        // the map itself sets no `maxZoom`, so this layer's own ceiling is
-        // what stops the zoom — which means that upscaling path never
-        // actually engages for this layer alone. The one time it can: with
-        // Relief on, the hillshade layer below is hardcoded to `maxZoom: 19`
-        // (see `relief` above), so a basemap whose own `maxZoom` is lower
-        // stops rendering at its ceiling while hillshade keeps going to 19.
+        /*
+         * THE CEILING, and why it depends on `relief`. Traced through
+         * Leaflet 1.9.4's source and then measured in a browser, because the
+         * two options interact in a way that is not guessable.
+         *
+         * `L.map` above sets no `maxZoom`, so `Map#getMaxZoom` falls back to
+         * `_layersMaxZoom`, which `Layer.js#_updateZoomLevels` computes as
+         * the **maximum** across every layer on the map. With Relief off
+         * that is just this layer, so the map cannot ask for more than the
+         * basemap serves. With Relief on it includes the hillshade at
+         * HILLSHADE_MAX_ZOOM, and a basemap with a lower ceiling — topo is
+         * 17 — no longer stops the zoom.
+         *
+         * A tile layer asked to draw above its OWN `maxZoom` does not fall
+         * back to `maxNativeZoom`. `GridLayer#_setView` sets
+         * `_tileZoom = undefined` at that guard and only reaches
+         * `_clampZoom` — the `maxNativeZoom`/`minNativeZoom` path — in the
+         * else branch; `_update` then returns early and the tiles are
+         * pruned. Measured with hillshade 19 under topo 17: topo held 12
+         * tiles at z17 and **0** at z18 and z19. It vanished, leaving bare
+         * hillshade with no contours, trails or labels — which is how this
+         * line was wrong before: it set `maxNativeZoom` equal to `maxZoom`,
+         * so the upscaling path it exists for could never run.
+         *
+         * So the basemap declares the ceiling the hillshade forces, and
+         * `maxNativeZoom` stays at what the source actually serves. Measured
+         * again with that pair: `_tileZoom` clamps to 17 and tiles stay in
+         * the DOM at z18 and z19 — topo keeps drawing, upscaled, instead of
+         * disappearing. Relief off is untouched: `Math.max` returns
+         * `chosen.maxZoom`, the two options are equal again, and the clamp
+         * is a no-op the map can never reach.
+         *
+         * The mirror case is real and left alone: with Relief on and the
+         * keyed `outdoors` basemap (maxZoom 22), the HILLSHADE is the layer
+         * that blanks above 19, for exactly the reason above. `basemaps()`
+         * hides `outdoors` unless a Thunderforest key is configured, so an
+         * unkeyed deploy never gets there; fixing it means the same pair of
+         * options on the hillshade layer.
+         */
+        maxZoom: relief ? Math.max(chosen.maxZoom, HILLSHADE_MAX_ZOOM) : chosen.maxZoom,
         maxNativeZoom: chosen.maxZoom,
         opacity: relief ? 0.65 : 1,
       }),

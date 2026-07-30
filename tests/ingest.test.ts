@@ -1300,6 +1300,52 @@ describe('reportUnsavedRosterEdits', () => {
       ),
     ).toHaveLength(1);
   });
+
+  // The message used to be a rename either way, so a change that left the
+  // name alone read `"Bob" is now "Bob"` — a sentence that describes nothing
+  // and, worse, blames the one field that did not move.
+  it('says what a clock-offset-only change actually was, not that it is a rename', () => {
+    const problems = reportUnsavedRosterEdits(
+      [{ id: 'p1', name: 'Google Pixel 8 Pro', clockOffset: '-PT4S' }], disk, 'people.csv',
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('clock offset');
+    expect(problems[0]).not.toContain('is now');
+    expect(problems[0]).not.toContain('"Google Pixel 8 Pro" is now "Google Pixel 8 Pro"');
+  });
+
+  it('says what a role-only change actually was', () => {
+    const problems = reportUnsavedRosterEdits(
+      [{ id: 'p1', name: 'Google Pixel 8 Pro', role: 'runner' }], disk, 'people.csv',
+    );
+    expect(problems[0]).toContain('role');
+    expect(problems[0]).not.toContain('is now');
+  });
+
+  it('says what an alias-only change actually was', () => {
+    const problems = reportUnsavedRosterEdits(
+      [{ id: 'p1', name: 'Google Pixel 8 Pro', alsoKnownAs: ['Pixel'] }], disk, 'people.csv',
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('earlier names');
+    expect(problems[0]).not.toContain('is now');
+  });
+
+  it('names the rename AND the other field when both moved', () => {
+    const problems = reportUnsavedRosterEdits(
+      [{ id: 'p1', name: 'Priya', clockOffset: '-PT4S' }], disk, 'people.csv',
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('"Google Pixel 8 Pro" is now "Priya"');
+    expect(problems[0]).toContain('clock offset');
+  });
+
+  it('keeps naming a plain rename the way it always did', () => {
+    const problems = reportUnsavedRosterEdits([{ id: 'p1', name: 'Priya' }], disk, 'people.csv');
+    expect(problems[0]).toContain('"Google Pixel 8 Pro" is now "Priya"');
+    expect(problems[0]).not.toContain('clock offset');
+    expect(problems[0]).not.toContain('role');
+  });
 });
 
 describe('ingestFolder — rows it could not read come back out', () => {

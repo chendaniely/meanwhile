@@ -592,7 +592,15 @@ export function mergeSessionPeople(
  * know that the file in the folder still says something else — usually
  * because they have renamed someone and not saved yet, occasionally because
  * they have just dropped in somebody else's `people.csv` and it is being
- * overruled. One line either way, naming the people rather than the fields.
+ * overruled. One line either way, naming the people first and then only
+ * whichever of their columns actually moved.
+ *
+ * **Every difference used to be phrased as a rename**, so changing a clock
+ * offset or an alias and nothing else produced `"Bob" is now "Bob"` — a
+ * sentence that describes nothing, and points at the one field that did not
+ * change. The report still has to FIRE for those (an unsaved clock offset
+ * moves every photo that person took, which is exactly the kind of edit worth
+ * warning about); what changed is that it now says which column it was.
  */
 export function reportUnsavedRosterEdits(
   session: readonly Person[],
@@ -605,18 +613,35 @@ export function reportUnsavedRosterEdits(
   for (const p of fromDisk) {
     const mine = bySession.get(p.id);
     if (!mine) continue;
-    const same =
-      mine.name === p.name &&
-      mine.role === p.role &&
-      mine.clockOffset === p.clockOffset &&
-      (mine.alsoKnownAs ?? []).join(';') === (p.alsoKnownAs ?? []).join(';');
-    if (!same) differing.push(`"${displayName(p)}" is now "${displayName(mine)}"`);
+    // The clauses ARE the comparison — there is no separate "are they the
+    // same" test to drift out of step with what the message says. An empty
+    // list is the two rows agreeing.
+    const clauses: string[] = [];
+    if (mine.name !== p.name) clauses.push(`is now "${displayName(mine)}"`);
+    // Named the way `people.csv`'s own columns read, so someone can open the
+    // file and go straight to the one being talked about. "different earlier
+    // names" carries no article on purpose: the column is a list, and it is
+    // the one phrase here that is plural.
+    const columns: string[] = [];
+    if (mine.role !== p.role) columns.push('a different role');
+    if (mine.clockOffset !== p.clockOffset) columns.push('a different clock offset');
+    if ((mine.alsoKnownAs ?? []).join(';') !== (p.alsoKnownAs ?? []).join(';')) {
+      columns.push('different earlier names');
+    }
+    if (columns.length > 0) clauses.push(`has ${andList(columns)}`);
+    if (clauses.length > 0) differing.push(`"${displayName(p)}" ${clauses.join(' and ')}`);
   }
   if (differing.length === 0) return [];
   return [
     `Kept your unsaved changes to the people list rather than what is in ${file}: ` +
       `${differing.join(', ')}. Save to write them to ${file}.`,
   ];
+}
+
+/** `a`, `a and b`, `a, b and c` — plain prose rather than a bare join. */
+function andList(parts: readonly string[]): string {
+  if (parts.length < 2) return parts[0] ?? '';
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1] as string}`;
 }
 
 /**

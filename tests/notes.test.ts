@@ -1107,6 +1107,133 @@ describe('rows this build cannot read are kept, not dropped', () => {
   });
 });
 
+/**
+ * The note-clone bug, in the rows nobody can read.
+ *
+ * A refused row sits in two crew members' copies of the notes file. Save
+ * writes both of them into `notes.csv`; the next load reads two from there and
+ * one more from the copy nobody touched, and writes three. Measured before the
+ * fix, five save-and-merge rounds with two files and one identical refused
+ * row: **2 → 3 → 4 → 5 → 6** — the same signature as the two note-id clone
+ * bugs already fixed in `dedupeNotes`, and unbounded the same way.
+ */
+describe('a refused row several files carry is one row, not several', () => {
+  const HEADER =
+    'id,year,month,day,hour,minute,duration,tz,utc_offset_min,people,photo,author,text,written,deleted,schema';
+  const REFUSED = 'n_future,2026,7,25,11,0,,UTC,0,,,,from a newer build,,,2';
+  const READABLE = 'n_ok,2026,7,25,10,0,,UTC,0,,,,readable,,,';
+
+  /** One Save: merge every file, then write what a Save would write. */
+  const save = (files: Array<{ name: string; text: string }>) => {
+    const merged = mergeNotes(files, 'UTC');
+    return {
+      merged,
+      text: formatCsv(
+        noteHeadersFor(merged.notes, merged.preserved),
+        noteRowsForSave(merged.notes, merged.preserved, 'UTC'),
+      ),
+    };
+  };
+
+  it('holds the count FLAT over five save-and-merge rounds', () => {
+    const crew = [HEADER, REFUSED].join('\n');
+    let notes = [HEADER, READABLE, REFUSED].join('\n');
+
+    const counts: number[] = [];
+    for (let round = 0; round < 5; round++) {
+      const { merged, text } = save([
+        { name: 'notes.csv', text: notes },
+        { name: 'notes-crew.csv', text: crew },
+      ]);
+      counts.push(merged.preserved.length);
+      notes = text;
+    }
+
+    expect(counts).toEqual([1, 1, 1, 1, 1]);
+    // Flat is not enough on its own — dropping the row on the first save is
+    // also perfectly flat. The row has to still be there, once.
+    const rows = parseCsv(notes).rows;
+    expect(rows.filter((r) => r['text'] === 'from a newer build')).toHaveLength(1);
+    expect(rows[1]?.['schema']).toBe('2');
+  });
+
+  it('keeps two DIFFERENT refused rows that happen to share a line number', () => {
+    // The cheap key — file plus line — would have collapsed these two, which
+    // is the opposite failure and a worse one: it deletes somebody's row.
+    const a = [HEADER, 'n_a,2026,7,25,11,0,,UTC,0,,,,first crew file,,,2'].join('\n');
+    const b = [HEADER, 'n_b,2026,7,25,12,0,,UTC,0,,,,second crew file,,,2'].join('\n');
+    const { preserved } = mergeNotes(
+      [{ name: 'notes-a.csv', text: a }, { name: 'notes-b.csv', text: b }],
+      'UTC',
+    );
+    expect(preserved.map((p) => p.line)).toEqual([2, 2]);
+    expect(preserved.map((p) => p.cells['id'])).toEqual(['n_a', 'n_b']);
+  });
+
+  it('keeps BOTH copies when one file carries the same refused row twice', () => {
+    // Somebody's own duplicate is a row they typed, not an artefact of
+    // merging, and deleting it is the silent loss `PreservedRow` exists to
+    // prevent. Per file the count is a maximum, never a sum.
+    const twice = [HEADER, REFUSED, REFUSED].join('\n');
+    const once = [HEADER, REFUSED].join('\n');
+    const { preserved } = mergeNotes(
+      [{ name: 'notes.csv', text: twice }, { name: 'notes-crew.csv', text: once }],
+      'UTC',
+    );
+    expect(preserved).toHaveLength(2);
+    expect(preserved.every((p) => p.file === 'notes.csv')).toBe(true);
+  });
+
+  it('holds a single file own duplicate flat across rounds too', () => {
+    let notes = [HEADER, READABLE, REFUSED, REFUSED].join('\n');
+    const counts: number[] = [];
+    for (let round = 0; round < 5; round++) {
+      const { merged, text } = save([{ name: 'notes.csv', text: notes }]);
+      counts.push(merged.preserved.length);
+      notes = text;
+    }
+    expect(counts).toEqual([2, 2, 2, 2, 2]);
+  });
+
+  it('matches two copies whose FILES declare different columns', () => {
+    // The case that decides whether the dedupe fires on the second round at
+    // all: this build's saved copy carries every column in `NOTE_HEADERS`, so
+    // its `written` cell is present-and-empty, while the crew's older file
+    // has no such column and yields a row with no `written` key. Same row.
+    const mine = [HEADER, REFUSED].join('\n');
+    const SHORT_HEADER = 'id,year,month,day,hour,minute,tz,utc_offset_min,text,schema';
+    const crew = [SHORT_HEADER, 'n_future,2026,7,25,11,0,UTC,0,from a newer build,2'].join('\n');
+    const { preserved } = mergeNotes(
+      [{ name: 'notes.csv', text: mine }, { name: 'notes-crew.csv', text: crew }],
+      'UTC',
+    );
+    expect(preserved).toHaveLength(1);
+
+    // A cell that is genuinely different, rather than merely absent, still
+    // makes two rows — the dedupe must not swallow a row someone edited.
+    const edited = [SHORT_HEADER, 'n_future,2026,7,25,11,0,UTC,0,from a newer build!,2'].join('\n');
+    const merged = mergeNotes(
+      [{ name: 'notes.csv', text: mine }, { name: 'notes-crew.csv', text: edited }],
+      'UTC',
+    );
+    expect(merged.preserved).toHaveLength(2);
+  });
+
+  it('still reports BOTH copies as problems, naming each file and row', () => {
+    // `preserved` is what gets written; `problems` is what is on disk. A
+    // person with the same bad row in two files has two rows to repair, and
+    // deduping the message would hide one of them.
+    const { problems } = mergeNotes(
+      [{ name: 'notes.csv', text: [HEADER, REFUSED].join('\n') },
+       { name: 'notes-crew.csv', text: [HEADER, REFUSED].join('\n') }],
+      'UTC',
+    );
+    expect(problems.filter((p) => p.includes('n_future'))).toHaveLength(2);
+    expect(problems.some((p) => p.startsWith('notes.csv row 2'))).toBe(true);
+    expect(problems.some((p) => p.startsWith('notes-crew.csv row 2'))).toBe(true);
+  });
+});
+
 describe('noteRowsForSave', () => {
   const note = (over: Partial<Note>): Note => ({
     id: 'n', at: '2026-07-25T12:00:00.000Z', people: [], author: [], text: 'x', ...over,
@@ -1162,6 +1289,76 @@ describe('noteRowsForSave', () => {
       'UTC',
     );
     expect(rows[0]?.['schema']).toBe('9');
+  });
+
+  /**
+   * A preserved row's five integers are a WALL CLOCK, and every note it is
+   * sorted against carries a true UTC instant. Reading them as though they
+   * were UTC — which is what this did — displaced the row by the event's whole
+   * offset: the same row, between two notes an hour either side of it, came
+   * out FIRST under `America/Denver`, right under `UTC`, and LAST under
+   * `Asia/Tokyo`. Nothing was lost, but "a preserved row keeps its place in
+   * time" is the promise `noteRowsForSave` is written to keep, and up to
+   * fourteen hours away is not its place.
+   */
+  describe('places a preserved row by its own zone, not by reading it as UTC', () => {
+    // 11:00, 12:00 and 13:00 local on the same day, in three zones.
+    const CASES = [
+      { zone: 'America/Denver', early: '2026-07-25T17:00:00.000Z', late: '2026-07-25T19:00:00.000Z' },
+      { zone: 'UTC', early: '2026-07-25T11:00:00.000Z', late: '2026-07-25T13:00:00.000Z' },
+      { zone: 'Asia/Tokyo', early: '2026-07-25T02:00:00.000Z', late: '2026-07-25T04:00:00.000Z' },
+    ];
+
+    for (const { zone, early, late } of CASES) {
+      it(`sorts it between the notes it was written between, in ${zone}`, () => {
+        const rows = noteRowsForSave(
+          [note({ id: 'n_early', at: early }), note({ id: 'n_late', at: late })],
+          [preserved({ id: 'n_mid', year: '2026', month: '7', day: '25', hour: '12', minute: '0' })],
+          zone,
+        );
+        expect(rows.map((r) => r['id'])).toEqual(['n_early', 'n_mid', 'n_late']);
+      });
+    }
+
+    it('prefers the row own tz and utc_offset_min over the event zone', () => {
+      // Written in Tokyo, saved by someone whose event runs on UTC: 12:00
+      // Tokyo is 03:00Z, which is the whole point of the row carrying its own
+      // zone. Resolved through the same ladder `rowToNote` uses.
+      const rows = noteRowsForSave(
+        [note({ id: 'n_early', at: '2026-07-25T02:00:00.000Z' }),
+         note({ id: 'n_late', at: '2026-07-25T04:00:00.000Z' })],
+        [preserved({
+          id: 'n_mid', year: '2026', month: '7', day: '25', hour: '12', minute: '0',
+          tz: 'Asia/Tokyo', utc_offset_min: '540',
+        })],
+        'UTC',
+      );
+      expect(rows.map((r) => r['id'])).toEqual(['n_early', 'n_mid', 'n_late']);
+    });
+
+    it('falls back to the event zone when the row own zone is unresolvable', () => {
+      // An abbreviation is one of the things a row gets REFUSED for, so it is
+      // exactly what turns up here. Better the event's zone than UTC.
+      const rows = noteRowsForSave(
+        [note({ id: 'n_early', at: '2026-07-25T17:00:00.000Z' }),
+         note({ id: 'n_late', at: '2026-07-25T19:00:00.000Z' })],
+        [preserved({
+          id: 'n_mid', year: '2026', month: '7', day: '25', hour: '12', minute: '0', tz: 'MDT',
+        })],
+        'America/Denver',
+      );
+      expect(rows.map((r) => r['id'])).toEqual(['n_early', 'n_mid', 'n_late']);
+    });
+
+    it('reads a legacy at cell without its own offset in the event zone too', () => {
+      const rows = noteRowsForSave(
+        [note({ id: 'n_early', at: '2026-07-25T17:00:00.000Z' }),
+         note({ id: 'n_late', at: '2026-07-25T19:00:00.000Z' })],
+        [preserved({ id: 'n_mid', at: '2026-07-25T12:00:00' })],
+        'America/Denver',
+      );
+      expect(rows.map((r) => r['id'])).toEqual(['n_early', 'n_mid', 'n_late']);
+    });
   });
 });
 

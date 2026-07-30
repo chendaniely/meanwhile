@@ -1363,3 +1363,41 @@ already cites them.
 
 > sometimes the phone GPS gets points all wrong and weird. and for videos
 > (especially videos taken on an action cam) there may not be GPS coordinates
+
+
+---
+
+## Recovered prompts — two more, found by widening the quote check to CLAUDE.md's inline-italic convention (2026-07-30)
+
+Append-only, as ever: nothing above this heading has been edited, reordered
+or reworded. The recovery section immediately above was produced by a check
+that read only CLAUDE.md's `> ` blockquotes. CLAUDE.md has a **second**
+convention for owner quotes — the inline italic form `*"…"*` — and that
+check never looked at it, so four more unverified quotes survived the pass
+that was supposed to catch exactly this. Widening the check
+(`scripts/check-owner-quotes.mjs`, run by `make check-quotes` and `make
+check`) found them. Two were CLAUDE.md's own doing — a typo silently tidied
+up, and one quote spliced together out of two separate prompts — and were
+fixed in CLAUDE.md rather than by inventing entries here. The two below are
+the opposite case: genuinely said by the owner, genuinely never logged.
+
+**These two are reconstructed, not captured — the one exception in this
+file.** Every other prompt here is the owner's text as typed. The wording
+below is copied from CLAUDE.md's citation of it, because no log entry was
+ever made. Both decisions were made at the owner's instruction and the
+substance is not in doubt, but the exact phrasing is not guaranteed to be
+verbatim, and no source survives to check it against. Nothing else in this
+file carries that caveat; do not let this precedent spread.
+
+**Cited at CLAUDE.md's "The course line is CASED, and the colour is
+measured"** — the observation that started it, which led to measuring WCAG
+contrast per pixel against real basemap tiles and casing the course line
+rather than re-picking its hue:
+
+> "the orange line on the orange topo map is barely visible."
+
+**Cited at CLAUDE.md's "The map wheel zooms, deliberately"** — the reason
+for reversing the conventional requirement that the map's wheel zoom be held
+behind ctrl/⌘:
+
+> "an app like this is mostly going to be used with only a mouse/trackpad."

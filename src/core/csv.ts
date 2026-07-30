@@ -1,6 +1,10 @@
 /**
- * A CSV codec, RFC 4180, with the two concessions a file that people open
- * in a spreadsheet actually needs.
+ * A CSV codec, RFC 4180, with the two concessions a file that people open in
+ * a spreadsheet actually needs — and a third departure, NFC, that is nothing
+ * to do with spreadsheets and is kept named separately for that reason: BOM
+ * and the formula guard are both there because of what Excel and Sheets do to
+ * this file, and NFC is there so that two spellings of one name compare equal
+ * anywhere in this app.
  *
  * BOM: Excel on Windows misreads UTF-8 without one, and notes are exactly
  * where apostrophes, em dashes and emoji turn up.
