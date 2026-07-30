@@ -148,6 +148,17 @@ describe('mergeNotes', () => {
     expect(notes.map((n) => n.text)).toEqual(['first', 'second']);
   });
 
+  it('reports the real file line when blank lines sit above a bad row', () => {
+    // `parseCsv` drops blank records, so counting surviving rows understates
+    // the line number. These numbers exist so someone can open the file in a
+    // spreadsheet and go to the row that is wrong.
+    const { problems } = mergeNotes([
+      file('n.csv', '\n\nn_a,2026,7,25,15,0,,,,,Dan,fine\nn_b,nope,7,25,15,0,,,,,Dan,bad\n'),
+    ], ZONE);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('row 5');
+  });
+
   it('mints an id for a row typed by hand', () => {
     const { notes } = mergeNotes([file('n.csv', ',2026,7,25,15,0,,,,,Dan,typed\n')], ZONE);
     expect(notes[0]?.id).toMatch(/^n_/);

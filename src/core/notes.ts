@@ -545,7 +545,13 @@ export function mergeNotes(
       const result = rowToNote(row, eventTimezone);
       if ('error' in result) {
         // Reported, never dropped silently — the same rule as unplaced media.
-        problems.push(`${file.name} row ${i + 2}: ${result.error}`);
+        //
+        // The line comes from `table.rowLines`, not from `i`: `parseCsv` drops
+        // blank records, so arithmetic on the row index understates the real
+        // line by however many blank lines sit above it. These numbers exist so
+        // someone can open the file and go to the row, which a number that is
+        // quietly off by two sends them away from.
+        problems.push(`${file.name} row ${table.rowLines[i] ?? i + 2}: ${result.error}`);
         return;
       }
       rows.push(result);
