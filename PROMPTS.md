@@ -1465,3 +1465,19 @@ Per the owner's instruction to report what the widened checker found rather
 than quietly fixing quotes to match, it was withdrawn to a paraphrase rather
 than reverse-engineered into this file. **If the owner recognises the words,
 they belong here as a labelled recovery entry and it can be a quote again.**
+
+
+---
+
+> ok the page changes based on browser history events is disabled
+
+Closes the one part of the analytics gap that code could not reach. Everything
+meanwhile sends itself was already stripped — `send_page_view: false` and a
+`page_location` rebuilt from `origin + pathname` — but GA4's enhanced
+measurement fires its own page view on every `replaceState`, and this app
+rewrites the address on every cursor move, so Google was receiving `t=`, a
+timestamp read out of a photograph, and `who=`, the names of the people shown.
+
+Worth keeping: no test guards this. The setting lives in a console this
+repository cannot see, so if the property is ever recreated or the toggle
+flipped back, the leak returns silently and nothing here fails.

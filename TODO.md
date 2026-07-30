@@ -98,6 +98,15 @@ file; see `TODO-completed.md` for why.
   `vite.config.ts` change can reach a property-level toggle, which is why this
   sat here rather than being fixed in code.
 
+- **`make check` is intermittently flaky, which undermines the gate.**
+  `tests/course.test.ts`'s "scans a file of unclosed trkpts in close to linear
+  time" asserts a timing ratio under 10. Idle it passes; under CPU contention
+  it has measured 46 and 110, and it failed once during the 0.3.1 release for
+  that reason. A gate that fails at random teaches whoever runs it to re-run
+  rather than to look, which is exactly the habit the gate exists to prevent.
+  Replace the wall-clock ratio with something deterministic — count the scanner
+  loop's iterations, or assert against input size rather than elapsed time.
+
 ## Housekeeping
 
 - ~~`CHANGELOG.md` once there is a release to describe.~~ **Struck
