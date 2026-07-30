@@ -98,6 +98,12 @@ meanwhile-*.zip
 # there is no separate README here.
 !/tests/fixtures/**
 
+# One person's working notes about WHICH event this copy is pointed at — the
+# data repo's URL, the photo folder, clock offsets worked out by hand. It is
+# per-person and per-event, so it never ships with the app. EVENT.example.md
+# is the committed template; README.md and CLAUDE.md both point at it.
+EVENT.md
+
 # Build + tooling
 node_modules/
 dist/
