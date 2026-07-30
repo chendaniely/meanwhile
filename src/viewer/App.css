@@ -1185,6 +1185,16 @@
   color: var(--mw-accent);
 }
 
+/* Sits inside `.field__label`, which is uppercased and letter-spaced for a
+   label; a link is prose and has to read as prose. */
+.field__link {
+  float: right;
+  color: var(--mw-link);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+
 .field__input[aria-invalid='true'] {
   border-color: var(--mw-accent);
 }

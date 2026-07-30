@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCsv, parseCsv } from '../src/core/csv.ts';
+import { CSV_SCHEMA, formatCsv, nfc, parseCsv, schemaCellProblem } from '../src/core/csv.ts';
 
 describe('parseCsv', () => {
   it('reads a header row and keys each row by it', () => {
@@ -109,5 +109,59 @@ describe('formatCsv', () => {
     const rows = [{ a: 'x, y', b: 'he said "hi"', c: "=1+1" }];
     const back = parseCsv(formatCsv(['a', 'b', 'c'], rows));
     expect(back.rows).toEqual(rows);
+  });
+});
+
+/**
+ * `José` composed (U+00E9) and `José` decomposed (e + U+0301) render
+ * identically and compare unequal as JavaScript strings — verified in both
+ * directions against `resolvePersonNames`, which matched neither against the
+ * other. Everything this app writes is normalised here; the comparisons in
+ * `people-csv.ts` normalise both sides so a file written elsewhere matches
+ * too.
+ */
+describe('NFC normalisation', () => {
+  // Written as escapes, not as literal characters: the two are visually
+  // identical, so a source file that got normalised by an editor would make
+  // this whole block pass vacuously.
+  const COMPOSED = 'Jos\u00e9';
+  const DECOMPOSED = 'Jose\u0301';
+
+  it('writes a decomposed name in composed form', () => {
+    expect(COMPOSED).not.toBe(DECOMPOSED);
+    const text = formatCsv(['name'], [{ name: DECOMPOSED }]);
+    expect(parseCsv(text).rows[0]?.name).toBe(COMPOSED);
+  });
+
+  it('normalises headers too, so a column name still matches on read', () => {
+    const text = formatCsv([DECOMPOSED], [{ [DECOMPOSED]: 'x' }]);
+    expect(parseCsv(text).headers).toEqual([COMPOSED]);
+  });
+
+  it('leaves an already-composed name exactly as it was', () => {
+    expect(nfc(COMPOSED)).toBe(COMPOSED);
+  });
+});
+
+describe('schemaCellProblem', () => {
+  it('accepts a blank cell, which means "the version this reader knows"', () => {
+    expect(schemaCellProblem('', 'notes.csv')).toBeNull();
+    expect(schemaCellProblem(undefined, 'notes.csv')).toBeNull();
+  });
+
+  it('accepts the current version and anything older', () => {
+    expect(schemaCellProblem(String(CSV_SCHEMA), 'notes.csv')).toBeNull();
+    expect(schemaCellProblem('0', 'notes.csv')).toBeNull();
+  });
+
+  it('refuses a newer version, naming the file and what to do about it', () => {
+    const problem = schemaCellProblem(String(CSV_SCHEMA + 1), 'people.csv');
+    expect(problem).toContain('people.csv');
+    expect(problem).toContain('update the site');
+  });
+
+  it('refuses a version that is not a whole number rather than guessing', () => {
+    expect(schemaCellProblem('1.5', 'notes.csv')).toContain('not a whole number');
+    expect(schemaCellProblem('one', 'notes.csv')).toContain('not a whole number');
   });
 });

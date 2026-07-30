@@ -32,6 +32,26 @@ function zones(): string[] {
   return [...new Set([local, 'UTC'].filter(Boolean))] as string[];
 }
 
+/**
+ * Whether this runtime can actually resolve the zone — asked of `Intl`, not
+ * of the datalist.
+ *
+ * `Intl.supportedValuesOf('timeZone')` returns only canonical named zones:
+ * it contains neither `UTC` nor any `Etc/GMT±N`, both of which
+ * `Intl.DateTimeFormat` resolves perfectly well and both of which this app
+ * legitimately produces — `Etc/GMT+6` is what `inferEventTimezone` returns
+ * when the photographs state an offset but nothing states a place. Checking
+ * membership of that list therefore warned about zones that work.
+ */
+function isZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-GB', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The zone's current offset, e.g. "UTC−06:00", to confirm the right pick. */
 function offsetLabel(zone: string): string | null {
   try {
@@ -49,7 +69,7 @@ function offsetLabel(zone: string): string | null {
 export function TimezoneField({ value, onChange }: Props) {
   const listId = useId();
   const all = useMemo(zones, []);
-  const known = value === '' || all.includes(value);
+  const known = value === '' || isZone(value);
   const offset = known && value ? offsetLabel(value) : null;
 
   return (
@@ -57,6 +77,21 @@ export function TimezoneField({ value, onChange }: Props) {
       <span className="field__label">
         Timezone
         {offset && <span className="field__note mw-mono"> {offset}</span>}
+        {/*
+          * Every note is written with this zone and its UTC offset in the
+          * row (`tz` and `utc_offset_min` in notes.csv), so which zone is
+          * showing here is not a setting to bury — it is part of what gets
+          * saved. The list is searchable but names alone are not always
+          * enough to choose between them, hence a way out to the full table.
+          */}
+        <a
+          className="field__link"
+          href="https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+          target="_blank"
+          rel="noreferrer"
+        >
+          find a timezone
+        </a>
       </span>
       <input
         className="field__input mw-mono"

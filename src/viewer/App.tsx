@@ -14,7 +14,9 @@ import {
   fingerprintNote, mintNoteId, noteHeadersFor, noteToRow, stampBlankAuthors,
   type Note, type NoteRowIdentity,
 } from '../core/notes.ts';
-import { applyRename, displayName, formatPeopleCsv } from '../core/people-csv.ts';
+import {
+  applyRename, displayName, formatPeopleCsv, type PeopleExtra,
+} from '../core/people-csv.ts';
 import type { Manifest, PersonId } from '../core/schema.ts';
 import { isVisible, toggleVisible, VIEW_NAMES, type ViewName } from '../core/state.ts';
 import { formatClock, type Instant } from '../core/time.ts';
@@ -108,6 +110,43 @@ export function filenameForSave(title: string, now: Date = new Date()): string {
 }
 
 /**
+ * The three files a Save writes, as text.
+ *
+ * Pure and exported for the same reason `filenameForSave` above is: this is
+ * the last thing that happens to a season of someone's writing before it
+ * leaves the browser, and every question worth asking about it — is the
+ * tombstone in there, did the roster keep the column somebody added, is the
+ * manifest still stripped of its legacy note fields — is a question about
+ * these strings, not about a Blob, an anchor, or a zip.
+ *
+ * `deleted` rides along with the live notes in ONE chronological list rather
+ * than in a block at the end: a tombstone is an event on the timeline like
+ * any other row, and a deletion that is not written out is one that any
+ * older copy of `notes.csv` silently undoes on the next merge.
+ */
+export function filesForSave(
+  manifest: Manifest,
+  notes: readonly Note[],
+  tombstones: readonly Note[],
+  peopleExtra?: PeopleExtra,
+): Array<{ name: string; text: string }> {
+  const rows = [...notes, ...tombstones].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  return [
+    {
+      name: 'notes.csv',
+      text: formatCsv(
+        // Headers computed over the tombstones TOO, or an unknown column
+        // that only a deleted row carries would be dropped from the file.
+        noteHeadersFor(rows),
+        rows.map((n) => noteToRow(n, manifest.event.timezone)),
+      ),
+    },
+    { name: 'people.csv', text: formatPeopleCsv(manifest.people, peopleExtra) },
+    { name: 'manifest.json', text: `${JSON.stringify(manifest, null, 2)}\n` },
+  ];
+}
+
+/**
  * "Who is at this laptop" — the only thing meanwhile persists locally.
  *
  * It pre-fills a new note's "Written by" and nothing else. It holds no event
@@ -149,6 +188,13 @@ type Stage =
       importError: string | null;
       /** A notes*.csv or people.csv row that could not be read. Shown, never swallowed. */
       noteProblems: string[];
+      /**
+       * Columns of `people.csv` this app has no meaning for, carried so Save
+       * puts them back rather than deleting someone's own column. Held on the
+       * stage (not a ref) because it is replaced wholesale on every ingest,
+       * exactly like `manifest`.
+       */
+      peopleExtra: PeopleExtra;
     };
 
 export function App() {
@@ -250,6 +296,20 @@ export function App() {
    * unrelated one opened next.
    */
   const noteRowIdentity = useRef<NoteRowIdentity>(new Map());
+  /**
+   * Tombstones — notes deleted on purpose, kept so Save writes them back.
+   *
+   * A ref rather than state because nothing renders them: they exist only to
+   * be written out. Before the `deleted` column, deleting a note removed it
+   * from memory and from nowhere else, so any other copy of `notes.csv`
+   * resurrected it on the next merge and no file anywhere recorded that the
+   * removal had been deliberate.
+   *
+   * Carried forward across "Add files" and reset on "Open folder", the same
+   * scoping as the two tombstone sets above and for the same reason: a
+   * deletion belongs to the event being worked on, not to the next one.
+   */
+  const tombstones = useRef<Note[]>([]);
 
   /**
    * Read a set of files into the app.
@@ -282,6 +342,7 @@ export function App() {
         deletedNoteIds.current = new Set();
         deletedNoteFingerprints.current = new Set();
         noteRowIdentity.current = new Map();
+        tombstones.current = [];
       }
 
       setFiles(merged);
@@ -289,10 +350,14 @@ export function App() {
       try {
         const {
           manifest, grouping, course, courseFile, importedFrom, importError,
-          notes: loadedNotes, noteProblems,
+          notes: loadedNotes, deletedNotes, peopleExtra, noteProblems,
         } = await ingestFolder(all, {
           title,
           timezone,
+          // Only when a folder is OPENED. On "Add files" the live zone may be
+          // one the author typed by hand, and reverting that silently would
+          // move every naive timestamp under them. See `IngestOptions`.
+          inferTimezone: mode === 'replace',
           ...(previous.current
             ? {
                 existingPeople: previous.current.people,
@@ -326,9 +391,16 @@ export function App() {
         setTitle(manifest.event.title);
         if (manifest.event.timezone) setTimezone(manifest.event.timezone);
         setNotes(loadedNotes);
+        // Keyed by id so a tombstone read off disk and the same one recorded
+        // in memory this session are one row, not two.
+        const carried = new Map<string, Note>(
+          (mode === 'add' ? tombstones.current : []).map((n) => [n.id, n]),
+        );
+        for (const n of deletedNotes) carried.set(n.id, n);
+        tombstones.current = [...carried.values()];
         setStage({
           name: 'loaded', manifest, grouping, course, courseFile,
-          importedFrom, importError, noteProblems,
+          importedFrom, importError, noteProblems, peopleExtra,
         });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Something went wrong reading that folder.');
@@ -491,6 +563,15 @@ export function App() {
     const deleted = notesRef.current.find((n) => n.id === id);
     if (deleted) {
       deletedNoteFingerprints.current.add(fingerprintNote(deleted, timezoneRef.current));
+      // Recorded IN THE FILE too, not just in this session. The two
+      // tombstone sets above stop a re-ingest resurrecting it here; only a
+      // `deleted` row stops someone else's copy of notes.csv resurrecting it
+      // on the next merge, days later, with nothing to say the removal was
+      // ever deliberate.
+      tombstones.current = [
+        ...tombstones.current.filter((n) => n.id !== id),
+        { ...deleted, deleted: true },
+      ];
     }
   }, []);
 
@@ -732,6 +813,9 @@ export function App() {
         photo: itemId,
         author: [...me],
         text: body,
+        // When it was TYPED, which `at` (when the photograph was taken) does
+        // not record and nothing can reconstruct later.
+        written: Math.floor(Date.now() / 1000),
       };
       addNote(note);
     },
@@ -878,17 +962,7 @@ export function App() {
     }
 
     const manifest = manifestForSave(stage.manifest);
-    const files = [
-      {
-        name: 'notes.csv',
-        text: formatCsv(
-          noteHeadersFor(notesToSave),
-          notesToSave.map((n) => noteToRow(n, manifest.event.timezone)),
-        ),
-      },
-      { name: 'people.csv', text: formatPeopleCsv(manifest.people) },
-      { name: 'manifest.json', text: `${JSON.stringify(manifest, null, 2)}\n` },
-    ];
+    const files = filesForSave(manifest, notesToSave, tombstones.current, stage.peopleExtra);
     // `zipBytes` is typed to return a bare `Uint8Array`, whose backing buffer
     // TypeScript therefore widens to `ArrayBufferLike` — but `BlobPart` wants
     // one backed by a concrete `ArrayBuffer`. The array really is: it comes

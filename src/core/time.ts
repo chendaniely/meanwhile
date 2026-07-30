@@ -144,6 +144,87 @@ function zoneOffsetMs(instant: Instant, timeZone: string): number | null {
 }
 
 /**
+ * The UTC offset, in whole minutes, that `timeZone` was using at `instant` —
+ * `-360` for `America/Denver` in July. Null for a zone this runtime does not
+ * know.
+ *
+ * Public because it is what `notes*.csv`'s `utc_offset_min` column is written
+ * from, and what the row's zone is checked AGAINST on read. Minutes rather
+ * than `-06:00`: a plain integer is the only thing a spreadsheet is
+ * guaranteed not to reformat, which is the same reason a note's timestamp is
+ * five integers rather than one string.
+ */
+export function zoneOffsetMinutes(instant: Instant, timeZone: string): number | null {
+  const ms = zoneOffsetMs(instant, timeZone);
+  return ms === null ? null : Math.round(ms / 60_000);
+}
+
+/**
+ * Guess the event's timezone from the media's OWN recorded UTC offsets.
+ *
+ * A phone that records `OffsetTimeOriginal` states the offset it was set to
+ * when the shutter fired (`timeSource: 'exif-offset'`, see `metadata.ts`),
+ * which is a measurement of where the event happened — far better than the
+ * zone of whichever laptop the folder is later opened on. The modal offset
+ * wins, because a folder can pick up a stray photo from the drive home.
+ *
+ * **No GPS→timezone lookup**, deliberately: that needs a boundary database,
+ * which this project's dependency budget will not carry, and EXIF is both
+ * already parsed and more accurate about what the camera actually meant.
+ *
+ * An offset is not a zone, so the result is honest about which one it has:
+ *
+ *   - `fallback` when nothing carries an offset — usually the browser's zone.
+ *   - `fallback` when the browser's zone ALREADY has the modal offset at that
+ *     moment. It is a real IANA zone with real DST rules, so it beats a fixed
+ *     offset that happens to agree today.
+ *   - `Etc/GMT±N` otherwise, which says exactly what is known (an offset) and
+ *     nothing that is not (a place, or a DST rule). `Etc/GMT+6` is UTC−06:00
+ *     — the sign is inverted, per POSIX, which is why it is written out here
+ *     rather than derived at each call site.
+ *   - `fallback` for an offset that is not a whole number of hours (India's
+ *     +05:30), which `Etc/GMT` cannot express. Better a zone the reader can
+ *     correct than one silently half an hour out.
+ *
+ * The field in Event settings shows the answer and lets it be changed — this
+ * is a default, never a decision.
+ */
+export function inferEventTimezone(
+  recorded: readonly { at?: string }[],
+  fallback: string | undefined,
+): string | undefined {
+  // `Z` is deliberately not counted: a GPS timestamp is UTC because it came
+  // from satellites, which says nothing about where the camera was.
+  const counts = new Map<number, { count: number; instant: Instant }>();
+  for (const entry of recorded) {
+    const at = entry.at;
+    if (!at) continue;
+    const m = /([+-])(\d{2}):?(\d{2})$/.exec(at.trim());
+    if (!m) continue;
+    const minutes =
+      (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3]));
+    const instant = parseZonedInstant(at);
+    if (instant === null) continue;
+    const seen = counts.get(minutes);
+    if (seen) seen.count++;
+    else counts.set(minutes, { count: 1, instant });
+  }
+
+  let best: { minutes: number; count: number; instant: Instant } | null = null;
+  for (const [minutes, seen] of counts) {
+    if (!best || seen.count > best.count) best = { minutes, count: seen.count, instant: seen.instant };
+  }
+  if (!best) return fallback;
+
+  if (fallback && zoneOffsetMinutes(best.instant, fallback) === best.minutes) return fallback;
+  if (best.minutes % 60 !== 0) return fallback;
+
+  const hours = best.minutes / 60;
+  if (hours === 0) return 'UTC';
+  return `Etc/GMT${hours < 0 ? '+' : '-'}${Math.abs(hours)}`;
+}
+
+/**
  * Resolve a naive local timestamp ("2026-08-22T13:12:04", no zone) into an
  * instant, using an IANA timezone.
  *

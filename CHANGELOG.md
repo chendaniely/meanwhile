@@ -8,6 +8,71 @@ already built, and the reasons are worth keeping.
 
 ## Unreleased
 
+### The CSV format, hardened before it carries anything irreversible
+
+> "yes we should write the tz, sometimes we can infer it from the gps of the
+> photo, but we should be able to either infer the tz and allow user to
+> modify if needed. we should use a standard tz format and provide links for
+> users to easily search/find the tz to use. i'm okay with using UTC offsets"
+
+> "you're right, the merge model will make it hard, so let's just go with the
+> data version column value"
+
+The owner created a private repo to hold one race's written record
+permanently. Four reviewers examined `notes*.csv` and `people.csv` first,
+because once real notes are committed every choice becomes a migration
+carried forever. Nothing here changes what the files are for; it changes what
+they can no longer lose.
+
+**Both files carry a per-row `schema` version, and the check that reads it.**
+Blank means "the version this reader knows", so a hand-added row needs
+nothing typed; a row from a newer build is refused by name instead of being
+half-understood. Per row rather than per file because these files merge by
+row-bind — a row from someone's older copy lands among newer rows and has to
+carry its own version.
+
+**`people.csv` keeps columns it does not understand**, which `notes*.csv`
+already did. A roster carrying `pronouns` lost it on the next save; a build
+without this fix would have deleted the `schema` column itself.
+
+**Every note now records its timezone AND its UTC offset.** `tz` used to be
+blanked whenever it matched the event, which looked free and was not: change
+the event's timezone afterwards and every note silently moved while the
+photographs beside them stayed put, with nothing on the row to say what was
+meant. The offset — plain integer minutes, `-360` — is what tells the two
+01:30s of a fall-back night apart, which a zone name alone cannot do. The
+event's own zone is now guessed from the offsets the photographs themselves
+recorded rather than from the browser's clock, and the Timezone field says
+which one it landed on with a link to look one up.
+
+**Impossible dates are refused rather than quietly corrected.** `month` 13,
+`day` 32, `hour` 24, a year of `26`, a minute of `45.7` — a drag-fill or a
+slip of the finger produces all of these, every one was silently accepted,
+and every one then rewrote itself on the next save, so the file stopped
+saying what its author typed and nothing reported it.
+
+**A deleted note stays in the file, marked deleted.** Deleting one used to
+remove it from memory and nowhere else, so anybody else's older copy brought
+it back on the next merge with nothing recording that the removal was
+deliberate. Every deletion made before this column existed is unrecorded
+forever, which is why it landed now rather than later.
+
+**Notes record when they were written**, not only when the thing happened —
+"at the time" versus "remembered two years later" is the difference between a
+log and a memoir, and it cannot be reconstructed afterwards.
+
+Two joins that silently failed now hold: names written in different Unicode
+normalisation forms match (`José` and `José` are visually identical and were
+not equal), and merging a saved copy of `notes.csv` with a pristine one no
+longer grows the note count — measured at 2 → 3 → 4 → 5 → 6 over five rounds.
+Minted ids never end in a digit, because a spreadsheet's fill handle
+increments a trailing number when a row is dragged.
+
+Migration is pinned to a frozen copy of both files as they were written
+before any of this, asserted to produce the same instants, ids and text —
+then to repair themselves into the new shape on the first save without losing
+a thing.
+
 ### A rename can no longer corrupt the record
 
 > "i need a way (possibly in the site interface itself) to connect the notes

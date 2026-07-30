@@ -16,9 +16,12 @@ import {
 import { parseCourse, type Course } from '../../core/course.ts';
 import { isManifestFile, isNotesFile, isPeopleFile, isTrackFile } from '../../core/metadata.ts';
 import {
-  dedupeNotes, fingerprintNote, mergeNotes, resolveNotePhotos, type Note, type NoteRowIdentity,
+  dedupeNotes, fingerprintNote, mergeNotes, partitionDeleted, resolveNotePhotos,
+  type Note, type NoteRowIdentity,
 } from '../../core/notes.ts';
-import { displayName, parsePeopleCsv, resolvePersonNames } from '../../core/people-csv.ts';
+import {
+  displayName, parsePeopleCsv, resolvePersonNames, type PeopleExtra,
+} from '../../core/people-csv.ts';
 import {
   validateManifest,
   type Item,
@@ -26,7 +29,7 @@ import {
   type Note as LegacyNote,
   type Person,
 } from '../../core/schema.ts';
-import { formatDuration } from '../../core/time.ts';
+import { formatDuration, inferEventTimezone } from '../../core/time.ts';
 import { placeItems } from '../../core/window.ts';
 import { extractMetadata } from './extract.ts';
 import type { PickedFile } from './folder.ts';
@@ -47,6 +50,17 @@ export interface IngestProgress {
 export interface IngestOptions {
   title: string;
   timezone?: string;
+  /**
+   * Let the media's own recorded UTC offsets choose the event timezone, when
+   * no manifest in the folder states one — see `inferEventTimezone`
+   * (`core/time.ts`).
+   *
+   * Off by default and set only when a folder is OPENED, never when files are
+   * added to one already open: on "Add files" the current zone may well be
+   * one the author typed by hand, and silently reverting a correction is a
+   * worse failure than a first guess being imperfect.
+   */
+  inferTimezone?: boolean;
   existingPeople?: readonly Person[];
   existingItems?: readonly Item[];
   /**
@@ -147,6 +161,20 @@ export interface IngestResult {
    */
   notes: Note[];
   /**
+   * Tombstones: rows of `notes*.csv` marked `deleted`, kept apart from
+   * `notes` so nothing shows them and everything still WRITES them back.
+   *
+   * Dropping them on save would undo the deletion the moment anyone merged
+   * an older copy of the file, which is precisely the failure the column
+   * exists to stop.
+   */
+  deletedNotes: Note[];
+  /**
+   * Columns of `people.csv` this app has no meaning for, kept so the save
+   * path can put them back. See `PeopleExtra` in `core/people-csv.ts`.
+   */
+  peopleExtra: PeopleExtra;
+  /**
    * A note or roster row with a problem, always reported here rather than
    * failing silently — but not every problem leaves the row in place.
    *
@@ -230,10 +258,12 @@ export async function ingestFolder(
   // whole point of this file — so it outranks `existingPeople`, the same way
   // an imported manifest.json already does.
   let peopleFromCsv: Person[] | null = null;
+  const peopleExtra: PeopleExtra = new Map();
   const rosterProblems: string[] = [];
   for (const found of peopleFiles) {
-    const { people, problems } = parsePeopleCsv(await found.file.text());
+    const { people, problems, extra } = parsePeopleCsv(await found.file.text());
     if (people.length > 0) peopleFromCsv = people;
+    for (const [id, columns] of extra) peopleExtra.set(id, columns);
     for (const p of problems) rosterProblems.push(`${found.path}: ${p}`);
   }
 
@@ -282,7 +312,15 @@ export async function ingestFolder(
   const assembleOpts: Parameters<typeof assembleManifest>[1] = {
     title: imported?.event.title ?? opts.title,
   };
-  const zone = imported?.event.timezone ?? opts.timezone;
+  // A manifest in the folder states the zone outright and always wins.
+  // Otherwise the media's OWN recorded UTC offsets beat the browser's zone,
+  // which is a fact about the laptop rather than about where the race was —
+  // see `inferEventTimezone`.
+  const zone =
+    imported?.event.timezone ??
+    (opts.inferTimezone
+      ? inferEventTimezone(ingested.map((f) => f.metadata), opts.timezone)
+      : opts.timezone);
   if (zone !== undefined) assembleOpts.timezone = zone;
   if (existingPeople !== undefined) assembleOpts.existingPeople = existingPeople;
   if (existingItems !== undefined) assembleOpts.existingItems = existingItems;
@@ -324,7 +362,11 @@ export async function ingestFolder(
   // notes.csv saved from it (csvNotes) — the same notes, under the same
   // ids, from two sources. Without deduping here that is an exact id
   // collision on every ingest, not just a hypothetical one.
-  const freshNotes = dedupeNotes([...migratedNotes, ...csvNotes], manifest.event.timezone);
+  const merged = dedupeNotes([...migratedNotes, ...csvNotes], manifest.event.timezone);
+  // Tombstones are separated here and nowhere else: everything downstream —
+  // placement, the feed, the lanes, the note list — works on live notes only,
+  // and the save path is the one place that has to see them again.
+  const { live: freshNotes, deleted: deletedNotes } = partitionDeleted(merged);
   // `photo` names an item id, but the README calls the column "the
   // filename" and so does a person typing into the spreadsheet — resolve a
   // bare, unambiguous filename onto the item it actually names before
@@ -358,6 +400,8 @@ export async function ingestFolder(
     importedFrom,
     importError,
     notes,
+    deletedNotes,
+    peopleExtra,
     noteProblems,
   };
 }

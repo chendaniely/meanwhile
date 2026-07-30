@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from 'react';
-import { displayName, hasSemicolon } from '../../core/people-csv.ts';
+import { displayName, hasSemicolon, nameKey } from '../../core/people-csv.ts';
 import type { Person } from '../../core/schema.ts';
 
 /**
@@ -58,14 +58,18 @@ export function PersonPicker({ people, value, onChange, label }: Props) {
    */
   const [issue, setIssue] = useState<string | null>(null);
 
-  const chosen = new Set(value.map((name) => name.toLowerCase().trim()));
-  const q = query.trim().toLowerCase();
+  // Folded through `nameKey` (core/people-csv.ts), the same rule
+  // `resolvePersonNames` matches by — Unicode-normalised as well as trimmed
+  // and lowercased, so a name typed in one normalisation form is recognised
+  // as already chosen when the roster holds the other.
+  const chosen = new Set(value.map(nameKey));
+  const q = nameKey(query);
   const matches = people.filter((p) => {
-    if (chosen.has(displayName(p).toLowerCase().trim())) return false;
+    if (chosen.has(nameKey(displayName(p)))) return false;
     if (q === '') return true;
     // Search name AND every alias — same reason `resolvePersonNames` does:
     // typing a person's old name (from a rename) should still find them.
-    const keys = [p.name, ...(p.alsoKnownAs ?? [])].map((k) => k.toLowerCase().trim());
+    const keys = [p.name, ...(p.alsoKnownAs ?? [])].map(nameKey);
     return keys.some((k) => k.includes(q));
   });
   const activeIndex = Math.min(highlight, Math.max(matches.length - 1, 0));
@@ -85,7 +89,7 @@ export function PersonPicker({ people, value, onChange, label }: Props) {
       setIssue('Names can’t contain ";" — that character separates names in the saved file.');
       return;
     }
-    if (!chosen.has(trimmed.toLowerCase())) {
+    if (!chosen.has(nameKey(trimmed))) {
       onChange([...value, trimmed]);
     }
     setQuery('');

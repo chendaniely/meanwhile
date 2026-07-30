@@ -336,3 +336,21 @@ crosses a month). Revisit only if `duration` itself turns out to get
 mangled by a spreadsheet in practice — nothing in testing so far suggests it
 does, and it is neither a number nor a date to Excel, which is exactly why
 it was chosen.
+
+**Still deferred after the 2026-07-30 format review** (see `CLAUDE.md`'s "The
+format hardening"), which was the last cheap moment to change it — every
+column is now versioned per row, so a future split is a readable migration
+rather than an ambiguous one. The five START integers gained a real range
+check in that pass; a span's end has no equivalent to check because it is
+still a duration, which is the point.
+
+## A note's own timezone in the composer *(deferred, 2026-07-30)*
+
+`notes*.csv` now records `tz` and `utc_offset_min` on every row, and the
+reader honours a row whose zone differs from the event's — a crew member in
+another zone, or an event that crosses one. The composer, though, always
+writes the EVENT's zone: there is no per-note zone control. Deferred because
+the case that needs it is rare and the one that does not is every note in a
+normal event, and a second timezone field in the compose box would be paid
+for on every note to serve a few. A person who needs it can set `tz` in the
+spreadsheet, which is read correctly.

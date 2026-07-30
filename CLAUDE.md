@@ -4,7 +4,7 @@
 
 As of 2026-07-29 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **550 tests pass** (`make check`).
+the race. **643 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -24,7 +24,9 @@ now read from and write to `notes*.csv` and `people.csv` rather than the
 manifest — several people's files merge by row-binding, every file is
 editable by hand in a spreadsheet, and **Save** downloads one zip of
 `notes.csv`, `people.csv`, and `manifest.json` (a store-only ZIP writer,
-`src/viewer/media/zip.ts`, no dependency).
+`src/viewer/media/zip.ts`, no dependency). Both CSVs carry a per-row `schema`
+version, a range-checked timestamp, and — for notes — `tz`/`utc_offset_min`,
+`written` and `deleted`; see "The format hardening" in the decision record.
 
 **Not built:** automatic clock alignment (no longer blocked — the owner
 supplied a real timed activity export on 2026-07-29 and it parses; the
@@ -901,6 +903,11 @@ notes are still first class, the cursor is still the default time for a new
 one, and `people` still exists to explain a gap in someone's lane. See the
 three sections below for what changed and why.
 
+**And `Note` has grown since** *(2026-07-30)*: `written` (epoch seconds, when
+someone typed it), `deleted` (a tombstone that stays in the file), and a `tz`
+that is now always written alongside a `utc_offset_min` column. See "The
+format hardening" below.
+
 ### Notes in the swimlanes — this file said it was built; it was not *(bugfix)*
 
 > "what i did notice is when i create a note i do not see it in the
@@ -993,6 +1000,145 @@ the duration column already handles cleanly.
 and the boundary-crossing argument — they are independent, but both point
 the same way, and no cheaper column layout survived contact with a
 spreadsheet during design.
+
+### The format hardening, done BEFORE real notes were committed *(2026-07-30)*
+
+Four reviewers examined `notes*.csv` and `people.csv` specifically because the
+owner was about to put one race's written record under version control, and
+**once real notes are committed, every choice becomes a migration carried
+forever.** Everything below shipped in one commit for that reason. The
+governing constraint did not move: *no format survives a spreadsheet except a
+plain integer*, so every column added here is an integer or an IANA name.
+
+**Final columns.**
+`notes*.csv`: `id, year, month, day, hour, minute, duration, tz,
+utc_offset_min, people, photo, author, text, written, deleted` then any
+column you added, then `schema`.
+`people.csv`: `id, name, role, clock_offset, also_known_as`, then any column
+you added, then `schema`.
+
+**A per-row `schema` integer, and the check, in both files.** Blank means
+"the version this reader knows", so a hand-added row needs nothing typed. A
+row declaring a version *newer* than this build is refused with a legible
+problem naming the file — mirroring `validateManifest` refusing an unknown
+manifest `schema` outright rather than rendering a guess. **Per row, not per
+file, and that is deliberate:** these files merge by row-bind, so a row from
+someone's older copy lands among newer rows and must carry its own version;
+`tz` already set that precedent. **The check shipped WITH the column** — a
+marker older builds ignore buys nothing retroactively, and the check is the
+part that expires.
+
+**`people.csv` now keeps unknown columns**, which `notes*.csv` had from the
+start via `Note.extra`. A roster carrying `pronouns` lost it on the next
+save. This landed first, because a build without it deletes a `schema`
+column from `people.csv` on save — erasing the very marker above. Held as
+`PeopleExtra` beside `Person[]`, not on `Person`: `schema.ts` is the one
+notion of a person and the manifest has no business carrying a spreadsheet's
+spare columns.
+
+**`tz` is now ALWAYS written, and `utc_offset_min` joins it.** Blanking `tz`
+when it matched the event looked free — the row would pick the zone up again
+on read. It is not: change `event.timezone` afterwards and every note
+silently MOVES while the zoned-EXIF photographs beside them stay put, with
+nothing on the row to say which zone was meant. **Unfixable retroactively**,
+which is the whole reason this shipped now.
+
+Both are needed and neither substitutes for the other. A zone NAME cannot
+express the repeated hour at a fall-back transition — 01:30 MDT and 01:30 MST
+are the same five integers, an hour apart, and a zone-only read silently
+returns the earlier one every time. An OFFSET alone loses which zone the
+writer meant. Each row carrying its own offset is what makes a race crossing
+a DST boundary exact. **On read the offset determines the instant; the zone
+is for display and date math.** Disagreement is reported, never guessed
+through — and "agreement" is deliberately *not* `zoneOffsetMinutes` of the
+naive time read in the zone, because at a fall-back hour both offsets are
+correct answers; the test is whether the instant the offset produces really
+IS that wall clock in that zone.
+
+The offset is **integer minutes** (`-360`), not `-06:00`, for the
+spreadsheet-safety reason above, and it is computed from the INSTANT at write
+time rather than remembered — an instant has exactly one offset in a zone,
+even inside the repeated hour, so nothing extra is stored and the round trip
+is exact.
+
+**The zone is inferred from EXIF, never from GPS.** `inferEventTimezone`
+(`core/time.ts`) takes the modal `OffsetTimeOriginal` across the media —
+already parsed, and a measurement of where the event was rather than of where
+the laptop is. Falls back to the browser's zone when nothing carries one;
+keeps the browser's zone when it already has that offset (a real IANA zone
+knows its own DST rules, a bare offset does not); otherwise returns
+`Etc/GMT±N`, which says exactly what is known and nothing that is not. Note
+`Etc/GMT+6` is UTC−06:00 — the sign is inverted, per POSIX. **Do not add a
+GPS→timezone lookup**: it needs a boundary database this project's dependency
+budget will not carry. Inference runs only when a folder is OPENED
+(`IngestOptions.inferTimezone`), never on "Add files", so it cannot silently
+revert a zone the author typed by hand.
+
+`Intl.supportedValuesOf('timeZone')` contains neither `UTC` nor any
+`Etc/GMT±N`, though `Intl.DateTimeFormat` resolves both — so `TimezoneField`
+asks `Intl` whether a zone works rather than checking list membership, and
+carries a link to the IANA table beside it.
+
+**The five integers are range-checked, and REJECTED rather than rolled over.**
+Verified silently accepted before this: `year=26`→1926, `year=226`,
+`month=13`→next January, `month=0`→previous December, `day=32`→next month,
+`day=30` in February→2 March, `hour=24`→tomorrow, `hour=25`, `minute=60`→+1h,
+`minute=99`, and non-integers (`45.7` truncated, `12.5`, `1e1`). Each one then
+**rewrote itself on the next save**, so the file stopped saying what its
+author typed and nothing ever reported it. These are exactly what a drag-fill
+or a fat finger produces, and a rolled-over value places a note *confidently
+in the wrong place* — worse, by this project's standing rule, than a visible
+gap. The legacy `date`/`time` columns go through the same check, so the two
+shapes cannot disagree about what is readable.
+
+**`deleted`**, an integer flag, because deleting a note only removed it
+locally and any other copy resurrected it on merge with nothing recording
+that the removal was intentional. A deleted row **stays in the file** and
+wins over a live row with the same id, in either file order. Tombstones are
+split out of the note list once, in `ingestFolder`; everything downstream
+sees live notes only and the save path is the one place that sees them again.
+**Every deletion made before this column existed is unrecorded forever**,
+which is why it landed now.
+
+**`written`**, epoch seconds, machine-written, blank allowed. `at` is when the
+thing happened; `written` is when someone typed it — "at the time" versus
+"remembered two years later" is the difference between a log and a memoir,
+and it cannot be reconstructed later. Excluded from `fingerprintNote`, along
+with `deleted`: both are facts about the row rather than about what the note
+says, and including either breaks a real case (a legacy manifest note
+deduping against its own migrated copy; a tombstone matching the live row it
+cancels).
+
+**NFC everywhere.** `José` composed and `José` decomposed are visually
+identical and unequal as strings; `resolvePersonNames` matched neither
+against the other, verified in both directions. `formatCsv` normalises every
+cell it writes, and `nameKey` (`people-csv.ts`) is the ONE fold every name
+comparison goes through — `PersonPicker` included, so two parts of the app
+cannot disagree about whether a name is already on the list.
+
+**Blank-`id` rows now adopt an existing id.** Merging a saved copy of
+`notes.csv` (ids filled in) with a pristine copy whose rows are still
+blank-`id` grew **2 → 3 → 4 → 5 → 6 notes over five rounds**: `rowIdentity`
+only stabilises an id within one session, and the ided row had already
+claimed its slot. `dedupeNotes` now pre-scans for content that already
+carries an id, so a blank row of the same content takes that id and the pair
+collapses on the normal same-id-same-content path — order-independent, so it
+works whichever file is read first. It does **not** collapse two blank-id
+rows against each other; that case still goes through `rowIdentity` and its
+deliberately-not-reused rule, so two rows someone typed once stay two notes.
+
+**`mintNoteId` never ends in a digit.** Excel's fill handle increments a
+trailing number when a cell is dragged, so `n_abc12` becomes `n_abc13`,
+`n_abc14` — inventing ids for notes that do not exist. The base-36 mint ended
+in a digit 26.9% of the time.
+
+**Migration is the part that matters, and it is pinned to a frozen fixture.**
+`tests/fixtures/csv-before-2026-07-30.ts` holds `notes.csv` and `people.csv`
+byte-for-byte as they were written before any of this, and the suite asserts
+they still produce the same instants, ids and text — then that saving them
+repairs the shape while saying the same thing. **Do not regenerate it:** a
+test that rebuilds its own input cannot catch a reader and a writer drifting
+together.
 
 ### `notes*.csv` and `people.csv` are hostile-input-safe, on purpose *(notes-as-csv)*
 

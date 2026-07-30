@@ -26,8 +26,10 @@
  * reducing them to a deduplicated, time-sorted note list.
  */
 
-import { formatDuration, hasZone, parseDuration, parseZonedInstant, zonedToInstant } from './time.ts';
-import { parseCsv } from './csv.ts';
+import {
+  formatDuration, hasZone, parseDuration, parseZonedInstant, zoneOffsetMinutes, zonedToInstant,
+} from './time.ts';
+import { CSV_SCHEMA, parseCsv, schemaCellProblem } from './csv.ts';
 import type { Item } from './schema.ts';
 
 export interface Note {
@@ -37,15 +39,43 @@ export interface Note {
   /** ISO-8601 duration, e.g. "PT3H40M". Absent means a moment, not a span. */
   duration?: string;
   /**
-   * The IANA zone THIS ROW carried explicitly. Absent means the row deferred
-   * to the event's timezone — which is also why `noteToRow` leaves the
-   * column blank rather than writing the event zone back out.
+   * The IANA zone this note is written in.
+   *
+   * **Always written out** (`noteToRow` fills it with the event's zone when
+   * the note carries none of its own), which reverses the original design.
+   * Blanking it when it agreed with the event looked like it cost nothing:
+   * the row would simply pick the event's zone up again on read. It does not.
+   * Change `event.timezone` afterwards and every note silently MOVES, while
+   * the zoned-EXIF photographs beside them stay exactly where they are — and
+   * because nothing recorded which zone the row was written under, there is
+   * no way to tell afterwards which instant was meant. Unfixable
+   * retroactively is the whole reason this ships now rather than later.
    */
   tz?: string;
   people: string[];
   photo?: string;
   author: string[];
   text: string;
+  /**
+   * When someone TYPED this, in epoch seconds. Machine-written; blank is
+   * allowed and normal for anything predating the column.
+   *
+   * `at` is when the thing happened, which is not the same fact: "written at
+   * the time" and "remembered two years later" is the difference between a
+   * log and a memoir, and it cannot be reconstructed afterwards from
+   * anything. It also gives a merge a tiebreak it otherwise lacks.
+   */
+  written?: number;
+  /**
+   * A tombstone: this note was deliberately removed.
+   *
+   * Deleting a note used to only drop it from memory, so any other copy of
+   * `notes.csv` resurrected it on the next merge with nothing anywhere
+   * recording that the removal was intentional. A deleted row stays IN the
+   * file (`deleted` = 1) and wins over a live row with the same id — see
+   * `dedupeNotes`.
+   */
+  deleted?: boolean;
   /**
    * Columns the row carried that this module does not know the meaning of.
    * Kept and written straight back out so a round trip cannot silently drop
@@ -63,10 +93,14 @@ export const NOTE_HEADERS: readonly string[] = [
   'minute',
   'duration',
   'tz',
+  'utc_offset_min',
   'people',
   'photo',
   'author',
   'text',
+  'written',
+  'deleted',
+  'schema',
 ];
 
 /**
@@ -84,8 +118,10 @@ export const NOTE_HEADERS: readonly string[] = [
  * original and gets re-minted as a second note on the next load.
  */
 export function noteHeadersFor(notes: readonly Note[]): string[] {
-  const headers = [...NOTE_HEADERS];
-  const seen = new Set(headers);
+  // `schema` is appended last, AFTER the extras, so it is genuinely the last
+  // column of the file rather than merely the last one this module owns.
+  const headers = NOTE_HEADERS.filter((h) => h !== 'schema');
+  const seen = new Set<string>(NOTE_HEADERS);
   for (const note of notes) {
     if (!note.extra) continue;
     for (const key of Object.keys(note.extra)) {
@@ -94,6 +130,7 @@ export function noteHeadersFor(notes: readonly Note[]): string[] {
       headers.push(key);
     }
   }
+  headers.push('schema');
   return headers;
 }
 
@@ -110,6 +147,12 @@ export function rowToNote(row: Record<string, string>, eventTimezone?: string): 
   const id = (row.id ?? '').trim();
   const label = id || '(no id)';
 
+  // Checked BEFORE anything else is interpreted: a row from a newer build may
+  // mean something different by every other column in it, so reading them
+  // first would be guessing.
+  const schemaBad = schemaCellProblem(row.schema, 'notes.csv');
+  if (schemaBad) return { error: `note "${label}" ${schemaBad}` };
+
   const resolved = resolveInstant(row, eventTimezone, label);
   if ('error' in resolved) return resolved;
   const { instant, tz } = resolved;
@@ -120,6 +163,24 @@ export function rowToNote(row: Record<string, string>, eventTimezone?: string): 
   const duration = readDuration(row.duration ?? '');
   if (duration === INVALID_DURATION) {
     return { error: `note "${label}" has an unreadable duration "${row.duration ?? ''}"` };
+  }
+
+  const writtenRaw = (row.written ?? '').trim();
+  if (writtenRaw !== '' && !/^\d+$/.test(writtenRaw)) {
+    return {
+      error:
+        `note "${label}" has a written of "${writtenRaw}", which is not a whole number of ` +
+        'seconds since 1970 — clear the cell if you did not mean to type in it',
+    };
+  }
+
+  const deletedRaw = (row.deleted ?? '').trim();
+  if (deletedRaw !== '' && deletedRaw !== '0' && deletedRaw !== '1') {
+    return {
+      error:
+        `note "${label}" has a deleted of "${deletedRaw}"; that column is 1 for a note that ` +
+        'was deleted and blank (or 0) for one that is still there',
+    };
   }
 
   const note: Note = {
@@ -133,9 +194,88 @@ export function rowToNote(row: Record<string, string>, eventTimezone?: string): 
   if (tz !== undefined) note.tz = tz;
   const photo = nonEmpty(row.photo);
   if (photo !== undefined) note.photo = photo;
+  if (writtenRaw !== '') note.written = Number(writtenRaw);
+  if (deletedRaw === '1') note.deleted = true;
   const extra = extraFields(row);
   if (extra !== undefined) note.extra = extra;
   return note;
+}
+
+/** Days in a month, with a real leap-year rule rather than a lookup that lies. */
+function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+/**
+ * Read one of the five timestamp integers, refusing anything a spreadsheet
+ * would otherwise let roll over into a different moment.
+ *
+ * **Refused, never rolled over**, and that is the whole point. `Date.UTC`
+ * happily turns month 13 into next January, day 32 into the 1st of the
+ * following month, hour 24 into tomorrow, and `Number('45.7')` into 45 —
+ * every one of which then REWRITES ITSELF on the next save, so the file no
+ * longer says what its author typed and nothing ever reported a problem.
+ * These are exactly what a drag-fill or a fat finger produces, and a
+ * rolled-over value places a note confidently in the wrong place, which this
+ * project holds to be worse than a visible gap.
+ */
+function readCalendarInt(
+  raw: string,
+  field: string,
+  min: number,
+  max: number,
+  label: string,
+): number | { error: string } {
+  if (!/^\d+$/.test(raw)) {
+    return {
+      error: `note "${label}" has a ${field} of "${raw}", which is not a whole number`,
+    };
+  }
+  const value = Number(raw);
+  if (value < min || value > max) {
+    return { error: `note "${label}" has a ${field} of ${value}; ${field} runs ${min}–${max}` };
+  }
+  return value;
+}
+
+/** All five integers, range-checked, including day-against-month. */
+function readCalendarParts(
+  parts: { year: string; month: string; day: string; hour: string; minute: string },
+  label: string,
+): { y: number; mo: number; d: number; h: number; mi: number } | { error: string } {
+  // Four digits as well as the range: `year` 26 is the single most likely
+  // mistype, and `Date.UTC(26, …)` silently means 1926.
+  if (!/^\d{4}$/.test(parts.year)) {
+    return {
+      error:
+        `note "${label}" has a year of "${parts.year}" — write the full four-digit year, ` +
+        'between 1900 and 2100',
+    };
+  }
+  const y = readCalendarInt(parts.year, 'year', 1900, 2100, label);
+  if (typeof y !== 'number') return y;
+  const mo = readCalendarInt(parts.month, 'month', 1, 12, label);
+  if (typeof mo !== 'number') return mo;
+  const d = readCalendarInt(parts.day, 'day', 1, 31, label);
+  if (typeof d !== 'number') return d;
+  const h = readCalendarInt(parts.hour, 'hour', 0, 23, label);
+  if (typeof h !== 'number') return h;
+  const mi = readCalendarInt(parts.minute, 'minute', 0, 59, label);
+  if (typeof mi !== 'number') return mi;
+
+  const length = daysInMonth(y, mo);
+  if (d > length) {
+    return {
+      error:
+        `note "${label}" has a day of ${d}, but ${MONTH_NAMES[mo - 1]} ${y} has ${length} days`,
+    };
+  }
+  return { y, mo, d, h, mi };
 }
 
 interface Resolved {
@@ -167,22 +307,12 @@ function resolveInstant(
     if ([yRaw, moRaw, dRaw, hRaw, miRaw].some((s) => s === '')) {
       return { error: `note "${label}" has a blank date/time field` };
     }
-    const y = Number(yRaw);
-    const mo = Number(moRaw);
-    const d = Number(dRaw);
-    const h = Number(hRaw);
-    const mi = Number(miRaw);
-    if ([y, mo, d, h, mi].some((n) => !Number.isFinite(n))) {
-      return { error: `note "${label}" has a non-numeric date/time field` };
-    }
-    const tz = nonEmpty(row.tz);
-    const zone = tz ?? eventTimezone ?? 'UTC';
-    const naive = `${pad(y, 4)}-${pad(mo, 2)}-${pad(d, 2)}T${pad(h, 2)}:${pad(mi, 2)}:00`;
-    const instant = zonedToInstant(naive, zone);
-    if (instant === null) {
-      return { error: `note "${label}" could not be resolved in timezone "${zone}"` };
-    }
-    return { instant, tz };
+    const parts = readCalendarParts(
+      { year: yRaw, month: moRaw, day: dRaw, hour: hRaw, minute: miRaw },
+      label,
+    );
+    if ('error' in parts) return parts;
+    return resolveZoned(parts, row, eventTimezone, label);
   }
 
   if (row.date !== undefined) {
@@ -191,14 +321,19 @@ function resolveInstant(
     if (date === null || time === null) {
       return { error: `note "${label}" has an unreadable date or time` };
     }
-    const tz = nonEmpty(row.tz);
-    const zone = tz ?? eventTimezone ?? 'UTC';
-    const naive = `${pad(date.y, 4)}-${pad(date.mo, 2)}-${pad(date.d, 2)}T${pad(time.h, 2)}:${pad(time.mi, 2)}:00`;
-    const instant = zonedToInstant(naive, zone);
-    if (instant === null) {
-      return { error: `note "${label}" could not be resolved in timezone "${zone}"` };
-    }
-    return { instant, tz };
+    // Through the SAME range check as the five-integer path: a legacy
+    // `2026-02-30` would otherwise roll over to 2 March exactly as a bad
+    // `day` cell does, and the two shapes must not disagree about what is
+    // readable.
+    const parts = readCalendarParts(
+      {
+        year: String(date.y), month: String(date.mo), day: String(date.d),
+        hour: String(time.h), minute: String(time.mi),
+      },
+      label,
+    );
+    if ('error' in parts) return parts;
+    return resolveZoned(parts, row, eventTimezone, label);
   }
 
   if (row.at !== undefined) {
@@ -217,6 +352,97 @@ function resolveInstant(
 /** Zero-pad a calendar integer, e.g. pad(7, 2) -> "07". */
 function pad(n: number, width: number): string {
   return String(Math.trunc(n)).padStart(width, '0');
+}
+
+/** "-06:00" from -360, for a message a person can compare against a cell. */
+function formatOffset(minutes: number): string {
+  const sign = minutes < 0 ? '-' : '+';
+  const abs = Math.abs(minutes);
+  return `${sign}${pad(Math.floor(abs / 60), 2)}:${pad(abs % 60, 2)}`;
+}
+
+/**
+ * Turn five calendar integers into an instant, using the row's `tz` and
+ * `utc_offset_min`.
+ *
+ * **The offset determines the instant; the zone is for display and date
+ * math.** They are both carried because neither is sufficient on its own:
+ *
+ *   - A zone NAME alone cannot express the repeated hour at a fall-back
+ *     transition. 01:30 MDT and 01:30 MST are the same five integers, an hour
+ *     apart, and a zone-only read silently returns the first every time —
+ *     which for a 33-hour race that crosses the transition is an hour of the
+ *     night placed wrong with nothing to notice it by.
+ *   - An OFFSET alone loses which zone the writer meant, so nothing can
+ *     render another date in it or explain the number.
+ *
+ * With both, every row is exact on its own terms, because each row carries
+ * the offset in force at ITS moment rather than inheriting one from the
+ * event.
+ *
+ * **Disagreement is reported, never guessed through.** "Agreement" is
+ * deliberately not `zoneOffsetMinutes(naive-read-in-zone)`: at a fall-back
+ * hour the zone legitimately has two offsets, and both are correct answers.
+ * The test is instead whether the instant the offset produces really IS that
+ * wall-clock time in that zone — which accepts both sides of the repeated
+ * hour and rejects an offset from a different continent.
+ */
+function resolveZoned(
+  parts: { y: number; mo: number; d: number; h: number; mi: number },
+  row: Record<string, string>,
+  eventTimezone: string | undefined,
+  label: string,
+): Resolved | { error: string } {
+  const tz = nonEmpty(row.tz);
+  const offsetRaw = nonEmpty(row.utc_offset_min);
+
+  if (offsetRaw !== undefined) {
+    if (!/^[+-]?\d+$/.test(offsetRaw)) {
+      return {
+        error:
+          `note "${label}" has a utc_offset_min of "${offsetRaw}", which is not a whole ` +
+          'number of minutes — write -360 for UTC-06:00',
+      };
+    }
+    const offset = Number(offsetRaw);
+    if (Math.abs(offset) > 18 * 60) {
+      return {
+        error:
+          `note "${label}" has a utc_offset_min of ${offset}; real UTC offsets run from ` +
+          '-720 to 840 minutes',
+      };
+    }
+    const naiveAsUtc = Date.UTC(parts.y, parts.mo - 1, parts.d, parts.h, parts.mi);
+    const instant = naiveAsUtc - offset * 60_000;
+    if (tz !== undefined) {
+      const inZone = zoneOffsetMinutes(instant, tz);
+      if (inZone === null) {
+        return { error: `note "${label}" could not be resolved in timezone "${tz}"` };
+      }
+      if (inZone !== offset) {
+        return {
+          error:
+            `note "${label}" says timezone "${tz}" and utc_offset_min ${offset} ` +
+            `(UTC${formatOffset(offset)}), but "${tz}" is UTC${formatOffset(inZone)} at that ` +
+            'moment — correct one of the two rather than have meanwhile pick',
+        };
+      }
+    }
+    return { instant, tz };
+  }
+
+  // No offset column: an older row, or one typed by hand. Resolved through
+  // the zone exactly as before, which is what keeps every file written
+  // before this change reading to the same instant it always did.
+  const zone = tz ?? eventTimezone ?? 'UTC';
+  const naive =
+    `${pad(parts.y, 4)}-${pad(parts.mo, 2)}-${pad(parts.d, 2)}` +
+    `T${pad(parts.h, 2)}:${pad(parts.mi, 2)}:00`;
+  const instant = zonedToInstant(naive, zone);
+  if (instant === null) {
+    return { error: `note "${label}" could not be resolved in timezone "${zone}"` };
+  }
+  return { instant, tz };
 }
 
 /**
@@ -332,7 +558,13 @@ function extraFields(row: Record<string, string>): Record<string, string> | unde
 
 export function noteToRow(note: Note, eventTimezone?: string): Record<string, string> {
   const zone = note.tz ?? eventTimezone ?? 'UTC';
-  const parts = instantPartsInZone(new Date(note.at).getTime(), zone);
+  const instant = new Date(note.at).getTime();
+  const parts = instantPartsInZone(instant, zone);
+  // Read from the INSTANT rather than remembered from the row it was parsed
+  // from, which makes it exact across a DST transition without storing
+  // anything extra: an instant has exactly one offset in a given zone, even
+  // in the hour a wall clock repeats.
+  const offset = zoneOffsetMinutes(instant, zone);
 
   const row: Record<string, string> = {
     id: note.id,
@@ -342,14 +574,19 @@ export function noteToRow(note: Note, eventTimezone?: string): Record<string, st
     hour: String(parts.hour),
     minute: String(parts.minute),
     duration: note.duration ?? '',
-    // Blank when the row's zone would resolve to the same one `rowToNote`
-    // falls back to anyway — an explicit column only earns its keep when it
-    // disagrees with the event.
-    tz: note.tz !== undefined && note.tz !== eventTimezone ? note.tz : '',
+    // ALWAYS written, even when it matches the event's own zone. See the doc
+    // on `Note.tz`: blanking it made a later change to `event.timezone` move
+    // every note silently, with nothing on the row to reconstruct what was
+    // meant.
+    tz: zone,
+    utc_offset_min: offset === null ? '' : String(offset),
     people: note.people.join(';'),
     photo: note.photo ?? '',
     author: note.author.join(';'),
     text: note.text,
+    written: note.written !== undefined ? String(note.written) : '',
+    deleted: note.deleted ? '1' : '',
+    schema: String(CSV_SCHEMA),
   };
 
   if (note.extra) Object.assign(row, note.extra);
@@ -423,6 +660,14 @@ function instantPartsInZone(
  *   strings is exactly the bug that let a legacy manifest's note and its own
  *   migrated copy in `notes.csv` collide as two notes instead of deduping to
  *   one.
+ *
+ * **`written` and `deleted` are deliberately excluded.** Both are facts about
+ * the ROW rather than about what the note says, and including either would
+ * break something real: a legacy manifest's note (no `written`) and its own
+ * migrated `notes.csv` copy (with one) must still dedupe to a single note,
+ * and a tombstone has to fingerprint the same as the live row it cancels, or
+ * a hand-added blank-`id` copy of a deleted note could never be recognised as
+ * that note again.
  */
 export function fingerprintNote(note: Note, eventTimezone?: string): string {
   const tz = note.tz !== undefined && note.tz !== eventTimezone ? note.tz : undefined;
@@ -492,6 +737,51 @@ export function dedupeNotes(
   const seen = new Map<string, string>(); // id -> a fingerprint of its content, within this call
   const priorIdentity = rowIdentity ? new Map(rowIdentity) : undefined;
 
+  /**
+   * Ids some row in this merge says were deliberately deleted.
+   *
+   * Collected up front rather than as the loop reaches them, because a
+   * tombstone and the live row it cancels can arrive from different files in
+   * either order — one crew member's `notes.csv` still has the note, another's
+   * records that it went. A deletion wins whichever way round they land.
+   */
+  const tombstoned = new Set<string>();
+  for (const note of notes) {
+    if (note.deleted && note.id) tombstoned.add(note.id);
+  }
+
+  /**
+   * Content that already carries an id somewhere in this merge, so a
+   * blank-`id` row of the same content can ADOPT it instead of minting a
+   * fresh one.
+   *
+   * This is what stops the count growing without bound when a SAVED copy of
+   * `notes.csv` (ids filled in by the site) is merged with a pristine copy
+   * whose rows are still blank-`id` — measured at 2 → 3 → 4 → 5 → 6 notes
+   * over five rounds before this existed, because `rowIdentity` only
+   * stabilises an id within one session and the ided row had already claimed
+   * its slot. Adopting the id makes the pair collide on identical content
+   * immediately below, which is where they collapse back to one note.
+   *
+   * It does NOT collapse two blank-id rows against each other — nothing here
+   * has an id for that content, so the `rowIdentity` path and its
+   * deliberately-not-reused rule (see the parameter doc above) still decide
+   * those, and two rows someone typed once stay two notes.
+   *
+   * **Tombstones are excluded**, which is not an oversight. A blank-`id` row
+   * has no identity for a tombstone to address, so letting one adopt a
+   * DELETED note's id would silently swallow a row someone typed by hand
+   * whose text happened to match something deleted earlier. Losing what a
+   * person wrote is the worse of the two failures — the other is a deleted
+   * note reappearing, which is visible and can be deleted again.
+   */
+  const identified = new Map<string, string>();
+  for (const note of notes) {
+    if (!note.id || note.deleted) continue;
+    const fingerprint = fingerprintNote(note, eventTimezone);
+    if (!identified.has(fingerprint)) identified.set(fingerprint, note.id);
+  }
+
   const mintUnique = (): string => {
     let candidate = mintNoteId();
     while (seen.has(candidate)) candidate = mintNoteId();
@@ -503,12 +793,28 @@ export function dedupeNotes(
     const fingerprint = fingerprintNote(next, eventTimezone);
 
     if (!next.id) {
-      const stable = priorIdentity?.get(fingerprint);
-      // Reused only if nothing in THIS call has already claimed it — see
-      // the note above about two rows sharing a fingerprint in one parse.
-      next.id = stable !== undefined && !seen.has(stable) ? stable : mintUnique();
+      const adopted = identified.get(fingerprint);
+      if (adopted !== undefined) {
+        // Falls through to the collision check below on purpose: the ided
+        // copy either has been emitted already (same id, same fingerprint —
+        // dropped as a repeat) or is still to come (and will be dropped when
+        // it arrives). Either way one note, whichever file was read first.
+        next.id = adopted;
+      } else {
+        const stable = priorIdentity?.get(fingerprint);
+        // Reused only if nothing in THIS call has already claimed it — see
+        // the note above about two rows sharing a fingerprint in one parse.
+        next.id = stable !== undefined && !seen.has(stable) ? stable : mintUnique();
+      }
       rowIdentity?.set(fingerprint, next.id);
-    } else if (seen.has(next.id)) {
+    }
+
+    // A deleted row wins over a live row with the same id — the point of the
+    // tombstone. Checked after the id is settled so a blank-id row that
+    // adopted a deleted note's id is cancelled by it too.
+    if (!next.deleted && tombstoned.has(next.id)) continue;
+
+    if (seen.has(next.id)) {
       // The same row seen twice is one note. A different row wearing the
       // same id is a copy, and gets its own identity.
       if (seen.get(next.id) === fingerprint) continue;
@@ -519,6 +825,14 @@ export function dedupeNotes(
   }
 
   return out;
+}
+
+/** Split a merged list into the notes to show and the tombstones to keep. */
+export function partitionDeleted(notes: readonly Note[]): { live: Note[]; deleted: Note[] } {
+  const live: Note[] = [];
+  const deleted: Note[] = [];
+  for (const note of notes) (note.deleted ? deleted : live).push(note);
+  return { live, deleted };
 }
 
 /**
@@ -563,9 +877,20 @@ export function mergeNotes(
   return { notes, problems };
 }
 
-/** Short, opaque and unique enough that two people never collide. */
+/**
+ * Short, opaque and unique enough that two people never collide.
+ *
+ * **The last character is always a letter**, which is not cosmetic. Excel's
+ * fill handle increments a trailing NUMBER when a cell is dragged, so
+ * `n_abc12` dragged down a column becomes `n_abc13`, `n_abc14` — silently
+ * inventing ids for notes that do not exist and detaching the rows it touched
+ * from their own identity. The base-36 mint ended in a digit 26.9% of the
+ * time; a letter is left alone by the fill handle.
+ */
 export function mintNoteId(): string {
-  return `n_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  const letters = 'abcdefghijklmnopqrstuvwxyz';
+  const last = letters[Math.floor(Math.random() * letters.length)] as string;
+  return `n_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}${last}`;
 }
 
 // ---------------------------------------------------------------------------

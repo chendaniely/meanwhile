@@ -120,6 +120,11 @@ export function NoteComposer({ manifest, cursor, timezone, defaultAuthor, onAdd,
       people: [...people],
       author: [...author],
       text: body,
+      // When it was TYPED, in epoch seconds — a different fact from `at`,
+      // which is when the thing happened. "At the time" versus "remembered
+      // two years later" is the difference between a log and a memoir, and
+      // nothing can reconstruct it afterwards.
+      written: Math.floor(Date.now() / 1000),
     };
     // The end time is typed as a clock reading ("until 6:40"), the same way
     // a person remembers it — but the file stores a DURATION, so it survives

@@ -8,6 +8,10 @@ import { fingerprintNote, type Note } from '../src/core/notes.ts';
 import type { Item, Manifest, Note as LegacyNote, Person } from '../src/core/schema.ts';
 import { SCHEMA_VERSION } from '../src/core/schema.ts';
 import { parseDuration } from '../src/core/time.ts';
+import {
+  NOTES_CSV_BEFORE, PEOPLE_CSV_BEFORE,
+} from './fixtures/csv-before-2026-07-30.ts';
+import { buildJpeg, buildTiff, TYPE_ASCII } from './fixtures/jpeg.ts';
 
 /**
  * `legacyNoteToNote` and `migrateLegacyNotes` are the highest-risk new code
@@ -795,5 +799,169 @@ describe('reportUnresolvedNoteNames', () => {
     expect(problems).toHaveLength(2);
     expect(problems.some((p) => p.includes('n1'))).toBe(true);
     expect(problems.some((p) => p.includes('n3'))).toBe(true);
+  });
+});
+
+/**
+ * The 2026-07-30 format change, at the WIRING level rather than against the
+ * pure functions in `core/` — a column carried correctly by `notes.ts` and
+ * then dropped by `ingestFolder` is exactly the failure the owner would only
+ * find after committing a season of notes.
+ */
+describe('ingestFolder — the 2026-07-30 columns', () => {
+  function textFile(path: string, text: string): PickedFile {
+    return { path, file: new File([text], path.slice(path.lastIndexOf('/') + 1)) };
+  }
+
+  const HEADERS =
+    'id,year,month,day,hour,minute,duration,tz,utc_offset_min,people,photo,' +
+    'author,text,written,deleted,schema\n';
+
+  it('keeps tombstones out of `notes` and in `deletedNotes`', async () => {
+    const csv = HEADERS +
+      'n_live,2026,7,25,15,0,,UTC,0,,,Dan,still here,,,1\n' +
+      'n_gone,2026,7,25,16,0,,UTC,0,,,Dan,removed on purpose,,1,1\n';
+    const { notes, deletedNotes } = await ingestFolder([textFile('notes.csv', csv)], {
+      title: 'x', timezone: 'UTC',
+    });
+    expect(notes.map((n) => n.id)).toEqual(['n_live']);
+    expect(deletedNotes.map((n) => n.id)).toEqual(['n_gone']);
+  });
+
+  it('does not resurrect a note another copy of the file still has', async () => {
+    // The whole point of the column: one crew member's notes.csv still
+    // carries the note, another's records that it went.
+    const stillThere = HEADERS + 'n_x,2026,7,25,15,0,,UTC,0,,,Dan,a wrong turn,,,1\n';
+    const deleted = HEADERS + 'n_x,2026,7,25,15,0,,UTC,0,,,Dan,a wrong turn,,1,1\n';
+    const { notes, deletedNotes } = await ingestFolder(
+      [textFile('notes-priya.csv', stillThere), textFile('notes-dan.csv', deleted)],
+      { title: 'x', timezone: 'UTC' },
+    );
+    expect(notes).toEqual([]);
+    expect(deletedNotes).toHaveLength(1);
+  });
+
+  it('refuses a row from a newer build, reports it, and loads the rest', async () => {
+    const csv = HEADERS +
+      'n_ok,2026,7,25,15,0,,UTC,0,,,Dan,readable,,,1\n' +
+      'n_future,2026,7,25,16,0,,UTC,0,,,Dan,from a newer meanwhile,,,2\n';
+    const { notes, noteProblems } = await ingestFolder([textFile('notes.csv', csv)], {
+      title: 'x', timezone: 'UTC',
+    });
+    expect(notes.map((n) => n.id)).toEqual(['n_ok']);
+    const refusal = noteProblems.filter((p) => p.includes('schema'));
+    expect(refusal).toHaveLength(1);
+    expect(refusal[0]).toContain('notes.csv');
+    expect(refusal[0]).toContain('n_future');
+  });
+
+  it('carries people.csv columns it does not understand through to the caller', async () => {
+    const { peopleExtra, noteProblems } = await ingestFolder(
+      [textFile('people.csv', 'id,name,pronouns\np,Priya,she/her\n')],
+      { title: 'x' },
+    );
+    expect(noteProblems).toEqual([]);
+    expect(peopleExtra.get('p')).toEqual({ pronouns: 'she/her' });
+  });
+
+  it('reports a people.csv row from a newer build rather than reading it', async () => {
+    const { noteProblems } = await ingestFolder(
+      [textFile('people.csv', 'id,name,schema\np,Priya,99\n')],
+      { title: 'x' },
+    );
+    expect(noteProblems).toHaveLength(1);
+    expect(noteProblems[0]).toContain('people.csv');
+  });
+
+  /**
+   * A file written before any of these columns existed. The instants it
+   * produces are the promise being made to a repo of real notes, so they are
+   * asserted against a frozen fixture rather than against whatever the
+   * current writer emits.
+   */
+  it('reads a pre-change notes.csv to exactly the instants it always did', async () => {
+    const { notes, noteProblems } = await ingestFolder(
+      [textFile('notes.csv', NOTES_CSV_BEFORE), textFile('people.csv', PEOPLE_CSV_BEFORE)],
+      { title: 'x', timezone: 'America/Denver' },
+    );
+    // The fixture names an author who is not on this roster and a photo that
+    // is not in this folder, both of which are reported as they always were.
+    // Nothing about the FORMAT may be.
+    expect(noteProblems.filter((p) => p.includes('schema'))).toEqual([]);
+    expect(noteProblems.filter((p) => p.includes('utc_offset'))).toEqual([]);
+    expect(notes).toHaveLength(3);
+    expect(notes.find((n) => n.id === 'n_k3f9x2')?.at)
+      .toBe(new Date(Date.UTC(2026, 6, 25, 21, 45)).toISOString());
+    expect(notes.find((n) => n.id === 'n_p1a7m4')?.at)
+      .toBe(new Date(Date.UTC(2026, 6, 25, 15, 53)).toISOString());
+  });
+});
+
+describe('ingestFolder — inferring the event timezone', () => {
+  /** A file with nothing in it that states an offset. */
+  function bareFile(path: string): PickedFile {
+    return { path, file: new File([new Uint8Array(8)], path) };
+  }
+
+  /**
+   * A real JPEG whose EXIF carries `OffsetTimeOriginal` — the signal the
+   * inference reads. Built rather than stubbed because the whole claim under
+   * test is that ingest reaches the offset the photograph actually records.
+   */
+  function photoAt(path: string, offset: string): PickedFile {
+    const tiff = buildTiff({
+      exif: [
+        { tag: 0x9003, type: TYPE_ASCII, values: '2026:07:25 15:45:00' },
+        { tag: 0x9011, type: TYPE_ASCII, values: offset },
+      ],
+    });
+    // `buildJpeg` is typed as a bare `Uint8Array`, whose backing buffer
+    // TypeScript widens to `ArrayBufferLike`, while `BlobPart` wants a
+    // concrete `ArrayBuffer`. It really is one — the same cast, and the same
+    // reason, as the `zipBytes` call in `App.tsx`.
+    const bytes = buildJpeg(tiff) as Uint8Array<ArrayBuffer>;
+    return { path, file: new File([bytes], path) };
+  }
+
+  it('leaves the given zone alone when nothing carries an offset', async () => {
+    const { manifest } = await ingestFolder([bareFile('IMG_0001.jpg')], {
+      title: 'x', timezone: 'America/Denver', inferTimezone: true,
+    });
+    expect(manifest.event.timezone).toBe('America/Denver');
+  });
+
+  it('takes the zone from the photographs when the browser zone disagrees', async () => {
+    // A race in the Alps, opened on a laptop in Denver. The photographs say
+    // where the event was; the laptop says where the author is now.
+    const { manifest } = await ingestFolder(
+      [photoAt('a.jpg', '+02:00'), photoAt('b.jpg', '+02:00')],
+      { title: 'x', timezone: 'America/Denver', inferTimezone: true },
+    );
+    expect(manifest.event.timezone).toBe('Etc/GMT-2');
+  });
+
+  it('never infers unless asked, so "Add files" cannot revert a hand-set zone', async () => {
+    // Same photographs, `inferTimezone` off: the live zone may be one the
+    // author typed by hand, and silently reverting that would move every
+    // naive timestamp under them.
+    const { manifest } = await ingestFolder(
+      [photoAt('a.jpg', '+02:00'), photoAt('b.jpg', '+02:00')],
+      { title: 'x', timezone: 'America/Denver' },
+    );
+    expect(manifest.event.timezone).toBe('America/Denver');
+  });
+
+  it('lets a manifest in the folder win outright', async () => {
+    const manifestJson = JSON.stringify({
+      schema: SCHEMA_VERSION,
+      event: { title: 'Race', timezone: 'Europe/Zurich' },
+      people: [],
+      items: [],
+    });
+    const { manifest } = await ingestFolder(
+      [{ path: 'manifest.json', file: new File([manifestJson], 'manifest.json') }],
+      { title: 'x', timezone: 'America/Denver', inferTimezone: true },
+    );
+    expect(manifest.event.timezone).toBe('Europe/Zurich');
   });
 });

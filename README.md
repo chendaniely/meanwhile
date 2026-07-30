@@ -317,11 +317,32 @@ without touching the website at all.
 | `id` | Leave it blank on a new row — the site fills it in the next time you open the folder. |
 | `year`, `month`, `day`, `hour`, `minute` | When it happened, as plain numbers — `2026,7,25,15,45` for 3:45pm on 25 July 2026. Midnight is `hour,minute` = `0,0`, with `year`/`month`/`day` still filled in as usual. |
 | `duration` | How long it lasted, only if it's a span rather than an instant — `PT3H40M` for three hours forty minutes. Leave it blank for something that happened at one moment. |
-| `tz` | Only fill this in if the note happened in a different timezone than the event itself. Leave it blank otherwise. |
+| `tz` | The timezone the time above is written in, as an IANA name — `America/Denver`. The site fills this in on every row. Change it only if a note genuinely happened somewhere else. |
+| `utc_offset_min` | How far that timezone was from UTC at that exact moment, in whole minutes — `-360` for UTC−06:00. The site fills it in; you should not normally touch it. |
 | `people` | Who the note is about. Several names, separated by semicolons — `Priya;Sam`. |
 | `photo` | If this note is a caption, the photo it belongs to. Blank for a note with no photo. The site writes the full path (e.g. `priya/PXL_….jpg` when photos sit in a folder per person); if you type a plain filename by hand, it works too, as long as only one photo in the folder has that name. |
 | `author` | Who wrote it. Same rule as `people` — semicolons for more than one name. |
 | `text` | What happened. |
+| `written` | When somebody *typed* the note, as a plain count of seconds. The site fills it in; leave it blank on a row you add by hand. It's a different fact from the time above — that's when the thing happened, this is when it got written down. |
+| `deleted` | `1` if the note was deleted on purpose. Leave it blank (or `0`) for a note that's still there. A deleted row stays in the file rather than disappearing, which is what stops somebody else's older copy quietly bringing it back. |
+| `schema` | Which version of this file layout the row is written in. Leave it blank on a row you add by hand and the site treats it as the current one. |
+
+**Two columns for the timezone, and both earn their keep.** The name says
+*where*, and the offset says *exactly how far from UTC that was at that
+moment*. You need the name because an offset alone can't tell you anything
+about the place, or work out what a different date would look like. You need
+the offset because on the night the clocks go back, 01:30 happens twice, an
+hour apart — and `2026,11,1,1,30` with a zone name is the same five numbers
+either way. The offset is what tells them apart. Every row carries its own,
+so a race that runs through the change is exact on both sides of it.
+
+**Numbers that can't be a real date or time are refused, not quietly
+corrected.** `month` 13, `day` 32, `hour` 24, a year of `26`, a minute of
+`45.7` — a spreadsheet drag or a slip of the finger produces all of these,
+and each one has an obvious-looking "fix" that lands the note on a different
+day. meanwhile reports the row instead, saying which cell and what's wrong,
+and loads the rest of the file. A note put confidently in the wrong place is
+worse than one you can see is missing.
 
 **Why the date is five plain numbers instead of one date and one time.** Any
 format that *looks* like a date or a time gets silently rewritten the moment
@@ -368,6 +389,12 @@ The roster lives in its own spreadsheet, **`people.csv`**, right next to
 | `role` | `runner` for the one person whose lane pins to the top and who owns the course. Blank for everyone else. |
 | `clock_offset` | How far this person's camera clock was off, as an ISO-8601 duration — `-PT47S` for a clock running 47 seconds fast. Leave it blank if you don't know. |
 | `also_known_as` | Earlier names this person has answered to, separated by semicolons, same as `people`/`author` in `notes.csv`. meanwhile fills this in for you the moment you rename someone (see below); you can also add to it by hand, e.g. if a crew member spells a name differently. |
+| `schema` | Which version of this file layout the row is written in. Leave it blank on a row you add by hand and the site treats it as the current one. |
+
+**Any other column you add is kept.** Put a `pronouns` or `shirt_size`
+column in this file and meanwhile carries it straight through every save,
+exactly as `notes.csv` already does. It won't do anything with it — it just
+won't throw it away.
 
 **Renaming self-heals `notes.csv`, instead of breaking it.** `notes.csv`
 refers to people by name, not by id — that's what keeps it a plain

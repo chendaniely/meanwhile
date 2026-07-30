@@ -10,6 +10,15 @@
  * is a live risk rather than a theoretical one. A leading apostrophe disarms
  * it; spreadsheets hide the apostrophe, and `parseCsv` removes it.
  *
+ * NFC: every cell is written in Unicode Normalization Form C. `José` typed on
+ * a Mac (which composes to NFD in some input paths) and `José` typed on
+ * Windows are visually identical and compare UNEQUAL as JavaScript strings,
+ * so a name written one way silently stopped matching the same name written
+ * the other — verified in both directions against `resolvePersonNames`.
+ * Normalising here fixes it for everything this app writes; the name
+ * comparisons in `people-csv.ts` normalise both sides so a file written
+ * elsewhere matches too.
+ *
  * Knows nothing about notes or people — it moves strings.
  */
 
@@ -32,6 +41,67 @@ export interface CsvTable {
 
 const BOM = '﻿';
 const FORMULA_LEAD = /^['=+\-@]/;
+
+/**
+ * The version of the on-disk CSV layout this build reads and writes.
+ *
+ * Carried in a `schema` column in BOTH `notes*.csv` and `people.csv`, and
+ * **per row, not per file** — these files merge by row-bind (see `mergeNotes`
+ * in `notes.ts`), so a row from someone's older copy lands among newer rows
+ * and has to carry its own version with it. A file-level marker would claim
+ * one version for rows that came from several files. `tz` already sets that
+ * precedent.
+ *
+ * A blank cell means "the version this reader knows", so a row someone adds
+ * by hand needs nothing typed into it.
+ */
+export const CSV_SCHEMA = 1;
+
+/**
+ * Whether a `schema` cell can be read by this build — the check, not just the
+ * column.
+ *
+ * A marker older builds ignore buys nothing retroactively; the part that
+ * expires is refusing a row written by something newer, which is why this
+ * ships with the column rather than after it. Mirrors `validateManifest`
+ * refusing an unknown manifest `schema` outright rather than rendering a
+ * guess.
+ *
+ * Returns null when the row is readable, or a predicate a caller prefixes
+ * with whatever names the row (`note "n_x" …`, `Row 4: …`) — the file is
+ * named in the message itself so it survives being read on its own.
+ */
+export function schemaCellProblem(raw: string | undefined, file: string): string | null {
+  const s = (raw ?? '').trim();
+  if (s === '') return null;
+  if (!/^\d+$/.test(s)) {
+    return (
+      `has a schema of "${s}", which is not a whole number — clear the schema cell in ` +
+      `${file} to read this row as version ${CSV_SCHEMA}`
+    );
+  }
+  const version = Number(s);
+  if (version > CSV_SCHEMA) {
+    return (
+      `has schema ${version}, but this build of meanwhile reads ${file} up to schema ` +
+      `${CSV_SCHEMA} — update the site, or clear the schema cell to read this row as ` +
+      `version ${CSV_SCHEMA}`
+    );
+  }
+  return null;
+}
+
+/**
+ * Unicode Normalization Form C.
+ *
+ * Exported because normalising on write is only half the fix: every
+ * comparison between two names has to normalise BOTH sides, or a file written
+ * by another tool still fails to match one written here. See the module
+ * comment.
+ */
+export function nfc(value: string): string {
+  return value.normalize('NFC');
+}
 
 export function parseCsv(text: string): CsvTable {
   const body = text.startsWith(BOM) ? text.slice(1) : text;
@@ -137,6 +207,10 @@ export function formatCsv(
 }
 
 function cell(raw: string): string {
-  const guarded = FORMULA_LEAD.test(raw) ? `'${raw}` : raw;
+  // NFC first, so the guard and the quoting both see the form that actually
+  // gets written — and so two spellings of the same name are one string on
+  // disk. See the module comment.
+  const normalized = nfc(raw);
+  const guarded = FORMULA_LEAD.test(normalized) ? `'${normalized}` : normalized;
   return /[",\n\r]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
 }

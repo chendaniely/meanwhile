@@ -3,9 +3,11 @@ import {
   appliesClockOffset,
   formatDuration,
   hasZone,
+  inferEventTimezone,
   parseDuration,
   parseZonedInstant,
   resolveItemInstant,
+  zoneOffsetMinutes,
   zonedToInstant,
 } from '../src/core/time.ts';
 
@@ -187,5 +189,77 @@ describe('resolveItemInstant', () => {
     expect(r.instant).toBe(Date.UTC(2026, 7, 22, 13, 12, 4));
     expect(r.offsetApplied).toBe(0);
     expect(r.reason).toMatch(/clockOffset/);
+  });
+});
+
+describe('zoneOffsetMinutes', () => {
+  it('reads the offset in force at that instant, not the zone standard one', () => {
+    expect(zoneOffsetMinutes(Date.UTC(2026, 6, 25, 12), 'America/Denver')).toBe(-360);
+    expect(zoneOffsetMinutes(Date.UTC(2026, 0, 25, 12), 'America/Denver')).toBe(-420);
+  });
+
+  it('handles a zone whose offset is not a whole number of hours', () => {
+    expect(zoneOffsetMinutes(Date.UTC(2026, 6, 25, 12), 'Asia/Kolkata')).toBe(330);
+  });
+
+  it('returns null for a zone this runtime does not know', () => {
+    expect(zoneOffsetMinutes(Date.UTC(2026, 6, 25, 12), 'Mars/Olympus')).toBeNull();
+  });
+});
+
+/**
+ * A phone's `OffsetTimeOriginal` states the offset it was set to when the
+ * shutter fired — a measurement of where the event happened, which beats the
+ * zone of whichever laptop the folder is opened on later. Deliberately NOT a
+ * GPS→timezone lookup: that needs a boundary database this project's
+ * dependency budget will not carry, and EXIF is already parsed.
+ */
+describe('inferEventTimezone', () => {
+  const at = (iso: string) => ({ at: iso });
+
+  it('keeps the browser zone when the photographs agree with it', () => {
+    // A real IANA zone knows its own DST rules; a bare offset does not, so
+    // an agreeing browser zone is strictly the better answer.
+    const items = [at('2026-07-25T15:45:00-06:00'), at('2026-07-25T16:00:00-06:00')];
+    expect(inferEventTimezone(items, 'America/Denver')).toBe('America/Denver');
+  });
+
+  it('says what it knows — an offset — when the browser zone disagrees', () => {
+    // Photographs from a race in the Alps, opened on a laptop in Denver.
+    const items = [at('2026-07-25T15:45:00+02:00'), at('2026-07-25T16:00:00+02:00')];
+    expect(inferEventTimezone(items, 'America/Denver')).toBe('Etc/GMT-2');
+  });
+
+  it('gets the sign of Etc/GMT the right way round, which is inverted', () => {
+    const zone = inferEventTimezone([at('2026-07-25T15:45:00-06:00')], 'UTC');
+    expect(zone).toBe('Etc/GMT+6');
+    expect(zoneOffsetMinutes(Date.UTC(2026, 6, 25), zone as string)).toBe(-360);
+  });
+
+  it('takes the MODE, so a stray photo from the drive home cannot move the event', () => {
+    const items = [
+      at('2026-07-25T15:45:00-06:00'), at('2026-07-25T16:00:00-06:00'),
+      at('2026-07-25T17:00:00-06:00'), at('2026-07-27T09:00:00-08:00'),
+    ];
+    expect(inferEventTimezone(items, 'UTC')).toBe('Etc/GMT+6');
+  });
+
+  it('falls back when nothing carries an offset at all', () => {
+    expect(inferEventTimezone([at('2026-07-25T15:45:00'), {}], 'America/Denver'))
+      .toBe('America/Denver');
+  });
+
+  it('ignores a Z, which says the time is UTC and nothing about where', () => {
+    // A GPS timestamp is UTC because it came from satellites — reading that
+    // as "the event was in London" would be exactly the wrong inference.
+    expect(inferEventTimezone([at('2026-07-25T15:45:00Z')], 'America/Denver'))
+      .toBe('America/Denver');
+  });
+
+  it('falls back rather than mis-state an offset Etc/GMT cannot express', () => {
+    // India is +05:30. Better a zone the reader can correct than one that is
+    // silently half an hour out.
+    expect(inferEventTimezone([at('2026-07-25T15:45:00+05:30')], 'America/Denver'))
+      .toBe('America/Denver');
   });
 });

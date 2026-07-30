@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyRename, displayName, formatPeopleCsv, parsePeopleCsv, resolvePersonNames,
+  applyRename, displayName, formatPeopleCsv, nameKey, parsePeopleCsv, resolvePersonNames,
 } from '../src/core/people-csv.ts';
+import {
+  PEOPLE_CSV_BEFORE, PEOPLE_CSV_WITH_UNKNOWN_COLUMNS,
+} from './fixtures/csv-before-2026-07-30.ts';
 import type { Note } from '../src/core/notes.ts';
 import type { Person } from '../src/core/schema.ts';
+import { parseCsv } from '../src/core/csv.ts';
 
 const PEOPLE: Person[] = [
   { id: 'pixel8', name: 'Priya', role: 'runner' },
@@ -453,5 +457,129 @@ describe('applyRename', () => {
     const { people } = applyRename(withAlias, [], 'pixel8', 'Priya');
     const person = people.find((p) => p.id === 'pixel8');
     expect(person?.alsoKnownAs).toEqual(['P. Sharma']);
+  });
+});
+
+/**
+ * `notes*.csv` has carried unknown columns since it was written
+ * (`Note.extra`); `people.csv` did not, and a review verified a roster
+ * carrying `pronouns`/`shirt` lost both on the next save. It matters more
+ * than it looks: a build without this would delete the `schema` column too,
+ * erasing the very marker the version check depends on.
+ */
+describe('people.csv keeps columns it does not understand', () => {
+  it('carries them through a save, in the order first seen', () => {
+    const { people, extra } = parsePeopleCsv(PEOPLE_CSV_WITH_UNKNOWN_COLUMNS);
+    expect(extra.get('google-pixel-8-pro')).toEqual({ pronouns: 'she/her', shirt: 'M' });
+
+    const written = formatPeopleCsv(people, extra);
+    expect(parseCsv(written).headers)
+      .toEqual(['id', 'name', 'role', 'clock_offset', 'also_known_as', 'pronouns', 'shirt', 'schema']);
+    const back = parsePeopleCsv(written);
+    expect(back.extra.get('samsung-sm-f721w')).toEqual({ pronouns: 'they/them', shirt: 'L' });
+    expect(back.people).toEqual(people);
+  });
+
+  it('never lets a stray column overwrite one this app owns', () => {
+    const extra = new Map([['pixel8', { name: 'Impostor', schema: '99' }]]);
+    const csv = formatPeopleCsv([{ id: 'pixel8', name: 'Priya' }], extra);
+    const { people, problems } = parsePeopleCsv(csv);
+    expect(problems).toEqual([]);
+    expect(people[0]?.name).toBe('Priya');
+  });
+
+  it('drops nothing when no extras are passed at all', () => {
+    // The common path: a roster assembled in memory, with no CSV behind it.
+    expect(parsePeopleCsv(formatPeopleCsv(PEOPLE)).people).toEqual(PEOPLE);
+  });
+});
+
+describe('the people.csv schema column', () => {
+  it('is written last, after any columns someone else added', () => {
+    const headers = parseCsv(formatPeopleCsv(PEOPLE)).headers;
+    expect(headers[headers.length - 1]).toBe('schema');
+    expect(parseCsv(formatPeopleCsv(PEOPLE)).rows[0]?.schema).toBe('1');
+  });
+
+  it('refuses a row written by a newer build, and keeps the rest of the file', () => {
+    const { people, problems } = parsePeopleCsv(
+      'id,name,schema\npixel8,Priya,\nzflip4,Sam,2\n',
+    );
+    expect(people.map((p) => p.id)).toEqual(['pixel8']);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('people.csv');
+    expect(problems[0]).toContain('Row 3');
+  });
+
+  it('reads a blank schema as "the version this reader knows"', () => {
+    expect(parsePeopleCsv('id,name,schema\npixel8,Priya,\n').problems).toEqual([]);
+  });
+});
+
+/**
+ * `José` composed and `José` decomposed are visually identical and unequal as
+ * strings. Verified failing in BOTH directions before this fix: a note naming
+ * one form resolved to nobody when `people.csv` carried the other, so the
+ * note silently left that person's lane.
+ */
+describe('names match across Unicode normalisation forms', () => {
+  // Written as escapes, not as literal characters: the two are visually
+  // identical, so a source file that got normalised by an editor would make
+  // this whole block pass vacuously.
+  const COMPOSED = 'Jos\u00e9';
+  const DECOMPOSED = 'Jose\u0301';
+
+  it('resolves a decomposed note name against a composed roster name', () => {
+    const roster: Person[] = [{ id: 'p', name: COMPOSED }];
+    expect(resolvePersonNames([DECOMPOSED], roster)).toEqual({ ids: ['p'], unknown: [] });
+  });
+
+  it('resolves a composed note name against a decomposed roster name', () => {
+    const roster: Person[] = [{ id: 'p', name: DECOMPOSED }];
+    expect(resolvePersonNames([COMPOSED], roster)).toEqual({ ids: ['p'], unknown: [] });
+  });
+
+  it('matches an alias across forms too', () => {
+    const roster: Person[] = [{ id: 'p', name: 'Pixel 8', alsoKnownAs: [DECOMPOSED] }];
+    expect(resolvePersonNames([COMPOSED], roster).ids).toEqual(['p']);
+  });
+
+  it('folds both forms to one key, which is what makes all of the above true', () => {
+    expect(COMPOSED).not.toBe(DECOMPOSED);
+    expect(nameKey(DECOMPOSED)).toBe(nameKey(COMPOSED));
+  });
+
+  it('still tells two genuinely different names apart', () => {
+    const roster: Person[] = [{ id: 'p', name: COMPOSED }];
+    expect(resolvePersonNames(['Jose'], roster)).toEqual({ ids: [], unknown: ['Jose'] });
+  });
+});
+
+/**
+ * Migration, pinned to a frozen copy of the file as it was written before the
+ * 2026-07-30 change — see the fixture's header for why it must not be
+ * regenerated.
+ */
+describe('a people.csv written before the schema column existed', () => {
+  it('reads exactly as it always did', () => {
+    const { people, problems, extra } = parsePeopleCsv(PEOPLE_CSV_BEFORE);
+    expect(problems).toEqual([]);
+    expect(extra.size).toBe(0);
+    expect(people).toEqual([
+      {
+        id: 'google-pixel-8-pro',
+        name: 'Priya',
+        role: 'runner',
+        alsoKnownAs: ['Google Pixel 8 Pro'],
+      },
+      { id: 'samsung-sm-f721w', name: 'Sam', clockOffset: '-PT4S' },
+    ]);
+  });
+
+  it('repairs itself into the new shape on the first save, losing nothing', () => {
+    const { people, extra } = parsePeopleCsv(PEOPLE_CSV_BEFORE);
+    const written = formatPeopleCsv(people, extra);
+    expect(written).toContain('schema');
+    expect(parsePeopleCsv(written).people).toEqual(people);
   });
 });

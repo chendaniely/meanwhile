@@ -15,12 +15,57 @@
  */
 
 import { displayNameFor } from './assemble.ts';
-import { parseCsv, formatCsv } from './csv.ts';
+import { parseCsv, formatCsv, nfc, schemaCellProblem, CSV_SCHEMA } from './csv.ts';
 import type { Note } from './notes.ts';
 import { ROLES, type Person, type PersonId, type Role } from './schema.ts';
 import { parseDuration } from './time.ts';
 
-export const PEOPLE_HEADERS = ['id', 'name', 'role', 'clock_offset', 'also_known_as'] as const;
+export const PEOPLE_HEADERS = [
+  'id',
+  'name',
+  'role',
+  'clock_offset',
+  'also_known_as',
+  'schema',
+] as const;
+
+const KNOWN_PEOPLE_KEYS = new Set<string>(PEOPLE_HEADERS);
+
+/**
+ * Columns of `people.csv` this module does not know the meaning of, keyed by
+ * the person's id, kept so a save cannot drop them.
+ *
+ * `notes*.csv` has had this since it was written (`Note.extra`), and
+ * `people.csv` did not: a roster carrying `pronouns` or the author's own
+ * bookkeeping column lost it the moment Save was pressed. It matters more
+ * now than it did, because a build without this would delete the `schema`
+ * column itself on the next save — erasing the very marker it was added to
+ * carry.
+ *
+ * Held beside `Person[]` rather than on `Person`, because `schema.ts` is the
+ * one and only notion of what a person is and the manifest has no business
+ * carrying a spreadsheet's spare columns.
+ */
+export type PeopleExtra = Map<PersonId, Record<string, string>>;
+
+/**
+ * Fold a name to the key every comparison in this file uses.
+ *
+ * NFC first, and that is not defensive: `José` composed and `José` decomposed
+ * are visually identical, unequal as JavaScript strings, and both are things
+ * real input methods produce — so a note naming one form silently resolved to
+ * nobody when `people.csv` carried the other. Verified in both directions.
+ * `csv.ts` normalises everything this app WRITES; this is what makes a file
+ * written anywhere else match too.
+ *
+ * Exported so the ONE folding rule is shared: `PersonPicker` compares typed
+ * names against the roster too, and a second, subtly different fold is how
+ * two parts of the app end up disagreeing about whether a name is already on
+ * the list.
+ */
+export function nameKey(raw: string): string {
+  return nfc(raw).trim().toLowerCase();
+}
 
 /**
  * `;`-separated list convention, identical to `people`/`author` in
@@ -65,14 +110,14 @@ export function hasSemicolon(raw: string): boolean {
  * entry, and all three must stay clean the same way.
  */
 function cleanAliases(name: string, aliases: readonly string[]): string[] {
-  const nameKey = name.trim().toLowerCase();
+  const own = nameKey(name);
   const seen = new Set<string>();
   const out: string[] = [];
   for (const alias of aliases) {
     const trimmed = alias.trim();
     if (trimmed === '') continue;
-    const key = trimmed.toLowerCase();
-    if (key === nameKey || seen.has(key)) continue;
+    const key = nameKey(trimmed);
+    if (key === own || seen.has(key)) continue;
     seen.add(key);
     out.push(trimmed);
   }
@@ -92,10 +137,13 @@ function cleanAliases(name: string, aliases: readonly string[]): string[] {
  * corrupt `manifest.json` on the next save and lose the crop, the course
  * reference, and every hand-placed time on the next open.
  */
-export function parsePeopleCsv(text: string): { people: Person[]; problems: string[] } {
+export function parsePeopleCsv(
+  text: string,
+): { people: Person[]; problems: string[]; extra: PeopleExtra } {
   const { rows, rowLines } = parseCsv(text);
   const people: Person[] = [];
   const problems: string[] = [];
+  const extra: PeopleExtra = new Map();
   const seenIds = new Set<string>();
 
   rows.forEach((row, i) => {
@@ -105,6 +153,17 @@ export function parsePeopleCsv(text: string): { people: Person[]; problems: stri
     // below it. `rowLines[i]` is never actually missing — it is built in
     // lockstep with `rows` — the fallback only satisfies the type checker.
     const line = rowLines[i] ?? i + 2;
+
+    // Checked before anything else on the row is interpreted: a row written
+    // by a newer build may mean something different by every other column,
+    // so reading them anyway would be guessing. Mirrors `validateManifest`
+    // refusing an unknown manifest `schema` rather than half-applying it.
+    const schemaBad = schemaCellProblem(row['schema'], 'people.csv');
+    if (schemaBad) {
+      problems.push(`Row ${line}: this row ${schemaBad}`);
+      return;
+    }
+
     const id = row['id']?.trim();
     const nameCell = row['name']?.trim();
     const rawAlsoKnownAs = splitList(row['also_known_as']);
@@ -180,11 +239,23 @@ export function parsePeopleCsv(text: string): { people: Person[]; problems: stri
     const alsoKnownAs = cleanAliases(name, rawAlsoKnownAs);
     if (alsoKnownAs.length > 0) person.alsoKnownAs = alsoKnownAs;
 
+    // Anything this module has no meaning for is carried, not dropped —
+    // losing a column someone typed into is the same class of failure as
+    // losing a note. See `PeopleExtra`.
+    const unknown: Record<string, string> = {};
+    let hasUnknown = false;
+    for (const [key, value] of Object.entries(row)) {
+      if (KNOWN_PEOPLE_KEYS.has(key)) continue;
+      unknown[key] = value;
+      hasUnknown = true;
+    }
+    if (hasUnknown) extra.set(id, unknown);
+
     seenIds.add(id);
     people.push(person);
   });
 
-  return { people, problems };
+  return { people, problems, extra };
 }
 
 /**
@@ -197,16 +268,37 @@ export function parsePeopleCsv(text: string): { people: Person[]; problems: stri
  * merge) can accumulate the same self-alias or duplicate a parsed file can,
  * and the write path is the last chance to keep the saved file clean.
  */
-export function formatPeopleCsv(people: readonly Person[]): string {
+export function formatPeopleCsv(
+  people: readonly Person[],
+  extra?: ReadonlyMap<PersonId, Record<string, string>>,
+): string {
+  // `schema` last, after any columns someone else added, so it is genuinely
+  // the last column of the file rather than merely the last one this module
+  // owns.
+  const headers = PEOPLE_HEADERS.filter((h) => h !== 'schema') as string[];
+  const seen = new Set<string>(PEOPLE_HEADERS);
+  for (const person of people) {
+    for (const key of Object.keys(extra?.get(person.id) ?? {})) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      headers.push(key);
+    }
+  }
+  headers.push('schema');
+
   const rows = people.map((p) => ({
+    // Spread first so a known column always wins over a stray one wearing
+    // the same name.
+    ...(extra?.get(p.id) ?? {}),
     id: p.id,
     name: p.name,
     role: p.role ?? '',
     clock_offset: p.clockOffset ?? '',
     also_known_as: cleanAliases(p.name, p.alsoKnownAs ?? []).join(';'),
+    schema: String(CSV_SCHEMA),
   }));
 
-  return formatCsv(PEOPLE_HEADERS, rows);
+  return formatCsv(headers, rows);
 }
 
 /**
@@ -268,7 +360,7 @@ export function resolvePersonNames(
   for (const person of people) {
     const keys = [person.name, ...(person.alsoKnownAs ?? [])];
     for (const raw of keys) {
-      const key = raw.toLowerCase().trim();
+      const key = nameKey(raw);
       if (key === '') continue;
       const claimedBy = nameMap.get(key);
       if (claimedBy === undefined) {
@@ -282,8 +374,9 @@ export function resolvePersonNames(
   }
 
   for (const name of names) {
-    const normalized = name.toLowerCase().trim();
-    const id = nameMap.get(normalized);
+    // BOTH sides normalised — normalising only the roster would leave a note
+    // written on another machine still failing to match.
+    const id = nameMap.get(nameKey(name));
     if (id) {
       ids.push(id);
     } else {
@@ -385,26 +478,26 @@ export function applyRename(
         'people.csv, so one in a name would silently corrupt both the next time either is saved.',
     };
   }
-  const newKey = nextTrimmed.toLowerCase();
+  const newKey = nameKey(nextTrimmed);
   const newNameClaimedByOther = people.some(
     (p) =>
       p.id !== id &&
-      (p.name.trim().toLowerCase() === newKey || (p.alsoKnownAs ?? []).some((a) => a.trim().toLowerCase() === newKey)),
+      (nameKey(p.name) === newKey || (p.alsoKnownAs ?? []).some((a) => nameKey(a) === newKey)),
   );
   if (newNameClaimedByOther) {
     return { ...unchanged, refused: `"${nextTrimmed}" is already someone else's name.` };
   }
 
   const previousName = person.name.trim();
-  const previousKey = previousName.toLowerCase();
+  const previousKey = nameKey(previousName);
   const renamed = previousName !== '' && previousKey !== newKey;
   const collided =
     renamed &&
     people.some(
       (p) =>
         p.id !== id &&
-        (p.name.trim().toLowerCase() === previousKey ||
-          (p.alsoKnownAs ?? []).some((a) => a.trim().toLowerCase() === previousKey)),
+        (nameKey(p.name) === previousKey ||
+          (p.alsoKnownAs ?? []).some((a) => nameKey(a) === previousKey)),
     );
   const selfHeal = renamed && !collided;
 
@@ -422,7 +515,7 @@ export function applyRename(
   if (!selfHeal) return { people: nextPeople, notes: [...notes], collided };
 
   const rewrite = (list: readonly string[]): string[] =>
-    list.map((v) => (v.trim().toLowerCase() === previousKey ? nextTrimmed : v));
+    list.map((v) => (nameKey(v) === previousKey ? nextTrimmed : v));
 
   const nextNotes = notes.map((n) => {
     const nextPeopleList = rewrite(n.people);

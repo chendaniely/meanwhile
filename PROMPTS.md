@@ -1095,3 +1095,85 @@ own "we can pin this later."
 16 new tests in `tests/people-csv.test.ts` (10 → 26), each confirmed to fail
 against a deliberately broken production line before being restored. 520
 tests pass.
+
+---
+
+## Session: the CSV format, hardened before it carries anything irreversible (2026-07-30)
+
+Context: the owner created a private repo to hold one race's written record
+permanently under version control, and four reviewers examined `notes*.csv`
+and `people.csv` first — because once real notes are committed, every choice
+becomes a migration carried forever.
+
+> "yes we should write the tz, sometimes we can infer it from the gps of the
+> photo, but we should be able to either infer the tz and allow user to
+> modify if needed. we should use a standard tz format and provide links for
+> users to easily search/find the tz to use. i'm okay with using UTC offsets"
+
+> "you're right, the merge model will make it hard, so let's just go with the
+> data version column value"
+
+### What was decided
+
+**The timezone: infer it, show it, let it be changed — and write BOTH forms.**
+The inference reads the media's own `OffsetTimeOriginal`, which the app
+already parses, rather than a GPS→timezone lookup — that needs a boundary
+database this project's dependency budget will not carry, and EXIF is both
+free and more accurate about what the camera meant. The modal offset wins, so
+a stray photo from the drive home cannot move the event. The browser's zone is
+kept when it already agrees (a real IANA zone knows its own DST rules); an
+`Etc/GMT±N` is used when it does not, because that says exactly what is known
+— an offset — and nothing that is not. Inference runs only when a folder is
+OPENED, never on "Add files", so it cannot silently revert a zone the author
+typed. `TimezoneField` carries a link to the IANA table beside it.
+
+The owner's "i'm okay with using UTC offsets" is taken as *both*, not
+*instead*: `tz` is an IANA name and `utc_offset_min` is plain integer minutes.
+Neither is sufficient alone. A zone name cannot express the repeated hour at a
+fall-back transition — 01:30 MDT and 01:30 MST are the same five integers, an
+hour apart. An offset alone loses which zone the writer meant. `tz` is now
+written on EVERY row, reversing the original design's "blank means the event's
+zone": that looked free, but changing `event.timezone` afterwards moved every
+note silently while the zoned-EXIF photographs stayed put, with nothing on the
+row to reconstruct what was meant. Unfixable retroactively — the reason this
+shipped before real notes existed rather than after.
+
+**The version marker: per ROW, not per file.** The second quote settles it.
+These files merge by row-bind, so a row from someone's older copy lands among
+newer rows and must carry its own version; a file-level marker would claim one
+version for rows that came from several files. `tz` already set that
+precedent. The CHECK shipped with the column, not after it: a marker older
+builds ignore buys nothing retroactively, and refusing a row from a newer
+build is the part that expires.
+
+### What the reviews found, and what was done
+
+- `people.csv` lost any column it did not understand — verified against a
+  roster carrying `pronouns`. Fixed FIRST, because a build without it deletes
+  the `schema` column itself on the next save.
+- Impossible dates were silently accepted and then rewrote themselves on the
+  next save: `year=26`→1926, `month=13`→next January, `day=32`→next month,
+  `day=30` in February→2 March, `hour=24`→tomorrow, `minute=60`→+1h, plus
+  non-integers. Now refused per row with a legible problem. A note placed
+  confidently in the wrong place is worse than a visible gap.
+- Deleting a note only removed it locally, so any other copy resurrected it on
+  merge. A `deleted` tombstone now stays in the file and wins over a live row.
+  Every deletion made before the column existed is unrecorded forever.
+- Nothing recorded when a note was TYPED, as opposed to when the thing
+  happened. `written`, epoch seconds, machine-written.
+- `José` written NFC did not match the same name written NFD, in both
+  directions. Normalised on write and on both sides of every name comparison.
+- Merging a saved `notes.csv` with a pristine blank-id copy grew 2 → 3 → 4 →
+  5 → 6 notes over five rounds. A blank-id row now adopts an id that already
+  exists for the same content, order-independently.
+- `mintNoteId` ended in a digit 26.9% of the time, and Excel's fill handle
+  increments a trailing number when a row is dragged. Forced to a letter.
+
+Migration is pinned to `tests/fixtures/csv-before-2026-07-30.ts`, a frozen
+byte-for-byte copy of both files as they were written before any of this —
+deliberately not regenerated, because a test that rebuilds its own input
+cannot catch a reader and a writer drifting together.
+
+93 new tests (550 → 643). Every change was verified by breaking the production
+line and confirming the relevant test failed before restoring it — 21
+mutations plus one more, all of which failed as required.

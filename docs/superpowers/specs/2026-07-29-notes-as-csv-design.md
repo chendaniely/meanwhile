@@ -66,6 +66,29 @@ n_p1a7m4,2026,7,25,15,53,,,Priya;Sam,PXL_20260725_215331309.jpg,Dan,the buckle
 ,2026,7,26,3,0,PT3H40M,,Sam,,Dan;Priya,asleep in the car
 ```
 
+**Corrected, 2026-07-30 — five more columns, before real notes were
+committed.** Four reviews of this format ran on the eve of the owner putting
+one race's written record under version control, on the grounds that once
+real notes are committed every choice becomes a migration carried forever.
+The layout is now:
+
+```csv
+id,year,month,day,hour,minute,duration,tz,utc_offset_min,people,photo,author,text,written,deleted,schema
+n_k3f9x2,2026,7,25,15,45,,America/Denver,-360,Priya,,Dan,wrong turn on the ridge,1753500000,,1
+```
+
+| New column | Meaning |
+|---|---|
+| `utc_offset_min` | The UTC offset in force at that instant, in whole minutes (`-360`). Written by the site. |
+| `written` | Epoch seconds, when someone TYPED the note — a different fact from `at`. Machine-written, blank allowed. |
+| `deleted` | `1` for a note deleted on purpose. The row stays in the file. |
+| `schema` | The layout version of THIS ROW. Blank means "whatever the reader knows". Always the last column. |
+
+Every one is an integer or an IANA name, per the governing constraint below.
+The full reasoning — including why `schema` is per row rather than per file,
+and why a `tz`/`utc_offset_min` pair beats either alone — is in `CLAUDE.md`
+under "The format hardening, done BEFORE real notes were committed".
+
 | Column | Meaning |
 |---|---|
 | `id` | Opaque, stable, machine-written. **May be blank** — see below. |
@@ -137,6 +160,29 @@ crosses one.
 Keeping it also makes the notes file **self-contained**: times stay
 unambiguous when it is read without the manifest beside it.
 
+**Corrected, 2026-07-30 — BOTH, and `tz` is never blank.** Two things above
+turned out to be wrong.
+
+*"Blank is the normal case"* was a false economy. The row would indeed pick
+the event's zone up again on read — until `event.timezone` is changed, at
+which point every note silently MOVES while the zoned-EXIF photographs beside
+them stay exactly where they are, and nothing on the row records which zone
+was meant. That is unfixable after the fact, so `tz` is now written on every
+row.
+
+*"An offset ... is wrong on either side of a daylight-saving change"* is true
+of an offset stated once for a whole event, which is what this paragraph was
+arguing against. It is not true of an offset stated per row, which is what
+`utc_offset_min` is — and a per-row offset is the only thing that can express
+the repeated hour at a fall-back transition. `2026,11,1,1,30` in
+`America/Denver` is two instants an hour apart, and a zone name alone silently
+picks the earlier one every time.
+
+So both are carried. On read the offset determines the instant and the zone is
+for display and date math; a genuine disagreement between them is reported
+rather than resolved by guessing. The offset is **integer minutes**, not
+`-06:00`, for the same spreadsheet-safety reason as the timestamp itself.
+
 #### `text` is free input, and is treated as hostile
 
 The last column is whatever someone typed, which raises three separate
@@ -176,6 +222,17 @@ samsung-sm-f721w,Sam,,-PT4S
 device. `name` is what appears everywhere in the UI and what `notes*.csv`
 refers to. `role` is one of `runner`, `crew`, `friend`, `other`, or blank
 (`ROLES` in `schema.ts`). `clock_offset` is an ISO-8601 duration.
+
+**Corrected, 2026-07-30 — a `schema` column, and unknown columns are kept.**
+`people.csv` gained the same per-row `schema` version `notes*.csv` did, and —
+the fix that had to land first — it now preserves columns it does not
+understand, exactly as `notes*.csv` always has via `Note.extra`. A roster
+carrying `pronouns` lost it on every save; worse, a build without this would
+have deleted the `schema` column itself on the next save, erasing the very
+marker the version check depends on. They are held as `PeopleExtra` beside
+`Person[]` rather than on `Person`, because `schema.ts` is the one notion of
+what a person is and the manifest has no business carrying a spreadsheet's
+spare columns.
 
 **Corrected, people/notes alias join:** `PEOPLE_HEADERS` gained a fifth
 column, `also_known_as` — a `;`-separated list, same convention as
@@ -245,6 +302,16 @@ time. That is accepted, not an error:
 Any file matching `notes*.csv` is a notes file — `notes.csv`,
 `notes-priya.csv`, `notes_dan.csv` — which picks up the intended files without
 sweeping in an unrelated spreadsheet.
+
+**Corrected, 2026-07-30 — forgiving about SHAPE, strict about VALUE.** A
+number that cannot be a real date or time is now refused with a per-row
+problem rather than rolled over: `month` 13, `day` 32, `hour` 24, `minute` 60,
+a two-digit year, a fractional minute. Every one of those was silently
+accepted before, and every one then rewrote itself on the next save — so the
+file stopped saying what its author typed and nothing reported it. They are
+exactly what a drag-fill or a fat finger produces. A row from a `schema`
+version this build does not know is refused the same way. Reading legacy
+SHAPES, below, is unchanged.
 
 **Strict on write, forgiving on read.** The site writes plain integers. It
 accepts, because a file may have been written by hand or by an older version:
