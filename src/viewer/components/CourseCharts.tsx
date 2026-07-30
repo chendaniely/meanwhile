@@ -75,7 +75,13 @@ interface Series {
   needsTime?: boolean;
 }
 
-/** Slots 1-4 of the validated lane palette. */
+/**
+ * Elevation uses the neutral overflow gray (`OVERFLOW_COLOR`), which isn't
+ * part of the lane palette at all — it's not a person's lane. Heart rate,
+ * cadence, and pace reuse lane-palette slots 8, 3, and 1 (red, aqua, blue),
+ * picked to read as distinct from each other on one chart, not in slot
+ * order.
+ */
 const SERIES: Series[] = [
   {
     id: 'ele',

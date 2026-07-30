@@ -122,9 +122,10 @@ export function CourseMap({
      * No single colour fixes that: white vanishes on the pale topo map, dark
      * vanishes on dark satellite imagery. A casing does, because the line's
      * silhouette then carries both a light and a dark edge, and one of them
-     * always contrasts. With a #171512 casing, the lightest brand-consistent
-     * orange that clears 3:1 everywhere on both basemaps is #F7A37A — brand
-     * orange mixed 40% toward white. Measured: 0.0% of either tile below 3:1.
+     * always contrasts. With a #171512 casing, the most saturated
+     * brand-consistent orange that clears 3:1 everywhere on both basemaps is
+     * #F7A37A — brand orange mixed 40% toward white. Measured: 0.0% of either
+     * tile below 3:1.
      *
      * If the colour is changed, re-measure. Do not eyeball it.
      */

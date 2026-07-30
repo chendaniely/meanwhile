@@ -1240,11 +1240,6 @@ export function App() {
           )}
 
           {/*
-            * The composer floats over the feed, because the feed has no bottom
-            * worth scrolling to. In the lanes it sits inline just under the
-            * track, where the cursor you just set is still on screen.
-            */}
-          {/*
             * Present in EVERY view, because writing a note is a thing you do
             * while reading, not a feature of one page. It was in the feed and
             * the course but inline under the lanes, which meant scrolling to

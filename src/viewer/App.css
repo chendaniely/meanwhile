@@ -14,7 +14,7 @@
  * passed the modal. Anything that floats picks a name from here.
  */
 :root {
-  --mw-z-content: 2;      /* marks and bands inside a view   */
+  --mw-z-content: 2;      /* small overlays above ordinary content: the person-picker dropdown, the feed's sticky day header */
   --mw-z-rail: 20;        /* the sticky course rail          */
   --mw-z-header: 40;      /* the sticky top bar              */
   --mw-z-float: 1200;     /* the note dock — must beat Leaflet's 1000 */
@@ -2019,7 +2019,8 @@ button.report__tag--on {
 }
 
 /* ---------------------------------------------------------------------------
-   The composer, shared by the dock and the inline placement under the lanes.
+   The composer inside the note dock. The dock renders once and is shared by
+   every view — there is no separate inline placement any more.
    --------------------------------------------------------------------------- */
 
 .compose {
