@@ -19,12 +19,24 @@
   --mw-z-header: 40;      /* the sticky top bar              */
   --mw-z-float: 1200;     /* the note dock — must beat Leaflet's 1000 */
   --mw-z-modal: 2000;     /* the lightbox, above everything  */
+
+  /* .app__header's rendered height: its own top+bottom padding and bottom
+     border, plus its tallest child (.button — a line of body text plus the
+     button's own padding and border). Derived from the same tokens those
+     rules use, so it tracks them instead of drifting the way a second,
+     independently-guessed number would. .app__header below asserts this as
+     a min-height and .rail reads it to sit just under the header. */
+  --mw-header-h: calc(
+    2 * var(--mw-space-3) + 1px +
+    (var(--mw-text-base) * var(--mw-line-height) + 2 * var(--mw-space-2) + 2px)
+  );
 }
 
 .app__header {
   position: sticky;
   top: 0;
   z-index: var(--mw-z-header);
+  min-height: var(--mw-header-h);
   padding: var(--mw-space-3) var(--mw-space-6);
   border-bottom: 1px solid var(--mw-border);
   display: flex;
@@ -40,11 +52,11 @@
   flex: 1 1 12rem;
   min-width: 0;
   font: inherit;
-  font-size: var(--mw-text-md);
+  font-size: var(--mw-text-base);
   color: var(--mw-fg);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: var(--mw-radius-sm);
+  border-radius: var(--mw-radius);
   padding: var(--mw-space-1) var(--mw-space-2);
 }
 
@@ -146,8 +158,10 @@
 .button--primary {
   background: var(--mw-accent);
   border-color: var(--mw-accent);
-  /* Near-black on orange, not white: orange is a light accent and white on it
-     is under 2:1. */
+  /* Near-black on orange, not white: orange is a light accent, and even the
+     brand's warm white (#f8f6f2) only reaches 2.92:1 on it — pure #fff
+     reaches 3.15:1, still short of the 4.5:1 AA floor. Near-black
+     (--brand-near-black) is 5.51:1. */
   color: var(--brand-near-black);
   font-weight: 700;
 }
@@ -767,7 +781,7 @@
 
 .tile__undecodable-note {
   font-size: var(--mw-text-xs);
-  color: var(--mw-fg-faint);
+  color: var(--mw-fg-muted);
   line-height: 1.35;
 }
 
@@ -811,12 +825,14 @@
    lightbox was open. Top-left, clear of the duration badge and play glyph,
    which both sit bottom/centre.
 
-   `pointer-events: none` is load-bearing, not decoration: this badge sits on
-   top of `.tile__open`, which covers the whole tile, and without this a
-   click landing on the badge's own 22px circle would do nothing instead of
-   opening the lightbox like everywhere else on the tile. The hover text and
-   accessible name live on `.tile__open` itself now (see MediaTile.tsx), so
-   nothing is lost by making this element inert. */
+   `.tile__open` is rendered LAST in MediaTile.tsx and covers the whole
+   tile, so it — not this badge — is what actually sits on top and wins
+   every click here. `pointer-events: none` marks this badge as decorative
+   rather than relying on that DOM order alone: it's the explicit guarantee
+   that this 22px circle can never become a dead zone that swallows a click
+   instead of opening the lightbox, even if the two are ever reordered. The
+   hover text and accessible name live on `.tile__open` itself now (see
+   MediaTile.tsx), so nothing is lost by making this element inert. */
 .tile__note-glyph {
   position: absolute;
   top: var(--mw-space-2);
@@ -915,7 +931,7 @@
 }
 
 .lightbox__name {
-  color: var(--mw-fg-faint);
+  color: var(--mw-fg-muted);
   overflow-wrap: anywhere;
 }
 
@@ -1119,11 +1135,11 @@
 .unplaced__facts {
   margin: 0;
   font-size: var(--mw-text-xs);
-  color: var(--mw-fg-faint);
+  color: var(--mw-fg-muted);
 }
 
 .field__note {
-  color: var(--mw-fg-faint);
+  color: var(--mw-fg-muted);
   text-transform: none;
   letter-spacing: 0;
 }
@@ -1251,7 +1267,7 @@
 
 .lanes__gap {
   font-size: var(--mw-text-xs);
-  color: var(--mw-fg-faint);
+  color: var(--mw-fg-muted);
   line-height: 1.15;
   white-space: nowrap;
 }
@@ -1407,7 +1423,7 @@
    and dropping it would quietly delete the most interesting part. */
 .moment-strip__quiet {
   font-size: var(--mw-text-sm);
-  color: var(--mw-fg-faint);
+  color: var(--mw-fg-muted);
   font-style: italic;
   padding-top: var(--mw-space-1);
 }
@@ -1617,8 +1633,8 @@
 
 .rail {
   position: sticky;
-  /* Clears the sticky page header. */
-  top: var(--mw-space-2);
+  /* Sits below the sticky page header, not under it. */
+  top: calc(var(--mw-header-h) + var(--mw-space-2));
   z-index: var(--mw-z-rail);
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
@@ -1694,8 +1710,8 @@
   }
 }
 
-/* Renaming a device to a person, in place in the report. The callout beside
-   it tells the author to do this, so it has to be obviously editable. */
+/* Renaming a device to a person, in place in the report. The callout below
+   the list tells the author to do this, so it has to be obviously editable. */
 .report__rename {
   flex: 1;
   min-width: 0;
@@ -1703,7 +1719,7 @@
   color: var(--mw-fg);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: var(--mw-radius-sm);
+  border-radius: var(--mw-radius);
   padding: 2px var(--mw-space-1);
 }
 
@@ -1741,7 +1757,7 @@ button.report__tag--on {
   color: var(--mw-fg);
   background: transparent;
   border: 1px solid var(--mw-border);
-  border-radius: var(--mw-radius-sm);
+  border-radius: var(--mw-radius);
   padding: var(--mw-space-1) var(--mw-space-2);
 }
 
@@ -1772,7 +1788,7 @@ button.report__tag--on {
 }
 
 .notes__heading {
-  font-size: var(--mw-text-md);
+  font-size: var(--mw-text-base);
   margin: 0 0 var(--mw-space-1);
 }
 
@@ -1845,7 +1861,7 @@ button.report__tag--on {
   color: var(--mw-fg);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: var(--mw-radius-sm);
+  border-radius: var(--mw-radius);
   padding: 2px var(--mw-space-1);
 }
 
@@ -1859,7 +1875,7 @@ button.report__tag--on {
   border: none;
   cursor: pointer;
   color: var(--mw-fg-muted);
-  font-size: var(--mw-text-md);
+  font-size: var(--mw-text-base);
   line-height: 1;
   padding: 0 var(--mw-space-1);
 }
@@ -1948,7 +1964,8 @@ button.report__tag--on {
 }
 
 /* ---------------------------------------------------------------------------
-   The note dock: a composer that floats over the feed.
+   The note dock: a composer that floats in the same corner across every
+   view — app chrome, not a feature of the feed alone (see App.tsx).
    --------------------------------------------------------------------------- */
 
 .dock {
@@ -2010,7 +2027,7 @@ button.report__tag--on {
   border: none;
   cursor: pointer;
   color: var(--mw-fg-muted);
-  font-size: var(--mw-text-md);
+  font-size: var(--mw-text-base);
   line-height: 1;
 }
 
@@ -2036,7 +2053,7 @@ button.report__tag--on {
   color: var(--mw-fg);
   background: var(--mw-bg);
   border: 1px solid var(--mw-border);
-  border-radius: var(--mw-radius-md);
+  border-radius: var(--mw-radius-lg);
   padding: var(--mw-space-2);
   resize: vertical;
 }
@@ -2067,7 +2084,7 @@ button.report__tag--on {
   color: var(--mw-fg);
   background: var(--mw-bg);
   border: 1px solid var(--mw-border);
-  border-radius: var(--mw-radius-sm);
+  border-radius: var(--mw-radius);
   padding: var(--mw-space-1) var(--mw-space-2);
   /* Chrome renders the date picker's icon dark-on-dark otherwise. */
   color-scheme: dark;
@@ -2077,11 +2094,6 @@ button.report__tag--on {
   font-size: var(--mw-text-xs);
   color: var(--mw-fg-muted);
   margin: 0;
-}
-
-/* The sticky course rail sits below the sticky bar, not under it. */
-.rail {
-  top: calc(var(--mw-space-2) + 3.5rem);
 }
 
 /* A time that will not parse yet. Shown while typing rather than only on
@@ -2101,7 +2113,7 @@ button.report__tag--on {
   max-width: min(28rem, calc(100vw - 2 * var(--mw-space-4)));
   padding: var(--mw-space-2) var(--mw-space-3);
   border: 1px solid var(--mw-accent);
-  border-radius: var(--mw-radius-md);
+  border-radius: var(--mw-radius-lg);
   background: var(--mw-surface);
   font-size: var(--mw-text-sm);
   box-shadow: 0 4px 20px rgb(0 0 0 / 50%);
@@ -2129,7 +2141,7 @@ button.report__tag--on {
   display: block;
   width: 100%;
   height: auto;
-  border-radius: var(--mw-radius-sm);
+  border-radius: var(--mw-radius);
 }
 
 .mapshot figcaption {

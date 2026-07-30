@@ -35,11 +35,11 @@
   /* ---- Foreground ---------------------------------------------------
    * Contrast ratios below are against --mw-bg (#171512), computed, not
    * guessed. WCAG AA body text needs 4.5:1. */
-  --mw-fg: var(--brand-warm-white); /* 17.2:1 — primary text */
-  --mw-fg-muted: var(--brand-stone); /* 8.5:1  — secondary text */
-  --mw-fg-faint: var(--brand-warm-gray); /* 4.1:1  — SEE WARNING BELOW */
+  --mw-fg: var(--brand-warm-white); /* 16.88:1 — primary text */
+  --mw-fg-muted: var(--brand-stone); /* 8.34:1 — secondary text */
+  --mw-fg-faint: var(--brand-warm-gray); /* 3.98:1 — SEE WARNING BELOW */
 
-  /* WARNING: --mw-fg-faint is 4.1:1 and does NOT meet AA for body text.
+  /* WARNING: --mw-fg-faint is 3.98:1 and does NOT meet AA for body text.
    * Use it only for borders, dividers, and decorative marks — never for
    * text a reader needs. Reach for --mw-fg-muted instead. */
 
@@ -47,16 +47,15 @@
    * The brand's orange passes AA on the dark ground unchanged. The brand's
    * blue does NOT (2.8:1), so links use a lightened instance at the same
    * hue (205 degrees). Same for danger. */
-  --mw-accent: var(--brand-orange); /* 5.9:1 — the cursor */
-  --mw-accent-dim: #a8451a; /* cursor trail, non-text only */
-  --mw-link: #4e8fbf; /* 5.3:1 — lightened brand-blue */
-  --mw-success: var(--brand-success); /* 5.7:1 */
-  --mw-danger: #d98ba3; /* 7.2:1 — lightened brand-danger */
+  --mw-accent: var(--brand-orange); /* 5.78:1 — the cursor */
+  --mw-link: #4e8fbf; /* 5.21:1 — lightened brand-blue */
+  --mw-danger: #d98ba3; /* 7.09:1 — lightened brand-danger */
   --mw-danger-bg: var(--brand-danger); /* fills and borders only */
 
   /* ---- Typography ---------------------------------------------------- */
   --mw-font: 'Atkinson Hyperlegible', system-ui, -apple-system, sans-serif;
   --mw-font-mono: 'Atkinson Hyperlegible Mono', ui-monospace, monospace;
+  --mw-text-lg: 1.25rem; /* prominent inline readouts, e.g. the rail's km stat */
   --mw-text-base: 1rem;
   --mw-line-height: 1.75;
   --mw-line-height-heading: 1.2;
@@ -71,6 +70,7 @@
   --mw-space-2: 0.5rem;
   --mw-space-3: 0.75rem;
   --mw-space-4: 1rem;
+  --mw-space-5: 1.25rem;
   --mw-space-6: 1.5rem;
   --mw-space-8: 2rem;
 
