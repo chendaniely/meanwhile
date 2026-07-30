@@ -1195,12 +1195,12 @@ export function App() {
             )}
             {stage.noteProblems.length > 0 && (
               <p className="callout callout--warn">
-                {stage.noteProblems.length === 1 ? 'A row' : `${stage.noteProblems.length} rows`} in
-                a notes*.csv or people.csv file needed a closer look rather than being
-                guessed at &mdash; some were skipped entirely (an unreadable date, a
-                missing name), others were kept but left with something unresolved
-                (like a photo filename that matches more than one file); which file is
-                named below: {stage.noteProblems.join('; ')}
+                {stage.noteProblems.length === 1 ? 'One thing' : `${stage.noteProblems.length} things`}{' '}
+                needed a closer look rather than being guessed at &mdash; a row that
+                could not be read, a note another file deleted, a second manifest or
+                people.csv that was ignored, or something wrong with the track. Each
+                one below names its own file and says what happened:{' '}
+                {stage.noteProblems.join('; ')}
               </p>
             )}
             {stage.importedFrom && (

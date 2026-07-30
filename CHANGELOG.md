@@ -8,6 +8,59 @@ already built, and the reasons are worth keeping.
 
 ## Unreleased
 
+### Security: a file from someone else was the way in
+
+> "can you dispatch some secutiry and privacy independent subagents to review?"
+
+Four independent reviews, run before any real notes existed. The trust
+boundary here is not a network attacker — there is no server and no account —
+it is that **people email each other CSV files**. Everything below was
+reproduced by execution, not theorised.
+
+- **A person's name could run script.** The map labelled each photo dot by
+  handing Leaflet a string, which it assigns with `innerHTML` — so a name of
+  `<img src=x onerror=…>` executed, in a page holding handles to your entire
+  photo folder. Names now go in as text nodes.
+- **One row in someone's file could silently delete your note.** Note ids
+  aren't secret, so a `deleted=1` row naming yours erased it with no warning,
+  and the next Save wrote the tombstone over the text. Deletion still
+  propagates — that is the point of it — but it now says which file deleted
+  what, and quotes the note it removed.
+- **A `manifest.json` in any subfolder replaced your event.** A contributor
+  zipping their own working folder in could swap the title, timezone, crop,
+  course and roster, including a clock offset that moves every photograph.
+  The one closest to the top now wins, and anything ignored is named.
+- **A spreadsheet formula could hide in an unknown column.** The guard missed
+  a leading tab or carriage return, which Excel strips before evaluating.
+- **A copied row cloned itself on every merge** — 2, 3, 4, 5, 6 notes over
+  five rounds. Now stable at 2.
+- **A malformed track could freeze the tab.** An unclosed tag made the parser
+  quadratic: 3 seconds on a 100KB file, minutes on a megabyte. Now 4ms.
+- Coordinates off the planet are refused rather than plotted.
+
+Verified clean, so it is on record: **nothing sensitive has ever been in
+either repository** — every object, reachable and unreachable, in both — and
+no photograph, its EXIF, its GPS or its bytes can reach the network, because
+no network call exists in the kernel at all.
+
+### Analytics learns which view is open, and nothing else
+
+> "i don't think i need view-usage. maybe the only tab info that is useful is
+> which view are people looking at, but i don't need to track time/people
+> information at all."
+
+The address bar carries a timestamp read from a photograph and the names of
+whoever is shown — because a link to a moment is meant to be shareable. That
+was reaching Google. The published page now sends one event naming which of
+the three views is open, and a page view whose address is rebuilt without the
+fragment. `make dev` still sends nothing at all.
+
+One part cannot be fixed in code and is recorded in `TODO.md`: GA4's
+"enhanced measurement" fires its own page view on every history change,
+reading the full address — and the app rewrites history on every cursor
+move. That is a switch in the Google Analytics console.
+
+
 ### Analytics learns the view, and nothing else
 
 > "i don't think i need view-usage. maybe the only tab info that is useful is

@@ -1261,3 +1261,49 @@ CLAUDE.md's "Verified external constraints" table and as an action item in
 6 new tests (643 → 649 before the concurrent CourseMap tooltip fix landed on
 top), each verified by breaking the production code and confirming the
 corresponding test failed before restoring it.
+
+
+---
+
+> can you dispatch some secutiry and privacy independent subagents to review?
+
+Four reviews, on four trust boundaries: what leaves the machine, the running
+application, credentials and repo history, and files arriving from other
+people. Splitting them that way mattered — each found things the others could
+not have, and the split was chosen so they would not converge on the same easy
+observations.
+
+**The finding that justified the exercise came from asking the right question
+rather than from scanning for the usual list.** This app has no server and no
+accounts, so the classic web threat model is nearly empty. What it does have
+is a collaboration model where people email each other CSV files. Asked "what
+does a hostile or careless file do?", the answers were immediate: a person's
+name reached Leaflet as HTML and executed; one row could silently delete
+somebody else's note and the next save would overwrite the text; a
+`manifest.json` in any subfolder replaced the whole event, which is likelier
+by accident than by malice.
+
+The XSS is worth recording precisely, because the reasoning to prevent it was
+already in the file. Fifteen lines below the vulnerable call, the thumbnail
+tooltip is built as DOM nodes under a comment saying Leaflet "would happily
+render markup in it — a filename is not a place to trust." Correct, and simply
+not applied to the tooltip above it. Knowing a rule is not the same as having
+applied it everywhere it holds, which is an argument for review by someone who
+did not write the code.
+
+Two things the reviews corrected in work done earlier the same day. The
+analytics fix being built at that moment was **insufficient** and would have
+shipped believing otherwise: `send_page_view: false` does not suppress GA4's
+enhanced measurement, which fires on every history change and re-reads the
+full address — and the app rewrites history on every cursor move. And the
+GitHub sync design's crew tier **cannot be built as specified**, because
+fine-grained tokens cannot be minted by outside collaborators; the fallback
+would be a classic token granting access to every private repo they own,
+strictly worse than the shared token the design rejected. That was a
+confident design decision resting on an unchecked assumption about GitHub,
+found before any code existed.
+
+Also on record, verified rather than assumed: nothing sensitive has ever been
+in either repository — every object, reachable and unreachable, in both — and
+no photograph, its EXIF, its GPS or its bytes can reach the network, because
+no network call exists in the kernel at all.

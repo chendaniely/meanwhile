@@ -1347,6 +1347,47 @@ and now, more specifically, the spreadsheet-editable roster file that stands
 in for hand-editing the manifest's JSON. **EXIF write-back is deferred, not
 rejected** — worth re-asking, since it has real archival appeal.
 
+### A file from someone else is the threat model *(security review, 2026-07-30)*
+
+Four independent security reviews ran before real notes existed. The one that
+mattered found its findings by asking a single question: **the collaboration
+model is that people email each other files, so what does a hostile or merely
+careless file do?** That is the trust boundary — not a network attacker, who
+has nothing to attack, since there is no server and no account.
+
+What it found, all reproduced by execution:
+
+- **A person's name reached Leaflet as HTML.** `bindTooltip(name)` with a
+  string assigns `innerHTML`, so a `people.csv` name of `<img src=x
+  onerror=…>` executed — in a page holding File System Access handles to
+  somebody's whole photo folder. Names now go in as DOM nodes. The same file
+  already did this correctly for the thumbnail tooltip; the reasoning existed
+  and had not been applied to the first one.
+- **One row could silently destroy someone else's note.** Ids are not secret —
+  everyone holding `notes.csv` has them — so a `deleted=1` row naming another
+  person's id erased it with `problems: []`, and the next Save wrote the
+  tombstone over the original text. Deletion must still propagate; that was
+  itself a bug fixed earlier. What was wrong was the silence.
+- **A `manifest.json` in ANY subfolder replaced the event.** Last file in path
+  order won, so a contributor zipping their working folder in could swap the
+  title, timezone, crop, course and roster — including a `clockOffset` that
+  moves every photograph. Shallowest path now wins, and every ignored
+  candidate is named.
+
+**The rule this leaves: a merge that discards or overrides anything must say
+so.** An id-keyed merge with no conflict resolution is the right design — it
+is what lets several people's files combine with no locking and no server —
+but it is only safe while every silent outcome is made loud. `noteProblems`
+is that channel, and it now carries tombstone removals, ignored manifests and
+rosters, and track-file trouble as well as unreadable rows.
+
+Two related hardenings, same reasoning: the formula guard now looks past
+leading whitespace (TAB and CR are stripped by Excel before it evaluates, so
+`\t=cmd|…` was executing from an unknown column that round-tripped
+unguarded), and a re-minted note id is derived from content rather than
+random, so a duplicated row converges instead of cloning on every merge —
+measured 2→3→4→5→6 before, 2 every round after.
+
 ### A rename is TOTAL, and committed — never per-keystroke *(format review)*
 
 The first version of the alias join above wired the rename input's `onChange`
