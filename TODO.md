@@ -74,12 +74,12 @@ file; see `TODO-completed.md` for why.
 
 ## Deploy and process (2026-07-30)
 
-- **Enable GitHub Pages** — *the owner's click, not Claude's.* Settings →
-  Pages → Source → **GitHub Actions**. Everything else is done: `main` is
-  pushed, `v0.2.0` is tagged, and the workflow's build job passes on GitHub's
-  runners (install, typecheck, 504 tests, count guard, build). The deploy step
-  fails on exactly one thing and names it: Pages is not enabled, so
-  `actions/deploy-pages` 404s. Re-run the workflow after flipping it.
+- ~~**Enable GitHub Pages**~~ **Done 2026-07-30** *(the owner's click, not
+  Claude's).* Settings → Pages → Source → **GitHub Actions** is flipped: the
+  `Pages` workflow run against `f904fff` completed and deployed
+  successfully, `gh api repos/chendaniely/meanwhile/pages` reports
+  `build_type: workflow`, and https://chendaniely.github.io/meanwhile/
+  returns HTTP 200. The site is live.
 - **Restore commit signing, if wanted.** The original root commit was
   GPG-signed; `git filter-repo` strips signatures, so the rewritten history
   and everything since is unsigned.

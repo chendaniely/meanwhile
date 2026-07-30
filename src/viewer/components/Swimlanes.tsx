@@ -314,8 +314,7 @@ export function Swimlanes({
         // clicked PIXEL, which is only approximately the note's instant —
         // doing both would fire `onCursor` twice with two different values.
         onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          event.stopPropagation();
+        onClick={() => {
           setScrub(placedNote.instant);
           onCursor(placedNote.instant);
           // Same toggle the track itself does on click: the gesture that

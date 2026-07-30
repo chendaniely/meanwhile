@@ -235,7 +235,11 @@ A pure kernel module with no dependencies — GPX is just
    raster tiles from OpenTopoMap, Esri, OSM, and optionally Thunderforest
    unconditionally on every render — a bare polyline of a mountain race shows
    no ridges, valleys or switchbacks. See the "no map library" rule's
-   reversal in `CLAUDE.md`.
+   reversal in `CLAUDE.md`. **"Zero external requests" is doubly stale**: the
+   deployed build also loads Google Analytics (`f904fff`), build-only via
+   `apply: 'build'` in `vite.config.ts`, so `make dev` still loads none. See
+   CLAUDE.md's aesthetic section for the current, authoritative enumeration
+   of every external request the page makes.
 4. **Automatic clock alignment.** The watch is GPS-synced, so the track is
    authoritative time. For any photo carrying GPS, locate that point on the
    track, read the track's time there, and the difference *is* that device's
@@ -535,4 +539,9 @@ requests. **Corrected post-M10:** the course view's map tiles
 (OpenTopoMap, Esri/ArcGIS, OSM, and optionally Thunderforest) are external
 and load unconditionally on every render — see the "no map library" rule's
 reversal in `CLAUDE.md`. The optional Strava embed iframe is external too,
-though it is click-to-load.
+though it is click-to-load. **Corrected again (`f904fff`):** the deployed
+site also loads Google Analytics — `googleAnalytics()` in `vite.config.ts` is
+`apply: 'build'`, so `make dev` loads none of it. That makes three external
+requests in total: map tiles, Google Analytics (deployed build only), and the
+click-to-load Strava embed. See CLAUDE.md's aesthetic section for the current
+list — keep that one, not this one, up to date if it changes again.

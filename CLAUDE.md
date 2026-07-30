@@ -45,9 +45,11 @@ simply not yet written:
   waited on a *timed* track, because the first export was a route export with
   no timestamps to align against; the owner supplied a real activity export on
   2026-07-29 and it parses. No estimator has been written yet.
-- **Turning on GitHub Pages** — the workflow is committed and the repo is to
-  be public; flipping *Settings → Pages → Source → GitHub Actions* is the
-  owner's action, not Claude's.
+- ~~**Turning on GitHub Pages**~~ **Done.** *Settings → Pages → Source →
+  GitHub Actions* is flipped, the `Pages` workflow deploys successfully, and
+  the site is live at https://chendaniely.github.io/meanwhile/ (verified:
+  `gh api repos/chendaniely/meanwhile/pages` reports `build_type: workflow`;
+  the URL returns HTTP 200).
 - **The license** — deferred with a constraint. See the decision record.
 - **Aid stations**, and the rest of `TODO.md`.
 
@@ -1294,10 +1296,16 @@ types from the plan rather than from context they do not have.
 > sub agents each doing multiple loop passes until everythign is resolved"
 
 **One careful pass is not enough, and that is measured rather than assumed.**
-Eight passes over this repo found 22, 39, 33, 24, 21, 21, 20 and 3
-discrepancies — and *every* pass found errors introduced by the previous
-pass's own fixes, including a false claim written by the pass that was
-correcting false claims. Keep looping until a pass returns clean.
+Eight passes over this repo found discrepancies every time. The first six
+found roughly 145 — see PROMPTS.md and CHANGELOG.md, written immediately
+after that session, which is the more reliable count; an earlier version of
+this line gave an exact-looking six-way breakdown that summed to 160 and was
+never reconciled against that record. A seventh and eighth pass on
+2026-07-30 found roughly 20 more and exactly 3 more (the eighth pass's own
+count: four findings, one already fixed, three real). **Every** pass found
+errors introduced by the previous pass's own fixes, including a false claim
+written by the pass that was correcting false claims. Keep looping until a
+pass returns clean.
 
 How to run one:
 

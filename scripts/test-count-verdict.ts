@@ -8,11 +8,16 @@
 // types (the verdict shape), and `scripts/inspect-media.ts` is already the
 // precedent for a TypeScript file under `scripts/` that Node runs directly
 // via its native type-stripping — no build step. `.mjs` was considered for
-// symmetry with check-test-count.mjs, but a same-named `.d.mts` companion
-// declaration file (needed so the `.ts` test file that imports this can
-// type-check the import) would be silently excluded by `.gitignore`'s
-// blanket `*.mts`/`*.MTS` (there for AVCHD camera video, not source code),
-// so it would never make it into git.
+// symmetry with check-test-count.mjs, but would need a same-named `.d.mts`
+// companion declaration file so the `.ts` test file that imports this can
+// type-check the import. `.gitignore` has a blanket `*.mts`/`*.MTS` (there
+// for AVCHD camera video, not source code); `383dd9e` added path negations
+// (`!/scripts/**/*.mts` and three siblings) that rescue TypeScript's own
+// `.mts` files under `src/`, `scripts/`, `tests/`, and the repo root, so a
+// `.d.mts` here would in fact reach git today (verified: `git check-ignore
+// -q --no-index scripts/test-count-verdict.d.mts` exits 1, not ignored).
+// The choice stands on its other grounds regardless — one file, one runtime,
+// no build step — this just isn't one of them anymore.
 //
 // Same constraint as inspect-media.ts: no TS parameter properties, no
 // `enum` — Node's type-stripping can erase type annotations but not those,

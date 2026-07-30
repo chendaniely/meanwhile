@@ -188,20 +188,53 @@ describe('Swimlanes: notes appear in the lanes', () => {
     expect(container.querySelector('.lanes__notes-row')).toBeNull();
   });
 
-  it('clicking a note mark moves the shared cursor to the note’s own time', () => {
+  it('clicking a note mark moves the shared cursor to the note’s own time, not the pixel clicked', () => {
     const onCursor = vi.fn();
     // Deliberately NOT exactly on state.cursor (T0), so a click that used
     // the CLICKED PIXEL instead of the note's own `instant` would be caught.
     const note = makeNote({ id: 'n-click', people: ['Sam'], at: new Date(T0 + 3600_000).toISOString() });
     mount({ notes: [place(note)], onCursor });
 
+    const track = container.querySelector('.lanes__track');
+    if (!(track instanceof HTMLElement)) throw new Error('track not found');
+    // jsdom does no layout, so getBoundingClientRect() is all zeros by
+    // default and the track's own instantAt() short-circuits to null
+    // regardless of clientX (box.width === 0) — which would let this test
+    // pass even with the note mark's pointerdown guard deleted, since a
+    // pixel-derived `null` is trivially distinct from a real instant only by
+    // accident. Give the track a real width so a pixel-derived time is a
+    // genuine, different, non-null instant from the note's own.
+    vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      right: 1000,
+      width: 1000,
+      top: 0,
+      bottom: 100,
+      height: 100,
+      x: 0,
+      y: 0,
+      toJSON() {
+        return {};
+      },
+    } as DOMRect);
+
     const button = container.querySelector('.lanes__note');
     if (!(button instanceof HTMLButtonElement)) throw new Error('note mark not found');
 
     act(() => {
+      // The real gesture is pointerdown then click, and it is the
+      // POINTERDOWN the note mark must stop from reaching the track
+      // underneath — clientX: 0 sits at the track's left edge, which its
+      // own instantAt() would resolve to range.from (T0 minus six hours),
+      // clearly different from the note's own instant (T0 plus one hour).
+      button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 0 }));
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
+    // Exactly one call, and with the note's own instant: if the pointerdown
+    // reached the track, the track's own onPointerDown would have called
+    // onCursor a second time first, with the wrong, pixel-derived value.
+    expect(onCursor).toHaveBeenCalledTimes(1);
     expect(onCursor).toHaveBeenCalledWith(Date.parse(note.at));
   });
 });
