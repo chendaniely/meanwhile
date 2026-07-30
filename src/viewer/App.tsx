@@ -161,9 +161,10 @@ export function App() {
   /**
    * The actual File handles, kept for as long as the folder is loaded.
    *
-   * Ingest only reads a few kilobytes of metadata per file; showing the
-   * pictures needs the files themselves. Nothing is copied — a File is a
-   * handle to bytes on disk, and they are only read when a tile asks.
+   * Ingest reads only a metadata-sized head of each file (~115KB on average,
+   * measured); showing the pictures needs the files themselves. Nothing is
+   * copied — a File is a handle to bytes on disk, and they are only read when
+   * a tile asks.
    */
   const [files, setFiles] = useState<ReadonlyMap<string, File> | null>(null);
 

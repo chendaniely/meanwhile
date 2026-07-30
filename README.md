@@ -381,8 +381,9 @@ hands over a **list of handles** — the equivalent of a shelf reference rather
 than the book. Nothing is copied, nothing moves, and nothing touches the
 network.
 
-Then it reads only the few kilobytes it needs from each one, because
-timestamps live in known, predictable places:
+Then it reads only the small head of each file it needs — about 115KB per
+file on average, 1.3% of a real 2GB folder — because timestamps live in
+known, predictable places:
 
 - **In a photo**, the date sits in a block right at the front of the file. By
   the format's own rules that block can't be bigger than about 64KB, however

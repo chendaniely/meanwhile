@@ -6,8 +6,10 @@
  * identical results by swapping only this file.
  *
  * Nothing here reads a whole file. A 4GB clip would blow the tab up, and it
- * is unnecessary — metadata lives in a few kilobytes, the trick is knowing
- * where.
+ * is unnecessary — metadata sits in a small, findable head, and the trick is
+ * knowing where. In practice that is a 128KB head for JPEG, 256KB plus the
+ * exact EXIF extent for HEIC, and for video a box-header walk to `moov`:
+ * ~115KB per file on average, 1.3% of a real 2GB folder.
  */
 
 import { Reader } from '../../core/bytes.ts';
