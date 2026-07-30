@@ -368,8 +368,11 @@ neither ever hands a live one to a component or holds it past that call.
   until the budget bites, because scrolling back up should not re-decode.
 - **Originals are revoked the moment the last holder lets go.** One
   multi-gigabyte clip pinned in memory is a different order of problem.
-- **Nothing is ever handed to an `<img>` at full size.** A 12MP photo decodes
-  to ~48MB of RGBA regardless of file size; fifty is 2.4GB.
+- **No TILE is ever handed an `<img>` at full size.** A 12MP photo decodes
+  to ~48MB of RGBA regardless of file size; fifty is 2.4GB. The lightbox is
+  the deliberate exception — it shows ONE photograph, and handing it the
+  original is why full-size opens feel instant (see "Why display is fast").
+  The rule is about the many, not the one.
   `createImageBitmap(file, { resizeWidth })` resizes DURING decode on a worker
   thread, so the full-size buffer never exists on the main thread. Call
   `.close()` right after drawing — GC is far too late at 2,000 files.
@@ -491,7 +494,9 @@ fifteen orphaned CSS selectors left behind by refactors.
 
 ### Stacking is a named scale, not a number that worked *(consistency pass)*
 
-`--mw-z-content` / `-rail` / `-header` / `-float` / `-modal` in `tokens`, and
+`--mw-z-content` / `-rail` / `-header` / `-float` / `-modal`, defined at the
+top of `src/viewer/App.css` (not `tokens.css`, despite the rest of the scale
+living there), and
 anything that floats picks from them. Ad-hoc values are how the note dock —
 raised to 1200 to clear Leaflet's 1000 — ended up floating **over the
 lightbox**, which was on 100. The dock is also hidden outright while the

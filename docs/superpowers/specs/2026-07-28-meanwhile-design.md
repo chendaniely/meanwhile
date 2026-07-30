@@ -287,7 +287,7 @@ goggles rather than four separate pages.
 **Cursor state lives in the URL** (`#t=2026-08-22T13:12Z&view=grid`), so any
 moment is a link you can text to someone. This falls out of the state design
 for free and is likely the feature people use most. **Corrected post-M10:**
-`grid` is not a valid `view` — `parseHash` accepts only `feed`, `lanes`, and
+`grid` is not a valid `view` — `fromHash` accepts only `feed`, `lanes`, and
 `course`, so this exact example URL does not work. A working link looks like
 `#t=2026-08-22T13:12Z&view=course`.
 

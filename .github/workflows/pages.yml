@@ -38,6 +38,11 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+      # CLAUDE.md quotes an exact test count, and it went stale four times in
+      # one session before this check existed. Running it here too means the
+      # number cannot drift on a branch that never ran `make check` locally.
+      - run: node scripts/check-test-count.mjs
+
       - run: npm run build
         env:
           # Optional. Absent, the map falls back to the keyless basemaps and
