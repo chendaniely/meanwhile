@@ -6,6 +6,73 @@ owner, and the record of who asked for what is part of the project rather than
 a footnote to it — several of the decisions below reversed something Claude had
 already built, and the reasons are worth keeping.
 
+## Unreleased
+
+### Notes and the people roster move out of the manifest
+
+> "i think it'll be better if notes were in a separate file. it'll be much
+> easier to either edit in the site, or offline in a spreadsheet program [...]
+> at this point i forgot what the manifest file is for, but i think most people
+> will care the most about the notes"
+
+Forgetting what the manifest was for was the diagnosis, not a lapse. Notes and
+photo captions now live in `notes*.csv`; names, roles and clock offsets live
+in `people.csv`. The manifest keeps everything derived — items, GPS,
+`timeSource` — and stops carrying the small, irreplaceable slice a person
+actually typed. A caption collapsed into a note whose `photo` column names the
+item: one file, one editor, one merge. Saving now downloads one zip of
+`notes.csv`, `people.csv` and `manifest.json`, built by a hand-rolled,
+store-only ZIP writer — no dependency. A photo with a note now shows a small
+chat glyph on its tile, which is the discoverability fix: a caption used to be
+invisible until the lightbox was open.
+
+### Safe from corruption in a spreadsheet
+
+> "i want to make sure the underlying data is safe from corruption"
+
+No format survives a spreadsheet except a plain integer — Excel rewrites
+`2026-07-25` to `7/25/26` and `15:45` to a day fraction the moment the file is
+saved. A note's timestamp is therefore five bare integers
+(`year,month,day,hour,minute`), which look like nothing a spreadsheet
+"corrects." A span is an ISO-8601 duration (`PT3H40M`) rather than an end
+timestamp or a bare number of minutes, so the unit travels with the value and
+a race crossing midnight needs no extra column. The composer still shows one
+time box — the split is a property of the file, not the UI. Every cell that
+could execute as a formula (`=`, `+`, `-`, `@`) is written with a guarding
+apostrophe, and the file is written UTF-8 with a byte-order mark so Excel on
+Windows does not mangle the apostrophes and emoji notes are full of.
+
+### Merging needs no version control
+
+> "i think it'll be okay if we end up making it look like 2 comments at the
+> same time. that's okay. when we visualize it it'll show up one after the
+> other."
+
+`id` is opaque and stable; the timestamp is ordinary data, not an identity —
+a spreadsheet reformats ISO dates on save, two people can write at the same
+second, and retiming a note would otherwise look like a delete plus an
+insert to anything trying to merge two files. So merging several people's
+`notes*.csv` files is **row-bind, dedupe by id, sort by time**: no locking, no
+conflict resolution, no merge UI. A blank `id` is minted on load; a duplicated
+`id` — the signature of a copied row — gets one side re-minted. Two people
+editing copies of the same note at once produce two notes at that instant,
+shown one after the other, exactly as asked for.
+
+### The composer writes exactly what the format defines
+
+> "we should make sure that in the UI the note button is also matching this
+> set of specs, so when it is used to create a note it is writing the corret
+> information to the correct file."
+
+> "i guess you can have multiple authors as well. i can imagine multiple
+> people writing down an experience all at the same time."
+
+`Whose` and the new `Written by` are both searchable multi-selects, backed by
+the same `people`/`author` columns and the same parsing rule. A "you are…"
+picker in the top bar — kept in the browser's local storage, never the
+manifest, since it describes the laptop rather than the event — pre-fills
+`Written by` on every new note without ever blocking one from being written.
+
 ## 0.1.0 — 2026-07-29 — first working viewer
 
 Point the site at a folder of photographs and look at the race. Nothing is

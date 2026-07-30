@@ -224,8 +224,9 @@ Run `make dev`, click **Open a folder**, and:
 5. **Click any photo or video** to see it full size; video plays there.
 6. **The address bar follows you.** View, cursor, crop, and hidden lanes all
    live in the URL, so any moment is a link you can send to someone.
-7. **Export manifest.json** saves the lot, including your crop and any names
-   you've corrected.
+7. **Click Save** to download a zip with everything editable: `notes.csv`,
+   `people.csv`, and `manifest.json` — your crop, corrected names, and every
+   note and caption.
 
 8. **Drop a GPX or TCX in the folder** and a **Course** view appears: the
    route on a real topographic map, with terrain shading, satellite and
@@ -250,7 +251,11 @@ Run `make dev`, click **Open a folder**, and:
    patch at 3am. Add it under the timeline and it appears in the feed in
    order, alongside the photographs. It can cover a stretch of time rather
    than a moment, and can belong to one person, which is what lets a note
-   explain a gap in their lane.
+   explain a gap in their lane. Every note &mdash; and every photo's caption
+   &mdash; is a row in a spreadsheet file called `notes.csv` that lives in the
+   folder with the photos, so anyone on the crew can add or fix one up outside
+   the site too. See [The notes file](#the-notes-file) below. A photo with a
+   caption shows a small speech-bubble on its tile.
 13. **Point at the course and write about it.** Hovering a photo's dot on the
    map shows the photo. And **clicking anywhere on the course** &mdash; on the
    map or on the elevation profile &mdash; opens the note box already set to
@@ -258,17 +263,68 @@ Run `make dev`, click **Open a folder**, and:
    out from the photographs either side if it does not. So a climb you
    remember but nobody photographed can still be written down. It says so
    rather than guessing when there is nothing to work from.
-14. **Your work comes back.** Export `manifest.json`, and next time drop that
-   file into the folder along with the photos — names, roles, captions, the
-   crop, and hand-placed times all return. Timestamps are always re-read from
-   the files themselves, so a stale copy can never override what the photo
-   actually says.
+14. **Your work comes back.** Click **Save**, unzip what you get, and drop
+   `notes.csv`, `people.csv`, and `manifest.json` into the folder along with
+   the photos — names, roles, notes, captions, the crop, and hand-placed times
+   all return. Timestamps are always re-read from the files themselves, so a
+   stale copy can never override what the photo actually says.
 
 There's also a report of how much to trust the times, an expandable list of
 any files that arrived without a timestamp (with who to ask for the
 originals), and `make inspect` for checking a folder from the terminal.
 
 Still missing: the moment grid as its own view, and publishing to the web.
+
+## The notes file
+
+Every note — and every photo's caption, which is really just a note pointed
+at a photo — lives in a file called **`notes.csv`**, right there in the
+folder next to the photos. It's a spreadsheet. Open it in Excel, Google
+Sheets, or Numbers, and you can read, add, or fix up any note in the event
+without touching the website at all.
+
+| Column | What goes there |
+|---|---|
+| `id` | Leave it blank on a new row — the site fills it in the next time you open the folder. |
+| `year`, `month`, `day`, `hour`, `minute` | When it happened, as plain numbers — `2026,7,25,15,45` for 3:45pm on 25 July 2026. Midnight is `0,0`. |
+| `duration` | How long it lasted, only if it's a span rather than an instant — `PT3H40M` for three hours forty minutes. Leave it blank for something that happened at one moment. |
+| `tz` | Only fill this in if the note happened in a different timezone than the event itself. Leave it blank otherwise. |
+| `people` | Who the note is about. Several names, separated by semicolons — `Priya;Sam`. |
+| `photo` | If this note is a caption, the filename of the photo it belongs to. Blank for a note with no photo. |
+| `author` | Who wrote it. Same rule as `people` — semicolons for more than one name. |
+| `text` | What happened. |
+
+**Why the date is five plain numbers instead of one date and one time.** Any
+format that *looks* like a date or a time gets silently rewritten the moment
+a spreadsheet saves it — Excel turns `2026-07-25` into `7/25/26`, and `15:45`
+into `3:45 PM` or a fraction like `0.65625`. Plain numbers like `7` and `45`
+don't look like a date to a spreadsheet, so nothing gets rewritten. It costs
+a little typing, but not much: you can drag-fill the year, month, and day
+down a column of rows in one go, then type in each row's own hour and
+minute — which is how most nights actually get logged, one date and many
+times. (On the site itself, the note box still shows one plain time field;
+the splitting only happens in the file.)
+
+**Several people can each keep their own file, and they merge.** Any file
+whose name starts with `notes` and ends in `.csv` counts — `notes.csv`,
+`notes-priya.csv`, `notes-sam.csv` all work side by side in the same folder.
+Drop in as many as you like; meanwhile reads all of them, puts every row in
+time order, and shows them together. Nobody has to merge anything by hand,
+and nobody can clobber anyone else's file by keeping their own. If you
+accidentally copy a row, meanwhile notices and gives the copy its own `id`
+rather than silently merging it into the original or losing it.
+
+**A photo with a note shows a small speech-bubble** on its tile, so you can
+tell which photos have something written about them without opening each one.
+
+**Getting your work back.** Click **Save** and you get a single zip file
+containing `notes.csv`, `people.csv` — the list of names, who's the runner,
+and any clock corrections, in the same spreadsheet-editable style — and
+`manifest.json`. Unzip it and drop all three into the folder with your
+photos. Next time you open that folder, every note, caption, name, and
+correction comes right back. Photo and video timestamps are always re-read
+from the files themselves, though, so a stale note file can never make a
+photo lie about when it was taken.
 
 ## Publishing it
 
@@ -491,6 +547,8 @@ Mac.
 ## Documentation
 
 - `docs/superpowers/specs/2026-07-28-meanwhile-design.md` — the full design
+- `docs/superpowers/specs/2026-07-29-notes-as-csv-design.md` — why notes and
+  people live in spreadsheet-editable CSV files instead of the manifest
 - `CLAUDE.md` — architecture rules, decision record, verified constraints
 - `PROMPTS.md` — verbatim log of the prompts that shaped this project
 - `TODO.md` — deliberately deferred ideas

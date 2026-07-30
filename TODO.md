@@ -265,3 +265,19 @@ and there is no way around that without a backend. The honest trade-offs:
   short-lived token instead of a long-lived PAT. More work; strictly safer.
 - Whichever is used, saving must still produce a downloadable zip, because a
   token is optional and the site has to work without one.
+
+## Full `YYYY,MM,DD,HH,MM` splitting, both ends of a span *(deferred, notes-as-CSV)*
+
+`notes*.csv` already splits a note's own start time into five plain integers
+(`year,month,day,hour,minute`) because that is the one shape a spreadsheet
+cannot silently reformat — see `CLAUDE.md`'s decision record for the full
+argument. The genuinely mangle-proof version of a *span* would split the END
+the same way too: ten integer columns per note instead of five plus a
+`duration`. **Considered and deferred** — ten columns was judged too high a
+price for what one ISO-8601 `duration` column (`PT3H40M`) already does
+cleanly, with none of the boundary cases an end timestamp would reintroduce
+(a duration doesn't care that a race crosses midnight or that 31 July
+crosses a month). Revisit only if `duration` itself turns out to get
+mangled by a spreadsheet in practice — nothing in testing so far suggests it
+does, and it is neither a number nor a date to Excel, which is exactly why
+it was chosen.

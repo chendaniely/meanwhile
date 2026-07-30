@@ -772,3 +772,117 @@ cursor that was still pinned; and fifteen orphaned CSS selectors left by
 earlier refactors.
 
 Stacking is now a named scale rather than numbers that happened to work.
+
+---
+
+> in larger events or events where people have the same device, is there a way
+> to see from a photo if it's different people using the same make+model of
+> phone?
+
+**Parked, not solved.** Nothing today reliably tells two identical phones
+apart — phones do not write `BodySerialNumber`, iPhone filename counters
+separate units well but Android's timestamp filenames do not, `Software`
+build strings occasionally help, and sensor-fingerprinting (PRNU) is real but
+out of scope. Recorded in `TODO.md` with what was actually researched. The
+actionable part is not detection but honesty: warn when two people might
+share a lane instead of silently merging them, then bulk reassign.
+
+---
+
+> i think it'll be better if notes were in a separate file. it'll be much
+> easier to either edit in the site, or offline in a spreadsheet program [...]
+> at this point i forgot what the manifest file is for, but i think most people
+> will care the most about the notes
+
+Forgetting what the manifest is for was the diagnosis, not a lapse.
+
+**DECISION — split the manifest by where its data comes from.** `items[]` is
+derived — thrown away and rebuilt from the files on every open, about 95% of
+the file by volume. Names, roles, clock offsets and notes are authored and
+irreplaceable if lost. The authored slice moves out into `notes*.csv` and
+`people.csv`; the manifest becomes a cache of what was read, with nothing left
+in it a person actually typed. A caption collapses into a note whose `photo`
+column names the item — one file, one editor, one merge, one thing to
+explain.
+
+Identity is an opaque, blank-allowed `id` rather than the datetime the owner
+first proposed — a spreadsheet reformats a date on save, two people can write
+at the same second, and retiming a note would read as a delete plus an insert.
+That is what makes merging need no version control at all: row-bind, dedupe by
+`id`, sort by time.
+
+> "i think it'll be okay if we end up making it look like 2 comments at the
+> same time. that's okay. when we visualize it it'll show up one after the
+> other."
+
+Two people editing copies of the same note at once is accepted, not an error —
+the merged, time-sorted list already shows it correctly.
+
+> "we can store a separate repo with the metadata and this app has an option
+> to point to a repo of metadata to populate"
+
+A natural follow-on, parked for its own spec: it depends on these file formats
+existing first. The constraint that will shape it — a static site can *read*
+from a repo but cannot write back to it, so saving still means downloading and
+committing yourself.
+
+---
+
+> we should make sure that in the UI the note button is also matching this set
+> of specs, so when it is used to create a note it is writing the corret
+> information to the correct file.
+
+Right — the note dock is the only way most people will ever create a note, so
+the field-to-column mapping is part of the format, not an implementation
+detail left to chance. `Whose` becomes a searchable multi-select, since
+`people` is plural now — the same control the timezone picker already uses,
+on the same grounds. And a caption written from the lightbox writes a row with
+`photo` set, instead of `items[].note`.
+
+> i guess you can have multiple authors as well. i can imagine multiple people
+> writing down an experience all at the same time.
+
+**DECISION — `author` becomes multi-valued too, the same shape as `people`.**
+Two columns, one control, one parsing rule, one sentence to explain, rather
+than one singular and one plural. This is also where "who is writing" gets
+settled: a "you are…" picker, defaulting to unset, that never blocks a note
+from being written — kept in the browser's local storage rather than the
+manifest, because it describes who is at this laptop, not the event, and
+would be wrong the moment the folder is handed to someone else.
+
+---
+
+> most likely it'll be the same date, but different times and the user might
+> just click drag/copy paste the date. while they are filling out times.
+
+Split date from time so the ergonomics work: drag `year`, `month` and `day`
+down a column of rows, then type each row's own hour and minute.
+
+> i want to make sure the underlying data is safe from corruption
+
+**DECISION — go further than a date/time split: five plain integers.**
+Splitting only made a spreadsheet's corruption *recoverable* — the column
+name says what a bare number means. Nothing about `25` or `45` looks like a
+date to Excel, so a note's timestamp (`year,month,day,hour,minute`) is never
+rewritten in the first place, and nothing has to be repaired. A span is an
+ISO-8601 duration (`PT3H40M`) rather than an end timestamp, because a
+33-hour race crossing midnight and 31 July crossing a month would otherwise
+need their own year/month/day — a duration has no boundary cases at all, and
+it is the same convention `clockOffset` already uses. The composer still
+shows one time box; the split is a property of the file, not the UI.
+
+---
+
+> i feel like we'd need a wizard screen at the start to handle how everythign
+> gets read into the site. separate files, zip files, location to local media
+> folders, and having metadata files in a git repo (potentially a Github PAT
+> that has only 1 repo write access so saves can happen directly into the
+> repo)
+
+Right, and the need is created by this very change: once metadata lives in
+several files that can arrive several ways, "point at a folder" stops being
+the whole story. Recorded in `TODO.md` with the five routes to support and
+the GitHub PAT trade-offs — a fine-grained, single-repo token is the right
+shape and needs no backend, but it is a bearer token sitting in browser
+storage; the device flow is the safer long-term answer, and saving must work
+with no token at all either way.

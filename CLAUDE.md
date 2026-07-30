@@ -1,26 +1,34 @@
 # CLAUDE.md — working rules and context for `meanwhile`
 
-## STATUS: M0-M8 and M10 done. The course view exists.
+## STATUS: M0-M11 done. Notes and people now live in CSV, not the manifest.
 
-As of 2026-07-29 you can point the site at a folder and at a GPX/TCX and look
-at the race. **286 tests pass** (`make check`).
+As of 2026-07-29 you can point the site at a folder — with photos, an
+optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
+the race. **399 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
 `metadata.ts`, `assemble.ts`, `palette.ts`, `window.ts`, `state.ts`,
-`course.ts`. Viewer: folder/file picking, ingest report, manifest export, the
-media pipeline, the two-handle time window with density histogram, the feed,
-the swimlanes with a moment strip, the lightbox, the unplaced tray, and the
-**course view** — Leaflet map with terrain basemaps, elevation/HR/cadence/pace
-charts, and a shared distance focus linking the two. Plus
-`scripts/inspect-media.ts` (`make inspect DIR=...`).
+`course.ts`, `csv.ts`, `notes.ts`, `people-csv.ts`. Viewer: folder/file
+picking, ingest report, the media pipeline, the two-handle time window with
+density histogram, the feed, the swimlanes with a moment strip, the
+lightbox, the unplaced tray, and the **course view** — Leaflet map with
+terrain basemaps, elevation/HR/cadence/pace charts, and a shared distance
+focus linking the two. Plus `scripts/inspect-media.ts` (`make inspect
+DIR=...`).
 
-Also built: in-viewer notes and captions, people renaming and the runner role,
-the manifest round-trip, the note dock, and the Strava link/embed fallback.
-The Pages workflow is committed at `.github/workflows/pages.yml`.
+Also built: in-viewer notes and captions, people renaming and the runner
+role, and the Strava link/embed fallback. The Pages workflow is committed at
+`.github/workflows/pages.yml`. Notes, photo captions, and the people roster
+now read from and write to `notes*.csv` and `people.csv` rather than the
+manifest — several people's files merge by row-binding, every file is
+editable by hand in a spreadsheet, and **Save** downloads one zip of
+`notes.csv`, `people.csv`, and `manifest.json` (a store-only ZIP writer,
+`src/viewer/media/zip.ts`, no dependency).
 
 **Not built:** automatic clock alignment (blocked — needs a timed track, see
-below), aid stations, and everything else in `TODO.md`.
+below), reading a saved zip back in (only writing one exists — see
+`TODO.md`), aid stations, and everything else in `TODO.md`.
 
 **Do not describe anything as implemented unless it is in the "Built" list.**
 Check before you cite.
@@ -819,6 +827,131 @@ Notes are carried across a re-ingest **wholesale**, not merged per item, since
 they belong to no file. `existingNotes` in `ingest.ts` exists for exactly
 that; without it a re-read of the folder silently dropped every one.
 
+**The shape described above is now the legacy one.** *(notes-as-csv)* Live
+notes are `core/notes.ts`'s `Note` — `people: string[]` and `author:
+string[]` instead of a single `person`, and a `duration` instead of `until`
+— read from and written to `notes*.csv`, not `Manifest.notes`. The validator
+still accepts `Manifest.notes` and `items[].note` so an old manifest keeps
+loading, and `migrateLegacyNotes()` in `ingest.ts` converts them into the new
+shape at ingest time; the writer never emits either field again
+(`manifestForSave()`, see below). Everything else on this page still holds:
+notes are still first class, the cursor is still the default time for a new
+one, and `people` still exists to explain a gap in someone's lane. See the
+three sections below for what changed and why.
+
+### `notes*.csv`: the timestamp is five integers, not one string *(notes-as-csv)*
+
+> "i want to make sure the underlying data is safe from corruption"
+
+> "most likely it'll be the same date, but different times and the user might
+> just click drag/copy paste the date. while they are filling out times."
+
+**No format survives a spreadsheet except a plain integer.** Excel rewrites
+anything that LOOKS like a date or a time the moment the file is saved:
+`2026-07-25` becomes `7/25/26`; `15:45` becomes `3:45 PM` or the fraction
+`0.65625`. An earlier draft split date from time as two combined columns,
+which only made the corruption *recoverable* — the column name says what a
+bare number means, so a person could repair it by hand. Recoverable is
+weaker than safe. `year`, `month`, `day`, `hour`, `minute` as five bare
+integers are never reformatted at all, because nothing about `25` or `45`
+looks like a date to a spreadsheet — there is nothing left to repair.
+
+The ergonomic reason that started the split survives underneath the
+stronger one: most nights produce one date and many times, so
+`year`/`month`/`day` drag-fill down a column of rows as one block, and only
+`hour`/`minute` differ per row.
+
+**The composer still shows one time box** (`YYYY-MM-DD HH:MM`); the split
+into five integers happens on write, in `noteToRow()`
+(`src/core/notes.ts`). Five separate inputs would slow down the path this
+feature exists to make fast — the UI shape and the file shape are allowed to
+differ, and here they should.
+
+**`duration` is an ISO-8601 duration** (`PT3H40M`), not an end timestamp and
+not a bare count of minutes — two reasons that stack. An end timestamp would
+need its own year/month/day, because a 33-hour race crosses midnight and 31
+July crosses a month; a duration has no boundary cases at all. And ISO-8601
+means **the unit travels with the value**: `duration_minutes` puts the unit
+in a header a copied cell leaves behind, and this is the same convention
+`clockOffset` already uses, so the project has one convention for "how long"
+rather than two. The cost, accepted: a duration cannot be summed or sorted
+in a spreadsheet.
+
+`rowToNote()` reads two earlier, cheaper layouts — a combined `date`+`time`
+pair, and a single `at` — as **legacy formats on read only** (also a
+zero-padded string, an Excel serial date, and a day fraction), so a file
+that predates this change is repaired the next time it is saved rather than
+rejected. `TODO.md` records the one further step that *was* considered and
+deferred: splitting `duration`'s END the same way (ten integer columns
+total instead of five plus a duration), judged too high a price for a case
+the duration column already handles cleanly.
+
+**Reversing either decision** means re-deriving both the corruption argument
+and the boundary-crossing argument — they are independent, but both point
+the same way, and no cheaper column layout survived contact with a
+spreadsheet during design.
+
+### `notes*.csv` and `people.csv` are hostile-input-safe, on purpose *(notes-as-csv)*
+
+These files are meant to be handed between people and opened in whatever
+spreadsheet program they have, so `src/core/csv.ts` treats every cell as
+something a stranger typed, not as trusted output from this app:
+
+- **Formula injection.** A cell starting `=`, `+`, `-` or `@` is executed as
+  a formula by Excel and Sheets the moment the file is opened. `formatCsv`
+  writes a leading apostrophe on any such cell; `parseCsv` strips it back off
+  on read, so the round trip is invisible to a person but the live formula
+  never reaches their spreadsheet. **Reversing this** means accepting that
+  anyone who receives a `notes.csv` — which is the entire point of the file
+  — can have arbitrary formulas run in their spreadsheet by whoever wrote a
+  note.
+- **The UTF-8 byte-order mark.** `formatCsv` writes one; `parseCsv` accepts a
+  file with or without it. Without it, Excel on Windows misreads UTF-8 as
+  Windows-1252 — and notes are exactly where apostrophes, em dashes and
+  emoji turn up. **Reversing this** breaks non-ASCII text for precisely the
+  audience — a runner's crew, editing by hand — this format exists to serve.
+- **Newlines in `text`** are legal inside a quoted CSV field but break a diff
+  and confuse naive tooling, so the composer replaces them with a space on
+  write and the reader normalises any it finds on read. A note is a
+  sentence.
+
+### Merging `notes*.csv` needs no version control *(notes-as-csv)*
+
+> "i think it'll be okay if we end up making it look like 2 comments at the
+> same time. that's okay. when we visualize it it'll show up one after the
+> other."
+
+The owner initially proposed the datetime as each note's identity. Three
+things killed it: a spreadsheet silently reformats an ISO timestamp on save,
+changing every row's key at once; two people can write at the same second;
+and editing a note's time changes its key, so a merge sees an edit as a
+delete plus an insert.
+
+**`id` is opaque and stable; `at` is ordinary data instead.** That makes
+merging **row-bind, dedupe by `id`, sort by `at`** — `mergeNotes()` in
+`src/core/notes.ts` — with no conflict resolution, no locking, and no merge
+UI, because ids are globally unique in practice:
+
+- The site mints an id for every note it creates (`mintNoteId()`).
+- **A hand-added row leaves `id` blank**; the site mints one on load and
+  writes it back on the next save.
+- **A duplicated id** — the signature of a copied row, e.g. two crew members'
+  copies of `notes.csv` both landing back in the folder — gets one side
+  re-minted, decided by comparing a content fingerprint: the same id with
+  the same content is one note seen twice (deduped silently); the same id
+  with different content is a genuine collision (the newer side re-minted,
+  both kept).
+
+Two people editing copies of the same note at the same moment therefore
+produce two notes at that instant, shown one after the other in the feed —
+accepted, not an error, per the quote above.
+
+**Reversing this** — going back to a human-meaningful key, or adding real
+conflict resolution — throws away the property that makes several people's
+files mergeable with a plain row-bind: nothing prompts, nothing locks, and
+nothing needs a server. It also reopens exactly the three problems that
+killed the datetime-as-key design in the first place.
+
 ### Media with no usable timestamp goes to an unplaced tray *(session 2)*
 
 `timeSource: 'none'`, no `at`. Visible in a holding area, draggable onto the
@@ -828,9 +961,26 @@ wrong).
 
 ### The manifest is the contract
 
-Hand-editable JSON, versioned (`"schema": 1`), carrying people, timestamps,
-markers, notes, and media references. It is both the interface between the
+Hand-editable JSON, versioned (`"schema": 1`), carrying the event, the
+derived items, markers, and the course. It is both the interface between the
 two artifacts and the unit of sharing.
+
+**Notes and the people roster are no longer what it carries for authorship.**
+*(notes-as-csv)* Authored prose now lives in `notes*.csv`; the roster —
+names, roles, `clockOffset` — lives in `people.csv`. The validator still
+**accepts** a manifest with the old `notes[]` and `items[].note` fields, so
+an old file keeps loading; `manifestForSave()` in
+`src/viewer/media/ingest.ts` is what stops the *writer* emitting them again,
+so a manifest migrates itself the first time it is saved after being opened.
+
+**One asymmetry, not yet closed:** `manifestForSave()` strips `notes` and
+`items[].note` but does **not** strip `people` — a saved `manifest.json`
+still carries the full roster, `clockOffset` included, redundantly alongside
+`people.csv`. Nothing is silently lost: on load, `people.csv` wins when both
+are present (`peopleFromCsv ?? imported?.people ?? opts.existingPeople` in
+`ingestFolder()`). But the roster today lives in two files instead of one,
+unlike notes, which the design's own "What changes" table says should not be
+true. Worth closing the same way notes were closed, if picked up.
 
 `items[].src` **resolves late**: an absolute URL is used as-is; a relative
 path resolves against `media.base` *or* against a locally granted folder, at
@@ -866,16 +1016,21 @@ map is in v1 rather than deferred); and **automatic clock alignment** —
 match a photo's GPS to the GPS-synced track and the time difference *is* that
 device's clock offset.
 
-### Clock alignment is central, in the manifest
+### Clock alignment is central, in `people.csv` *(revised, notes-as-csv)*
 
-`clockOffset` is per person, stored in the manifest, adjusted **centrally by
-the event author**. Chosen over per-uploader adjustment, which would require
-a contribution and merge workflow.
+`clockOffset` is per person, adjusted **centrally by the event author** —
+chosen over per-uploader adjustment, which would require a contribution and
+merge workflow. It now lives in `people.csv`'s `clock_offset` column (an
+ISO-8601 duration, e.g. `PT-4S`) — the same spreadsheet-editable file that
+carries names and roles — rather than being reachable only by hand-editing
+JSON. See the asymmetry noted under "The manifest is the contract": today
+`manifest.json` still carries a redundant copy too.
 
 The owner's phrase was "saved in metadata of the file," which was ambiguous
-between the manifest and the media's own EXIF; they confirmed the manifest.
-**EXIF write-back is deferred, not rejected** — worth re-asking, since it has
-real archival appeal.
+between the manifest and the media's own EXIF; they confirmed the manifest —
+and now, more specifically, the spreadsheet-editable roster file that stands
+in for hand-editing the manifest's JSON. **EXIF write-back is deferred, not
+rejected** — worth re-asking, since it has real archival appeal.
 
 ---
 
@@ -985,6 +1140,15 @@ Installed and why:
 - **No XML parser.** GPX and TCX are XML, but `DOMParser` is a browser global
   and `core/` must run under Node too. `course.ts` hand-rolls a small scanner.
   This is why a future CLI gets GPX support for free.
+- **No CSV library**, for `notes*.csv`/`people.csv`. RFC 4180 plus the
+  formula-guard and BOM handling a real-world file needs is `src/core/csv.ts`,
+  well under 200 lines, and dependency-free the same way `course.ts` is.
+- **No ZIP library**, for the `notes.csv` + `people.csv` + `manifest.json`
+  download. Only a **writer** is needed — import stays loose files, so
+  nothing has to inflate anything — and a store-only (uncompressed) ZIP is
+  local file headers, a central directory, and CRC-32: under 90 lines,
+  `src/viewer/media/zip.ts`. Compression would be the largest thing in the
+  project for a payload that is a few kilobytes of CSV.
 
 FIT is binary and would need a real dependency, which is why it is deferred.
 
