@@ -38,6 +38,15 @@ import type { CourseRef } from '../../core/schema.ts';
  * consents to that click; whoever they later send the manifest to did not,
  * and loading it on their behalf would hand their IP address to Strava before
  * they had decided to look. One click is a small price for that staying true.
+ *
+ * THE ANALYTICS TAG IS NOT AN ASIDE, and the copy below must never say
+ * "nothing else on this page reaches another server". That sentence has now
+ * been wrong three times running: it is false on the DEPLOYED build, which is
+ * the only place a manifest someone sent you is ever read, because
+ * `googleAnalytics()` in vite.config.ts is `apply: 'build'` and injects a
+ * googletagmanager.com script into dist/index.html. `make dev` injects none.
+ * `tests/course-fallback.test.tsx` holds the substance of that so the fourth
+ * flip cannot happen quietly.
  */
 
 interface Props {
@@ -82,7 +91,7 @@ export function CourseFallback({ course }: Props) {
 
       <p className="app__hint">
         {course.kind === 'strava-embed'
-          ? 'Strava’s widget is a sealed box — it cannot follow the cursor here. Nothing else on this page reaches another server: with no track there is no map, so no tiles load at all. What meanwhile does fetch on its own — map tiles once a track is in the folder, and the analytics tag on the published site — never waits for you; this iframe is the one thing that does.'
+          ? 'Strava’s widget is a sealed box — it cannot follow the cursor here, and it is the one thing on this page that waits for your click. With no track there is no map, so no tiles load at all; the published site’s analytics tag is the only other request this page makes on its own, and running it locally with make dev makes none.'
           : 'A plain activity URL cannot be embedded: the embed needs a code that only Strava’s share dialog produces.'}{' '}
         To light up the course view, ask the athlete for <strong>Export TCX</strong>
         {' '}(heart rate and cadence) or <strong>Export GPX</strong>, and drop the file

@@ -4,7 +4,7 @@
 
 As of 2026-07-30 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **768 tests pass** (`make check`).
+the race. **777 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -2042,8 +2042,8 @@ no external requests — three things do:
 
    **WHEN they load takes two gates, not one.** The honest sentence is:
    *once a track is in the folder, map tiles load on the Course view, and
-   on Feed and Swimlanes as soon as anything is placed on the timeline.*
-   Neither half may be dropped:
+   on Feed and Swimlanes as soon as a photograph is placed on the
+   timeline.* Neither half may be dropped:
 
    - **`CourseMap` has TWO mount sites, and this claim has now flipped
      three times because people check the import and stop.** `App.tsx`
@@ -2053,12 +2053,16 @@ no external requests — three things do:
      `CourseMap`'s basemap effect builds the tile layer unconditionally;
      its `compact` prop gates a className and one block of chrome, **not
      the tiles**. So "only on the Course view" is false.
-   - **The rail also needs `range`**, which is null until `bounds` exists,
-     which needs a placed photo or a note (`App.tsx`'s `bounds` memo is
-     `windowIncludingNotes(fullSpan(placement.placed), placedNotes)`). A
-     folder holding a track and *nothing else* has no Feed or Swimlanes to
-     draw — `available` does not even offer those tabs — so it gets tiles
-     on the Course view alone. So the flat "every view" is false too.
+   - **The second gate is a placed PHOTOGRAPH, and nothing else counts.**
+     `App.tsx`'s `available` memo pushes `'feed', 'lanes'` only under
+     `placement && placement.placed.length > 0`, so a folder holding a
+     track plus a `notes.csv` and no photos has neither tab and gets tiles
+     on the Course view alone. The flat "every view" is false. **Do not
+     write "as soon as anything is placed on the timeline"** — a note IS
+     placed on the timeline and is not enough. Nor is `range` the gate:
+     `windowIncludingNotes(null, notes)` returns a real window from notes
+     alone (`src/core/window.ts`), so a note-only folder has a `range` and
+     still has no Feed or Swimlanes to draw it in.
 
    Before editing this paragraph again, grep for `CourseMap` and check
    every MOUNT site *and its gate*, not just the import.

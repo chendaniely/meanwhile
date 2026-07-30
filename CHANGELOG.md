@@ -8,16 +8,17 @@ already built, and the reasons are worth keeping.
 
 ## Unreleased
 
-### The pre-release gate, run twice
+### The pre-release gate, run four times
 
 > "can you dispatch some secutiry and privacy independent subagents to review?"
 
 The same review that produced 0.3.0, turned on the release itself and then —
-this is the part worth keeping — **turned on its own first pass**. Pass 2's
-findings were, almost entirely, things pass 1 introduced or missed while
-fixing pass 1's findings. Every item below was reproduced by execution before
-it was fixed, and every fix was then broken again to confirm a test catches
-it.
+this is the part worth keeping — **turned on its own previous pass**, three
+times over. Each pass's findings were, largely, things the pass before it
+introduced or missed while fixing that pass's findings: one sentence about
+what this app fetches was rewritten by every one of the four. Every item
+below was reproduced by execution before it was fixed, and every fix was then
+broken again to confirm a test catches it.
 
 **Data loss, found by running the gate (`71333d3`)**
 
@@ -126,6 +127,41 @@ Run against pass 2 the same way pass 2 was run against pass 1.
   meanwhile never wrote. The bug itself was re-verified and stays open.
 - The design spec still carried the old two-app wording of the data-quality
   rule, which README and CLAUDE.md had already been fixed to share verbatim.
+
+**Pass 4: the sentence that has now been wrong three times, and four
+canonicalisations nothing was holding**
+
+- **The privacy sentence flipped a third time, and this time it contradicted
+  itself.** Pass 3's rewrite opened "nothing else on this page reaches another
+  server" and then, one clause later, named the analytics tag as something it
+  fetches. Both halves cannot be true, and it is the absolute that is false:
+  `make build` puts a googletagmanager.com script in `dist/index.html`, and
+  the published site is the only place a manifest someone sent you is ever
+  read. The panel now says what waits for your click and what does not,
+  without an absolute to walk back. **The component had no test at all** —
+  which is why one sentence could be wrong three passes running — so it has
+  one now, asserting the substance that keeps breaking rather than the
+  wording: that it draws nothing when there IS a track, that no Strava iframe
+  is fetched before the click, and that the copy accounts for the analytics
+  tag instead of denying it.
+- **Four more invariants nothing was holding, all in the same function.**
+  Pass 2's preserved-row fingerprint canonicalises four things, each called
+  load-bearing in its own docstring, and only one was pinned. Removing any of
+  the other three — the column-order sort, NFC on a cell, NFC on a column name
+  — or the blank-header skip cloned a preserved row 1 → 2 with the entire
+  suite green: the unbounded merge growth 0.3.0 and pass 2 each fixed once,
+  reachable from a column drag, a hand-typed accent, or a stray comma. Each
+  now has a test, and each was proved by making the mutation and watching
+  exactly that one test fail. A docstring calling a line load-bearing is not
+  the same as a test pinning it.
+- **The tile claim was still wrong for a note-only folder.** Four places said
+  tiles reach Feed and Swimlanes "as soon as anything is placed on the
+  timeline". A note is placed on the timeline; the tabs need a placed
+  *photograph*. One place — the README — had it right, and the other four now
+  say what it says.
+- The data repository quoted a parser output that had changed under it,
+  dropping exactly the "the row is kept" reassurance pass 1 added — so the
+  prose around it read as silent loss.
 
 ## 0.3.0 — 2026-07-30 — hardened before it carries anything irreversible
 

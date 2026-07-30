@@ -1262,6 +1262,76 @@ describe('a refused row several files carry is one row, not several', () => {
     expect(merged.preserved).toHaveLength(2);
   });
 
+  /**
+   * The other three canonicalisations in `fingerprintPreservedRow`, each of
+   * which its own docstring calls load-bearing and none of which anything was
+   * holding. Every one of them, mutated away, clones a preserved row 1 → 2
+   * with the whole rest of the suite green — the merge-growth signature, from
+   * nothing worse than a column drag, a hand-typed accent, or a stray comma.
+   *
+   * A docstring saying a line earns its place is not the same as a test
+   * pinning it, which is the whole reason these exist.
+   */
+  it('matches two copies whose files declare the same columns in a DIFFERENT order', () => {
+    // Free from a spreadsheet's column drag, and invisible in the data. Proved
+    // by mutation: dropping `entries.sort(...)` takes this from 1 to 2.
+    const mine = [HEADER, REFUSED].join('\n');
+    const REORDERED =
+      'schema,text,id,year,month,day,hour,minute,duration,tz,utc_offset_min,people,photo,author,written,deleted';
+    const crew = [REORDERED, '2,from a newer build,n_future,2026,7,25,11,0,,UTC,0,,,,,'].join('\n');
+    const { preserved } = mergeNotes(
+      [{ name: 'notes.csv', text: mine }, { name: 'notes-crew.csv', text: crew }],
+      'UTC',
+    );
+    expect(preserved).toHaveLength(1);
+  });
+
+  it('matches two copies whose text differs only by Unicode normalisation', () => {
+    // `formatCsv` writes every cell composed, so this build's own saved copy
+    // is NFC while a row typed on a Mac can arrive decomposed — the same
+    // string to a reader, two different JavaScript strings. Proved by
+    // mutation: `nfc(value)` relaxed to `value` takes this from 1 to 2.
+    const composed = 'caf\u00e9 stop'; // e-acute as one code point
+    const decomposed = 'cafe\u0301 stop'; // e + combining acute
+    expect(composed).not.toBe(decomposed);
+    const row = (text: string) => `n_future,2026,7,25,11,0,,UTC,0,,,,${text},,,2`;
+    const { preserved } = mergeNotes(
+      [{ name: 'notes.csv', text: [HEADER, row(composed)].join('\n') },
+       { name: 'notes-crew.csv', text: [HEADER, row(decomposed)].join('\n') }],
+      'UTC',
+    );
+    expect(preserved).toHaveLength(1);
+  });
+
+  it('matches two copies whose extra COLUMN NAME differs only by normalisation', () => {
+    // The same hazard one level up: a hand-added column is exactly where a
+    // non-ASCII name turns up, and the key is half the fingerprint. Proved by
+    // mutation: `nfc(key)` relaxed to `key` takes this from 1 to 2.
+    const mine = [`${HEADER},caf\u00e9`, `${REFUSED},yes`].join('\n');
+    const crew = [`${HEADER},cafe\u0301`, `${REFUSED},yes`].join('\n');
+    const { preserved } = mergeNotes(
+      [{ name: 'notes.csv', text: mine }, { name: 'notes-crew.csv', text: crew }],
+      'UTC',
+    );
+    expect(preserved).toHaveLength(1);
+  });
+
+  it('matches two copies when one carries a cell under a BLANK header name', () => {
+    // A trailing comma in the header row — a spreadsheet's stray column — puts
+    // a cell under the empty name. `preservedHeaders` refuses to write that
+    // cell back, since there is no column to put it in, so a fingerprint that
+    // counted it would never match the file this build saves: growth on every
+    // round, forever. Proved by mutation: dropping the `key === ''` skip takes
+    // this from 1 to 2.
+    const mine = [HEADER, REFUSED].join('\n');
+    const crew = [`${HEADER},`, `${REFUSED},stray`].join('\n');
+    const { preserved } = mergeNotes(
+      [{ name: 'notes.csv', text: mine }, { name: 'notes-crew.csv', text: crew }],
+      'UTC',
+    );
+    expect(preserved).toHaveLength(1);
+  });
+
   it('still reports BOTH copies as problems, naming each file and row', () => {
     // `preserved` is what gets written; `problems` is what is on disk. A
     // person with the same bad row in two files has two rows to repair, and

@@ -241,9 +241,12 @@ A pure kernel module with no dependencies — GPX is just
    raster tiles from OpenTopoMap, Esri and OSM (plus Thunderforest only with
    a build key), two hosts at a time at most — the chosen basemap and the
    optional Esri hillshade. They load on their own once a track is in the
-   folder: on the Course view, and on Feed and Swimlanes too as soon as
-   anything is placed on the timeline, since the course rail mounts a second
-   `CourseMap` there. The reversal's reason: a bare polyline of a
+   folder: on the Course view, and on Feed and Swimlanes too as soon as a
+   photograph is placed on the timeline, since the course rail mounts a second
+   `CourseMap` there. A folder holding a track and a `notes.csv` but no photos
+   has no Feed or Swimlanes tab at all, so it gets tiles on the Course view
+   alone — a note is placed on the timeline and does not open those tabs. The
+   reversal's reason: a bare polyline of a
    mountain race shows
    no ridges, valleys or switchbacks. See the "no map library" rule's
    reversal in `CLAUDE.md`. **"Zero external requests" is doubly stale**: the
@@ -555,8 +558,10 @@ requests. **Corrected post-M10:** map tiles (OpenTopoMap, Esri/ArcGIS and
 OSM, plus Thunderforest only with a build key — two hosts at a time at most,
 the chosen basemap and the optional Esri hillshade) are external and load on
 their own once a track is in the folder: on the Course view, and on Feed and
-Swimlanes too as soon as anything is placed on the timeline, since the course
-rail mounts a second `CourseMap` there. See the "no map library"
+Swimlanes too as soon as a photograph is placed on the timeline, since the
+course rail mounts a second `CourseMap` there. A track plus a `notes.csv` and
+no photos offers neither of those tabs, so it gets tiles on the Course view
+alone. See the "no map library"
 rule's reversal in `CLAUDE.md`. The optional Strava embed iframe is external too,
 though it is click-to-load. **Corrected again (`f904fff`):** the deployed
 site also loads Google Analytics — `googleAnalytics()` in `vite.config.ts` is

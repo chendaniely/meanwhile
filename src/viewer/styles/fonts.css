@@ -6,9 +6,11 @@
  * see src/viewer/map/basemaps.ts, and at most two of them at a time, the
  * chosen basemap plus the optional Esri hillshade) load on their own once a
  * track is in the folder, on the Course view and — the course rail putting a
- * map on Feed and Swimlanes too — on those as soon as anything is placed on
- * the timeline; Google Analytics loads on the deployed build only (see
- * vite.config.ts); and an optional Strava embed iframe loads on a click.
+ * map on Feed and Swimlanes too — on those as soon as a PHOTOGRAPH is placed
+ * on the timeline (a track plus notes and no photos offers neither tab, so it
+ * gets tiles on the Course view alone); Google Analytics loads on the deployed
+ * build only (see vite.config.ts); and an optional Strava embed iframe loads
+ * on a click.
  *
  * Latin subset only (52,380 bytes total across four files, measured). */
 
