@@ -187,8 +187,8 @@ export function Swimlanes({
    * Escape releases the pin, same as the chip in the strip or clicking the
    * lanes again.
    *
-   * The track is `role="presentation"` with no `tabIndex`, so it can never
-   * hold focus and a `keydown` handler on the div itself would never fire.
+   * The track has no `tabIndex`, so it can never hold focus and a
+   * `keydown` handler on the div itself would never fire.
    * Bound on `document` instead — the same pattern the lightbox uses for its
    * own Escape-to-close — and only while pinned, so it is not listening for
    * no reason the rest of the time.
@@ -296,7 +296,10 @@ export function Swimlanes({
             // it cannot catch that key itself.
             setLocked((was) => !was);
           }}
-          role="presentation"
+          // Not `role="presentation"`: this scrubs the cursor and pins/
+          // unpins the moment strip, a real action, so marking it
+          // presentational would hide a genuine control rather than
+          // decoration. Pointer-only for now — see the comment above.
         >
           <div className="lanes__gridlines" aria-hidden="true">
             {ticks.map((tick) => (

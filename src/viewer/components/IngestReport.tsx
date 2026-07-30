@@ -93,7 +93,7 @@ export function IngestReport({ manifest, grouping, range,
                 <input
                   className="report__rename"
                   value={person.name}
-                  aria-label={`Name for ${person.name}`}
+                  aria-label="Person name"
                   onChange={(e) => onRename?.(person.id, e.target.value)}
                 />
                 <button
@@ -102,7 +102,11 @@ export function IngestReport({ manifest, grouping, range,
                   aria-pressed={person.role === 'runner'}
                   // `role` carries behaviour, not decoration: the runner's
                   // lane pins to the top and owns the course spine.
-                  title="Mark as the runner — pins their lane to the top"
+                  title={
+                    person.role === 'runner'
+                      ? 'Runner — pins their lane to the top. Click to unmark.'
+                      : 'Mark as the runner — pins their lane to the top'
+                  }
                   onClick={() => onRole?.(person.id, person.role === 'runner' ? undefined : 'runner')}
                 >
                   runner

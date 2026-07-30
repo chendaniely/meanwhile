@@ -1061,9 +1061,11 @@ export function App() {
                   </label>
                 </div>
                 <p className="app__hint">
-                  A Strava link renders as a link and nothing more &mdash; it carries no
-                  time-and-distance data, so there is no elevation profile and no map.
-                  Those need a <strong>GPX export</strong> from the
+                  A bare Strava activity link renders as a link and nothing more; a link
+                  containing <code>/embed/</code> (from Strava&rsquo;s share dialog) renders as an
+                  embedded iframe instead. Either way it carries no time-and-distance data, so
+                  there is no elevation profile and no map. Those need a{' '}
+                  <strong>GPX export</strong> from the
                   activity (the &hellip; menu &rarr; Export GPX), which works the same from
                   Garmin or COROS. Camera clock differences are corrected by hand, in{' '}
                   <code>people.csv</code>, whichever course option you use.

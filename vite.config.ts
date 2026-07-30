@@ -10,7 +10,16 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: 'dist',
-    // Media is never bundled. Only the app itself.
+    // Nothing under src/ imports a race photo or video — media always
+    // resolves at runtime from a URL or a locally granted folder — so this
+    // setting has no effect on media either way; that part was never true
+    // at the moment of this setting, only true generally. What it actually
+    // changes: `leaflet/dist/leaflet.css` references several small PNGs
+    // (marker-icon.png, layers.png, ...), all under Vite's default 4KB
+    // inline threshold. Without this, Vite base64-inlines them into the
+    // CSS (verified: three `data:image/png;base64` URIs appear). With it,
+    // they're emitted as separate files in dist/assets/ instead — simpler
+    // to inspect and cache independently of the CSS.
     assetsInlineLimit: 0,
   },
   test: {

@@ -29,8 +29,16 @@ import { basemaps, defaultBasemapId, hillshade } from './basemaps.ts';
  * WHY MAP DOTS CARRY NAMES. The lane palette is validated for ADJACENT pairs,
  * which is right for lanes and the feed where only neighbours touch. On a map
  * any two dots can land side by side, and under that harder test the palette
- * fails past three people. The label is the secondary encoding that makes it
- * legible — it is not a nicety, and it must not be removed.
+ * fails past three people. The name is shown as a hover tooltip — see the
+ * `bindTooltip` call below — which is not a full fix: it shows one name at a
+ * time, on whichever dot the pointer is over, so two adjacent dots are
+ * colour-only until you hover one. A permanent, always-visible label was the
+ * original intent but isn't workable here: these dots are one per
+ * PHOTOGRAPH, not one per person, so with 200+ in view permanent labels
+ * would overlap into an unreadable mess. This is a known, unresolved gap —
+ * see TODO.md for the standard fix (a second channel that scales, such as
+ * per-person marker shape) — not a decision to "improve" by adding
+ * `permanent: true`.
  */
 
 interface Props {
@@ -258,7 +266,10 @@ export function CourseMap({
       photoLayer.current = null;
     };
     // Built once per course. Later renders update layers rather than rebuild.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // `onFocus`/`onPick` are read through the refs above for exactly this
+    // reason; `onCursor` is safe to close over because App.tsx's `setView`
+    // is a stable `useCallback`, so every render's `onCursor` instance does
+    // the same thing.
   }, [course]);
 
   // ---- basemap ----
@@ -339,8 +350,10 @@ export function CourseMap({
         fillColor: colors.get(entry.item.person) ?? '#8a8378',
         fillOpacity: 0.9,
       })
-        // The name IS the encoding here — see the note at the top. It shows
-        // immediately; the picture replaces it once decoded.
+        // The name is the secondary encoding — see the note at the top — but
+        // only on hover: no `permanent`, so it shows one name at a time, for
+        // whichever dot the pointer is over. Adjacent dots are colour-only
+        // otherwise; that gap is open, see TODO.md.
         .bindTooltip(name, { direction: 'top' })
         .on('click', () => onCursor(entry.instant))
         .addTo(layer);

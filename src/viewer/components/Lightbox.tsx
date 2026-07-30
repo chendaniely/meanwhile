@@ -150,7 +150,17 @@ export function Lightbox({ items, index, onIndex, onClose, colors, names, timezo
             onError={() => setFailed(true)}
           />
         ) : src && !failed ? (
-          <img className="lightbox__media" src={src} alt="" onError={() => setFailed(true)} />
+          // Unlike MediaTile's thumbnail — decorative because a wrapping
+          // button already carries the name — this IS the dialog's entire
+          // subject, with nothing else standing in for it. Prefer the
+          // caption, a human description, and fall back to who shot it and
+          // when.
+          <img
+            className="lightbox__media"
+            src={src}
+            alt={caption || `Photo by ${names.get(item.person) ?? item.person}, ${formatDateTime(entry.instant, timezone)}`}
+            onError={() => setFailed(true)}
+          />
         ) : (
           <div className="lightbox__failed">
             <p className="lightbox__failed-kind mw-mono">

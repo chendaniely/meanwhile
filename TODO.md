@@ -74,7 +74,21 @@ file; see `TODO-completed.md` for why.
 
 ## Housekeeping
 
-- `CHANGELOG.md` once there is a release to describe.
+- ~~`CHANGELOG.md` once there is a release to describe.~~ **Struck
+  2026-07-30**: `CHANGELOG.md` exists and has carried every session's changes
+  since M11 — the doc contract makes it mandatory, not optional. This line
+  was stale from before the file existed.
+
+- **Hand-placing an item from the unplaced tray onto the timeline.** Found
+  during a documentation-accuracy pass: several docs described this as
+  built ("draggable onto the timeline, which writes `at` and flips the
+  source to `manual`"), but it never was — `UnplacedTray.tsx` is read-only,
+  and there is no `draggable`, `onDragStart`, or `onDrop` anywhere in
+  `src/viewer/`. The groundwork is already in place and makes this cheap
+  when picked up: `timeSource: 'manual'` exists in the schema, and
+  `ingest.ts` already preserves a manual placement across re-ingest. Only
+  the UI — a drop target on the swimlanes/feed, or an explicit "set time"
+  control — is missing.
 
 - **Automatic clock alignment.** Match a photo's GPS position to the point on
   the track with the same coordinates; the difference between the photo's
@@ -93,6 +107,20 @@ file; see `TODO-completed.md` for why.
 - **Photo dots on the map when the track is untimed.** They already plot by
   their own GPS, but there is no cursor linking them to a position on the
   course, so clicking one cannot scrub anything.
+- **Map dots need a second visual channel beyond colour.** Found during a
+  documentation-accuracy pass: `CLAUDE.md`, `palette.ts`, and `CourseMap.tsx`
+  all claimed dots "must carry the person's name as a direct label" as the
+  fix for the palette failing past three people under the all-pairs test
+  (worst pair ΔE 1.6 under deuteranopia). What's actually implemented is a
+  hover-only Leaflet tooltip (`bindTooltip`, no `permanent`) — it shows one
+  name at a time, on whichever dot the pointer is over. A permanent label
+  can't just be turned on: these dots are one per photograph, and the real
+  folder has 200+ in view at once, so permanent labels would overlap into
+  noise. **The gap is real and open**: two adjacent dots are colour-only
+  until you hover one. The standard fix is a second channel that scales with
+  dot count rather than a label — e.g. a distinct marker shape per person,
+  layered under the same colour — but that is a design decision for the
+  owner, not made here.
 
 ## Aid stations on the course
 

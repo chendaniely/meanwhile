@@ -674,7 +674,7 @@
   color: var(--mw-fg-muted);
 }
 
-.chip--plain[aria-pressed='true'] {
+.chip--plain--active {
   border-color: var(--mw-fg-faint);
   color: var(--mw-fg);
 }

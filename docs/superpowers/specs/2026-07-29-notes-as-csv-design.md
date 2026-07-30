@@ -169,7 +169,7 @@ turn up. The reader accepts the file with or without one.
 ```csv
 id,name,role,clock_offset
 google-pixel-8-pro,Priya,runner,
-samsung-sm-f721w,Sam,,PT-4S
+samsung-sm-f721w,Sam,,-PT4S
 ```
 
 `id` is machine-written and matches the grouping key ingest derives from the

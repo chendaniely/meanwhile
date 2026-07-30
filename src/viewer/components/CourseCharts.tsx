@@ -256,7 +256,9 @@ export function CourseCharts({
           if (metres !== null && onPick) onPick(metres);
           else if (timed) onCursor(x);
         }}
-        role="presentation"
+        // Not `role="presentation"`: clicking or dragging here scrubs the
+        // shared cursor and can add a note, so marking it presentational
+        // would hide a genuine control rather than decoration.
       >
         {charts.map(({ series, points, min, max }) => {
           const extent = max - min || 1;

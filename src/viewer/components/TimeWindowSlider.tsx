@@ -98,7 +98,9 @@ export function TimeWindowSlider({
   useEffect(() => {
     setExtent(framedAround(range, bounds));
     setPicked(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // `range` is deliberately not a dependency: it changes on every drag,
+    // and re-framing then would fight the handles being dragged inside a
+    // held-still extent. Only `bounds` (a different folder) should re-frame.
   }, [bounds.from, bounds.to]);
 
   /** Clusters wholly inside the range, i.e. the ones actually being shown. */
@@ -248,8 +250,14 @@ export function TimeWindowSlider({
           })}
           <button
             type="button"
-            className="chip chip--plain"
-            aria-pressed={showingWholeFolder}
+            // Not `aria-pressed`: that's for a true toggle, where operating
+            // the control a second time reverses it. This one only ever
+            // widens — clicking it again while already at the whole folder
+            // is a no-op, not an "un-widen" — so it is a plain action button
+            // whose current-state highlight is CSS only.
+            className={
+              showingWholeFolder ? 'chip chip--plain chip--plain--active' : 'chip chip--plain'
+            }
             onClick={() => setExtent(bounds)}
             title="Widen the slider to reach the whole folder, without changing what is shown"
           >
@@ -278,6 +286,11 @@ export function TimeWindowSlider({
           })}
         </div>
 
+        {/* Not `role="presentation"`: this drags the whole window, a real
+            action, so marking it presentational would hide a genuine
+            control from assistive tech rather than decoration. It has no
+            keyboard equivalent yet — the two `<input type="range">` handles
+            below are the accessible path to the same result. */}
         <div
           className="window__selection"
           style={{ left: `${clamp01(ratio(range.from))}%`, right: `${clamp01(100 - ratio(range.to))}%` }}
@@ -285,7 +298,6 @@ export function TimeWindowSlider({
           onPointerMove={onPanMove}
           onPointerUp={onPanEnd}
           onPointerCancel={onPanEnd}
-          role="presentation"
           title="Drag to move the whole window"
         />
 

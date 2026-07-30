@@ -488,8 +488,11 @@ manifest edit rather than a rewrite of every item they shot.
 
 ### 12.4 Media with no usable timestamp: an unplaced tray
 
-`timeSource: 'none'`, no `at`. Visible in a holding area, draggable onto the
-timeline, which writes `at` and flips the source to `manual`. Chosen over
+`timeSource: 'none'`, no `at`. Visible in a holding area, grouped by person
+with a thumbnail and the file path. **Hand-placing an item from the tray
+onto the timeline is not built** in the viewer — the schema carries
+`timeSource: 'manual'` and it survives re-ingest once set, but there is no
+drag-and-drop or other in-app control that can ever produce one. Chosen over
 dropping (silent loss) and over inferring from file order (confidently
 wrong).
 

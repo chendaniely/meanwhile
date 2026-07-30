@@ -10,7 +10,7 @@ notes*.csv
 people.csv
 
 # What the Save button downloads: one zip of notes.csv + people.csv +
-# manifest.json. See exportName() in src/viewer/App.tsx.
+# manifest.json. See filenameForSave() in src/viewer/App.tsx.
 meanwhile.zip
 meanwhile-*.zip
 
@@ -63,10 +63,14 @@ meanwhile-*.zip
 *.3GP
 *.MTS
 
-# Test fixtures are a deliberate, narrow exception: hand-built byte-level
-# parser inputs, capped at 100KB total. tests/fixtures/isobmff.ts and jpeg.ts
-# build them programmatically, byte-exact, with the rationale in their own
-# header comments — there is no separate README here.
+# Currently inert: tests/fixtures/isobmff.ts and jpeg.ts build hand-crafted
+# byte-level parser inputs PROGRAMMATICALLY, in .ts, so nothing above ever
+# matches anything under this path today — `git check-ignore -v` confirms
+# no file here is ignored, negation or not. Kept as a forward-looking guard
+# in case a fixture ever ships as an actual media-extension file (a real
+# .jpg or .mp4, capped small) rather than code that builds one; the
+# rationale for the fixtures themselves lives in their own header comments,
+# there is no separate README here.
 !/tests/fixtures/**
 
 # Build + tooling

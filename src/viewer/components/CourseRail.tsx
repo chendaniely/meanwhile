@@ -147,7 +147,10 @@ export function CourseRail({
             className="rail__profile"
             viewBox={`0 0 100 ${STRIP_HEIGHT}`}
             preserveAspectRatio="none"
-            role="img"
+            // Not `role="img"`: this handles `onPointerDown` and calls
+            // `onPick`, a real action (adding a note — see the hint above),
+            // so a static-image role would misrepresent it. `aria-label`
+            // still describes what it shows.
             aria-label={`Elevation profile, ${Math.round(profile.lo)} to ${Math.round(profile.hi)} metres`}
             onPointerMove={(e) => {
               const box = e.currentTarget.getBoundingClientRect();

@@ -4,7 +4,7 @@
 # in the same commit — a Makefile that lies is worse than no Makefile.
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev build preview test test-watch typecheck check clean inspect
+.PHONY: help install dev build preview test test-watch typecheck check clean inspect check-test-count
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -37,7 +37,10 @@ ifndef DIR
 endif
 	node scripts/inspect-media.ts "$(DIR)"
 
-check: typecheck test ## Type-check and test; CI also runs a clean install and build
+check-test-count: ## Confirm CLAUDE.md's "NNN tests pass" line matches the suite
+	node scripts/check-test-count.mjs
+
+check: typecheck test check-test-count ## Type-check and test; CI also runs a clean install and build
 
 clean: ## Remove build output and installed packages
 	rm -rf dist node_modules

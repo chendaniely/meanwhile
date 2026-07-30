@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Many people's photos, one shared timeline.",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "npm run typecheck && vite build",

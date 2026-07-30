@@ -174,9 +174,14 @@ right then, in a grid rather than a scroll.
 
 ## Running it
 
-You need **Node.js 20 or newer**. Check with `node --version`. If you don't
-have it, install it from [nodejs.org](https://nodejs.org/) or with
-`brew install node`.
+You need **Node.js 22.18 or newer**. Check with `node --version`. If you
+don't have it, install it from [nodejs.org](https://nodejs.org/) or with
+`brew install node`. That floor is set by `make inspect`
+(`scripts/inspect-media.ts`), which runs as plain TypeScript with no build
+step — Node only strips types without a flag from 22.18 (the first LTS with
+it unflagged); older Node either needs `--experimental-strip-types` by hand
+or, before 22.6, can't run it at all. `package.json`'s `engines` field
+enforces this floor.
 
 Then, from inside this folder:
 
@@ -511,7 +516,7 @@ from**, best to worst:
 | `gps` | From satellites. Immune to a wrong camera clock, but see below. |
 | `filename` | Recovered from the filename after the metadata was stripped. |
 | `mvhd` | Last resort, from a video's header. **May be off by hours** — see below. |
-| `none` | No timestamp. Goes to the unplaced tray for you to place by hand. |
+| `none` | No timestamp. Goes to the unplaced tray, listed for you to chase down. |
 
 Three things worth knowing:
 

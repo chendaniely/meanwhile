@@ -17,9 +17,13 @@
  *      grid only ever put neighbors side by side, so adjacent is the right
  *      test. THE MAP IS DIFFERENT — any two dots can land next to each other,
  *      and under that harder test this palette fails past three people
- *      (worst pair ΔE 1.6 under deuteranopia). Dots on the map therefore
- *      carry the person's name as a direct label. That is not a nicety; it is
- *      the secondary encoding that makes the map legible at all.
+ *      (worst pair ΔE 1.6 under deuteranopia). Dots on the map carry the
+ *      person's name, but only as a hover tooltip (CourseMap.tsx), not a
+ *      permanent label — the dots are one per photograph, and with 200+ in
+ *      view a permanent label on each would overlap into noise. That leaves
+ *      an open gap: two adjacent dots are colour-only until you hover one.
+ *      See TODO.md for the standard fix (a second channel that scales, e.g.
+ *      per-person marker shape) — not yet built, an open decision.
  */
 
 import type { Person, PersonId } from './schema.ts';

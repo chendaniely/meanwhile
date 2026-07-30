@@ -4,12 +4,12 @@
 
 As of 2026-07-29 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **470 tests pass** (`make check`).
+the race. **475 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
 `metadata.ts`, `assemble.ts`, `palette.ts`, `window.ts`, `state.ts`,
-`course.ts`, `csv.ts`, `notes.ts`, `people-csv.ts`. Viewer: folder/file
+`course.ts`, `csv.ts`, `notes.ts`, `people-csv.ts`, `timeline.ts`. Viewer: folder/file
 picking, ingest report, the media pipeline, the two-handle time window with
 density histogram, the feed, the swimlanes with a moment strip, the
 lightbox, the unplaced tray, and the **course view** — Leaflet map with
@@ -37,8 +37,9 @@ Check before you cite.
 
 ## START HERE
 
-**M0-M11 are done.** What is left is not a milestone but a set of things
-blocked on the outside world:
+**M0-M11 are done.** What is left is not a milestone but a short list of
+loose ends — most blocked on the outside world, one no longer blocked but
+simply not yet written:
 
 - **Automatic clock alignment** — no longer blocked, just unwritten. This
   waited on a *timed* track, because the first export was a route export with
@@ -266,9 +267,16 @@ Three rules that must not be broken:
    only put neighbors together, so adjacent is the right test and it passes.
    **The map is different** — any two dots can land side by side, and under
    `--pairs all` this palette fails past three people (worst pair ΔE 1.6
-   under deuteranopia). **Map dots must carry the person's name as a direct
-   label.** That is the secondary encoding that makes the map legible; it is
-   not optional polish. Do not discover this again at M10.
+   under deuteranopia). **Map dots carry the person's name, but only as a
+   hover tooltip** (`CourseMap.tsx`, `.bindTooltip(name, { direction: 'top'
+   })`, no `permanent`) — it shows one name at a time, on the dot the pointer
+   is over. A permanent, always-on label was the original intent, but the
+   dots are one per PHOTOGRAPH, not one per person: with 200+ photos in view,
+   permanent labels would overlap into an unreadable mess. **This leaves a
+   real, unresolved gap**: colour alone distinguishes two adjacent dots until
+   you hover one of them. See `TODO.md` for the standard fix (a second visual
+   channel that scales, such as per-person marker shape) — it is an open
+   decision for the owner, not yet built.
 
 ### The course line is CASED, and the colour is measured *(M10)*
 
@@ -1003,10 +1011,15 @@ killed the datetime-as-key design in the first place.
 
 ### Media with no usable timestamp goes to an unplaced tray *(session 2)*
 
-`timeSource: 'none'`, no `at`. Visible in a holding area, draggable onto the
-timeline, which writes `at` and flips the source to `manual`. Chosen over
-dropping (silent loss) and over inferring from file order (confidently
-wrong).
+`timeSource: 'none'`, no `at`. Visible in a holding area (`UnplacedTray.tsx`),
+grouped by person with a thumbnail, the file path, and a copyable list — so
+the next step is asking whoever sent it for the original. **Hand-placing an
+item onto the timeline from the tray is not built**: the schema has
+`timeSource: 'manual'` and re-ingest preserves a manual placement once one
+exists (see "Ingest conventions"), but nothing in the viewer can ever
+produce one — there is no drag-and-drop, and the tray is read-only. See
+`TODO.md`. Chosen over dropping the file (silent loss) and over inferring a
+time from file order (confidently wrong).
 
 ### The manifest is the contract
 
@@ -1087,7 +1100,7 @@ built" above and `TODO.md`.
 `clockOffset` is per person, adjusted **centrally by the event author** —
 chosen over per-uploader adjustment, which would require a contribution and
 merge workflow. It now lives in `people.csv`'s `clock_offset` column (an
-ISO-8601 duration, e.g. `PT-4S`) — the same spreadsheet-editable file that
+ISO-8601 duration, e.g. `-PT4S`) — the same spreadsheet-editable file that
 carries names and roles — rather than being reachable only by hand-editing
 JSON. See the asymmetry noted under "The manifest is the contract": today
 `manifest.json` still carries a redundant copy too.
