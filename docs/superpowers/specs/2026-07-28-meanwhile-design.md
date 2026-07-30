@@ -263,7 +263,9 @@ scrub to 06:12 in the swimlanes, flip to the moment grid, and you are
 looking at 06:12. That shared cursor is what makes the toggle feel like
 goggles rather than four separate pages.
 
-- **Swimlanes** (default) — one lane per person on a shared clock, over the
+- **Swimlanes** (proposed as the default; **corrected post-M10** — the
+  shipped default is the feed, `INITIAL_STATE.view = 'feed'` in
+  `src/core/state.ts`) — one lane per person on a shared clock, over the
   elevation profile. Density blocks show where someone was shooting.
   **Gaps are the point:** the six-hour hole in the runner's lane while three
   crew lanes are busy *is* the story of the night section. Markers draw as
