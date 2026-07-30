@@ -312,11 +312,44 @@ function asNumbers(v: Value | undefined): number[] | null {
 }
 
 /**
+ * The naive timestamp one second after `HH:MM:59`, rolling the minute, hour,
+ * day, month and year as the calendar requires.
+ *
+ * `Date` is used here purely as calendar arithmetic: the value is naive
+ * wall-clock going in and naive wall-clock coming out, and no zone is applied
+ * to it at any point. `setUTCFullYear` rather than `Date.UTC(y, …)` because
+ * the latter maps a year of 0–99 to 1900–1999, which would silently move a
+ * (admittedly absurd) year-0050 photograph by nineteen centuries.
+ */
+function nextSecondOf(y: number, mo: number, d: number, h: number, mi: number): string {
+  const at = new Date(0);
+  at.setUTCFullYear(y, mo - 1, d);
+  at.setUTCHours(h, mi, 60, 0);
+  const p = (n: number, width = 2) => String(n).padStart(width, '0');
+  return (
+    `${p(at.getUTCFullYear(), 4)}-${p(at.getUTCMonth() + 1)}-${p(at.getUTCDate())}` +
+    `T${p(at.getUTCHours())}:${p(at.getUTCMinutes())}:${p(at.getUTCSeconds())}`
+  );
+}
+
+/**
  * EXIF writes "2026:08:22 13:12:04". Convert to "2026-08-22T13:12:04".
  *
  * Rejects the all-zero and blank forms that cameras with a dead clock write,
  * because "0000:00:00 00:00:00" parsed naively becomes a real date in the
  * year zero and would place the item at the far left of every timeline.
+ *
+ * A seconds field of 60 — a leap second, or far more often a camera rounding
+ * artifact — is NORMALIZED to the following second rather than passed through.
+ * `new Date("2026-06-30T23:59:60")` is `Invalid Date` in V8 with or without an
+ * offset, so `parseZonedInstant` returns null for it: accepting the string as
+ * written gave the item an `at` that nothing downstream could resolve, and it
+ * failed to place in silence while looking perfectly well timestamped. That is
+ * the worst of both outcomes this project chooses between — neither a usable
+ * value nor a visible gap. POSIX collapses a leap second onto the following
+ * second and so does this: at most one second of error, and a value that
+ * works. A 61 is still refused; that is not a leap second, it is a broken
+ * field.
  */
 function normalizeExifDate(raw: string | null): string | null {
   if (!raw) return null;
@@ -328,6 +361,7 @@ function normalizeExifDate(raw: string | null): string | null {
   const day = Number(d);
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   if (Number(h) > 23 || Number(mi) > 59 || Number(s) > 60) return null;
+  if (Number(s) === 60) return nextSecondOf(Number(y), month, day, Number(h), Number(mi));
   return `${y}-${mo}-${d}T${h}:${mi}:${s}`;
 }
 
@@ -375,6 +409,13 @@ function gpsInstant(dateStamp: string | null, time: number[] | null): string | n
   const [h, mi, s] = time as [number, number, number];
   if (![h, mi, s].every(Number.isFinite)) return null;
   if (h > 23 || mi > 59 || s >= 61) return null;
+
+  // Same leap second, same dead end — see `normalizeExifDate`. A GPS receiver
+  // is in fact the one thing on a phone that knows about leap seconds, so this
+  // branch is likelier here than there.
+  if (Math.floor(s) === 60) {
+    return `${nextSecondOf(Number(y), Number(mo), Number(d), Math.floor(h), Math.floor(mi))}Z`;
+  }
 
   const pad = (n: number) => String(Math.floor(n)).padStart(2, '0');
   return `${y}-${mo}-${d}T${pad(h)}:${pad(mi)}:${pad(s)}Z`;

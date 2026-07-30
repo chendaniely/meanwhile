@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { Reader } from '../src/core/bytes.ts';
 import type { ExifData } from '../src/core/exif.ts';
 import type { VideoMeta } from '../src/core/isobmff.ts';
-import { locateBox, type RangeReader } from '../src/core/isobmff.ts';
+import { locateBox, parseVideoMeta, type RangeReader } from '../src/core/isobmff.ts';
 import {
   classify,
   extensionOf,
@@ -257,6 +258,69 @@ describe('locateBox', () => {
     // A handful of 16-byte header reads, not the whole file.
     expect(reads.every(([, length]) => length === 16)).toBe(true);
     expect(reads.length).toBeLessThan(5);
+  });
+
+  /**
+   * A 16-byte box header in the 64-bit `largesize` form, as any box over 4GB
+   * must use. Built here rather than in `fixtures/isobmff.ts` because these
+   * two tests need a header WITHOUT the megabytes behind it — the point is
+   * that `locateBox` never reads them.
+   */
+  function header(type: string, size: number, large: boolean): Uint8Array {
+    const bytes = new Uint8Array(16);
+    const view = new DataView(bytes.buffer);
+    if (large) {
+      view.setUint32(0, 1); // "the real size is the u64 at offset 8"
+      view.setBigUint64(8, BigInt(size));
+    } else {
+      view.setUint32(0, size);
+    }
+    for (let i = 0; i < 4; i++) bytes[4 + i] = type.charCodeAt(i);
+    return bytes;
+  }
+
+  it('finds a moov written in the 64-bit largesize form', async () => {
+    // `boxes()` covers this form over bytes already in memory, which is what
+    // disguised the gap: `locateBox` has its own copy of the decision, made
+    // over 16 bytes fetched from disk. Replacing it with `return null` left
+    // every test in isobmff, exif and metadata green.
+    const mov = buildMov({ mvhd: { createdUnix: 1_800_000_000 }, largeMoov: true });
+    const { read, reads } = readerFor(mov);
+
+    const found = await locateBox(read, mov.byteLength, 'moov');
+    expect(found).not.toBeNull();
+    // Located exactly, not approximately: the reported extent must parse back
+    // to the metadata it claims to hold.
+    const extent = mov.subarray(found?.offset, (found?.offset ?? 0) + (found?.length ?? 0));
+    expect(parseVideoMeta(new Reader(extent))?.mvhdDate).toBe('2027-01-15T08:00:00Z');
+    expect(reads.every(([, length]) => length === 16)).toBe(true);
+  });
+
+  /**
+   * CLAUDE.md's claim, made testable: "finding `moov` in a 4GB file costs
+   * about three range reads". The file here is a fiction — three headers and
+   * nothing between them — precisely so that reading a single byte of the
+   * body would fail rather than merely be slow.
+   */
+  it('hops over a 4GB mdat to the moov behind it, reading 48 bytes in total', async () => {
+    const FTYP = 32;
+    const MDAT = 4_300_000_000; // over 4GB, so only the largesize form can say it
+    const MOOV = 4096;
+    const layout = [
+      { at: 0, bytes: header('ftyp', FTYP, false) },
+      { at: FTYP, bytes: header('mdat', MDAT, true) },
+      { at: FTYP + MDAT, bytes: header('moov', MOOV, false) },
+    ];
+    const reads: Array<[number, number]> = [];
+    const read: RangeReader = async (offset, length) => {
+      reads.push([offset, length]);
+      return layout.find((b) => b.at === offset)?.bytes ?? null;
+    };
+
+    const found = await locateBox(read, FTYP + MDAT + MOOV, 'moov');
+    expect(found).toEqual({ offset: FTYP + MDAT, length: MOOV });
+    expect(reads.map(([, length]) => length)).toEqual([16, 16, 16]);
+    expect(reads.reduce((total, [, length]) => total + length, 0)).toBe(48);
   });
 
   it('returns null when the box is not there', async () => {

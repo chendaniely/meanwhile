@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Reader } from '../src/core/bytes.ts';
 import { parseJpegExif, parseTiffExif } from '../src/core/exif.ts';
+import { parseZonedInstant, zonedToInstant } from '../src/core/time.ts';
 import {
   TYPE_ASCII,
   TYPE_LONG,
@@ -135,8 +136,30 @@ describe('timestamps that must be rejected', () => {
     expect(withDate('2026:08:22 25:00:00')).toBeUndefined();
   });
 
-  it('accepts a leap second', () => {
-    expect(withDate('2026:06:30 23:59:60')).toBe('2026-06-30T23:59:60');
+  /**
+   * "Accepted" used to be the end of this story, and it was the wrong end.
+   * `parseZonedInstant` — and `new Date(…)` under it — is `Invalid Date` for
+   * a ":60" second with or without an offset, so the item got an `at` that
+   * nothing downstream could resolve: it failed to place, in silence, while
+   * looking perfectly well timestamped. Neither a usable value nor a visible
+   * gap. POSIX collapses a leap second onto the following second, so this does
+   * too — at most one second of error, and a value that resolves.
+   */
+  it('normalizes a leap second to the following second, which is resolvable', () => {
+    const at = withDate('2026:06:30 23:59:60');
+    expect(at).toBe('2026-07-01T00:00:00');
+    // The point of the change: the value can actually be placed.
+    expect(parseZonedInstant(`${at as string}-07:00`)).not.toBeNull();
+    expect(zonedToInstant(at as string, 'America/Denver')).not.toBeNull();
+  });
+
+  it('rolls only the minute when the leap second is not at midnight', () => {
+    expect(withDate('2026:08:22 06:12:60')).toBe('2026-08-22T06:13:00');
+    expect(withDate('2026:08:22 06:59:60')).toBe('2026-08-22T07:00:00');
+  });
+
+  it('still refuses a second of 61, which is a broken field and not a leap', () => {
+    expect(withDate('2026:06:30 23:59:61')).toBeUndefined();
   });
 });
 
@@ -202,6 +225,22 @@ describe('GPS edge cases', () => {
       }),
     );
     expect(exif?.gpsInstant).toBeUndefined();
+  });
+
+  it('normalizes a leap second in the GPS fix too', () => {
+    // A receiver is the one thing on a phone that genuinely knows about leap
+    // seconds, and "…T23:59:60Z" is as unresolvable here as it is for the
+    // shutter time.
+    const exif = parse(
+      typicalPhoto({
+        gps: [
+          { tag: TAG_GPS_DATESTAMP, type: TYPE_ASCII, values: '2026:06:30' },
+          { tag: TAG_GPS_TIMESTAMP, type: TYPE_RATIONAL, values: [23, 1, 59, 1, 60, 1] },
+        ],
+      }),
+    );
+    expect(exif?.gpsInstant).toBe('2026-07-01T00:00:00Z');
+    expect(parseZonedInstant(exif?.gpsInstant as string)).not.toBeNull();
   });
 
   it('reads a GPS time with a fractional second', () => {

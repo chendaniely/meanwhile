@@ -90,11 +90,28 @@ export function dayAtom(text: string): number[] {
   return box('©day', [...u16(text.length), ...u16(0), ...ascii(text)]);
 }
 
+/**
+ * The older QuickTime location atom, `©xyz`, written directly under `udta`.
+ *
+ * This is the one ANDROID writes: a Pixel clip carries this and no Apple keys
+ * at all, so it is the only place such a clip's position can come from. Same
+ * [length][language][text] shape as `©day`; the payload is ISO 6709
+ * ("+37.7749-122.4194/").
+ *
+ * The language code is written as 0x15C7 — what real Android files carry — to
+ * keep the fixture honest, though nothing reads it.
+ */
+export function xyzAtom(text: string): number[] {
+  return box('©xyz', [...u16(text.length), ...u16(0x15c7), ...ascii(text)]);
+}
+
 export interface MovSpec {
   brand?: string;
   mvhd?: MvhdSpec | null;
   apple?: Record<string, string>;
   day?: string;
+  /** ISO 6709 text for the Android `©xyz` atom. */
+  xyz?: string;
   metaAsFullBox?: boolean;
   largeMoov?: boolean;
 }
@@ -102,6 +119,7 @@ export interface MovSpec {
 export function buildMov(spec: MovSpec = {}): Uint8Array {
   const udtaChildren: number[] = [];
   if (spec.apple) udtaChildren.push(...appleMeta(spec.apple, spec.metaAsFullBox ?? true));
+  if (spec.xyz !== undefined) udtaChildren.push(...xyzAtom(spec.xyz));
   if (spec.day) udtaChildren.push(...dayAtom(spec.day));
 
   const moovChildren: number[] = [];

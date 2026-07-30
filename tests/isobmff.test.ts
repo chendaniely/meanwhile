@@ -116,6 +116,58 @@ describe('parseVideoMeta', () => {
     expect(asPlain?.creationDate).toBe('2026-08-22T06:12:04-07:00');
   });
 
+  /**
+   * `©xyz` is where ANDROID puts a clip's position — a Pixel video carries it
+   * and no Apple keys at all — so this block is the only thing standing
+   * between a Pixel clip and losing its location entirely. Deleting it left
+   * every test in this file, `exif` and `metadata` green, which is what these
+   * exist to stop.
+   */
+  describe('the Android ©xyz location atom', () => {
+    it('reads a position from the atom a Pixel writes', () => {
+      const meta = parseVideoMeta(read(buildMov({ xyz: '+47.3900+008.5400/' })));
+      expect(meta?.gps?.[0]).toBeCloseTo(47.39, 4);
+      expect(meta?.gps?.[1]).toBeCloseTo(8.54, 4);
+    });
+
+    it('keeps a negative longitude negative', () => {
+      // The whole American west is negative. Dropping the sign puts the clip
+      // in China, which is the failure mode worth a test of its own.
+      const meta = parseVideoMeta(read(buildMov({ xyz: '+37.7749-122.4194+016.000/' })));
+      expect(meta?.gps?.[0]).toBeCloseTo(37.7749, 4);
+      expect(meta?.gps?.[1]).toBeCloseTo(-122.4194, 4);
+    });
+
+    it('ignores a malformed atom rather than throwing', () => {
+      for (const xyz of ['', 'somewhere near the aid station', '+999.0000-122.4194/', '+37.7749']) {
+        const meta = parseVideoMeta(read(buildMov({ xyz })));
+        expect(meta?.gps, xyz).toBeUndefined();
+      }
+    });
+
+    it('yields to the Apple key when a file somehow carries both', () => {
+      // Apple's ISO6709 key is the richer, better-specified one; `©xyz` is the
+      // fallback for files that have no Apple metadata at all.
+      const meta = parseVideoMeta(
+        read(
+          buildMov({
+            apple: { 'com.apple.quicktime.location.ISO6709': '+47.3900-121.3900+150.000/' },
+            xyz: '+37.7749-122.4194/',
+          }),
+        ),
+      );
+      expect(meta?.gps?.[0]).toBeCloseTo(47.39, 4);
+      expect(meta?.gps?.[1]).toBeCloseTo(-121.39, 4);
+    });
+
+    it('survives truncation of the atom without throwing', () => {
+      const mov = buildMov({ mvhd: { createdUnix: SHOT_AT_UNIX }, xyz: '+37.7749-122.4194/' });
+      for (let cut = 1; cut < mov.length; cut += 5) {
+        expect(() => parseVideoMeta(read(mov.subarray(0, cut)))).not.toThrow();
+      }
+    });
+  });
+
   it('returns null when there is no moov at all', () => {
     expect(parseVideoMeta(read(new Uint8Array([0, 0, 0, 8, 0x66, 0x74, 0x79, 0x70])))).toBeNull();
   });

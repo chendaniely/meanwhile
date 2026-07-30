@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { formatCsv, parseCsv } from '../src/core/csv.ts';
 import {
   dedupeNotes,
@@ -362,6 +362,51 @@ describe('mergeNotes', () => {
     expect(notes).toHaveLength(1);
   });
 
+  /**
+   * The convergence property, end to end through the files themselves.
+   *
+   * The shape is ordinary and was measured growing 3 → 4 → 5 → 6 → 7: a crew
+   * member's copy still carries the copy-pasted rows that share one id, and it
+   * lands back in the folder next to the `notes.csv` this app saved last time.
+   * Every round has to produce the same notes AND the same ids, or the shared
+   * file grows a phantom note per cycle forever.
+   *
+   * THREE colliding rows, not two, and that is the whole reason this test can
+   * see anything: with two, the count is stable even when the derived id is a
+   * constant, because the one re-minted row is the only one there is. The
+   * third row is what forces a second distinct derivation, and what a constant
+   * (or random) derivation drops back to `mintUnique()` for.
+   */
+  it('reaches a fixed point when the saved file is re-merged with the colliding original', () => {
+    const crew = file(
+      'notes-crew.csv',
+      'n_a,2026,7,25,15,0,,,,,Dan,one\n' +
+        'n_a,2026,7,25,15,0,,,,,Dan,two\n' +
+        'n_a,2026,7,25,15,0,,,,,Dan,three\n',
+    );
+    // Exactly what Save writes, so this exercises the real round trip rather
+    // than a hand-built approximation of it.
+    const save = (notes: Note[]) => ({
+      name: 'notes.csv',
+      text: formatCsv(noteHeadersFor(notes), noteRowsForSave(notes, [], ZONE)),
+    });
+
+    let saved = save(mergeNotes([crew], ZONE).notes);
+    const rounds: Array<{ count: number; ids: string }> = [];
+    for (let round = 0; round < 5; round++) {
+      const { notes } = mergeNotes([saved, crew], ZONE);
+      rounds.push({ count: notes.length, ids: notes.map((n) => n.id).sort().join(',') });
+      saved = save(notes);
+    }
+
+    expect(rounds.map((r) => r.count)).toEqual([3, 3, 3, 3, 3]);
+    // Not merely the same NUMBER of notes: the same notes, keeping the same
+    // identities, or every save rewrites ids that other people's files
+    // reference.
+    expect(new Set(rounds.map((r) => r.ids)).size).toBe(1);
+    expect(parseCsv(saved.text).rows.map((r) => r.text).sort()).toEqual(['one', 'three', 'two']);
+  });
+
   it('reports a bad row and still loads the rest of the file', () => {
     const { notes, problems } = mergeNotes([
       file('a.csv', 'n_a,nineteen,7,25,15,0,,,,,Dan,bad\nn_b,2026,7,25,15,0,,,,,Dan,good\n'),
@@ -661,6 +706,65 @@ describe('dedupeNotes', () => {
     // increments it, inventing ids for notes that do not exist.
     const out = dedupeNotes([note({ text: 'one' }), note({ text: 'two' })], ZONE);
     expect(out[1]?.id).toMatch(/^n_[0-9a-z]*[a-z]$/);
+  });
+
+  /**
+   * The three tests above certify almost nothing about the derivation itself:
+   * a `deriveNoteId` that returns a CONSTANT passes every one of them, and
+   * the whole suite with them. It is deterministic, it ends in a letter, and
+   * with a single colliding row it even converges — while silently falling
+   * back to a RANDOM `mintUnique()` the moment a SECOND row collides, which
+   * is exactly where the unbounded growth comes back. What has to be pinned
+   * is the property the fix rests on: the id is a function of the content,
+   * and of nothing else.
+   */
+  describe('the derived id is a function of the content, and of nothing else', () => {
+    const colliding = (texts: readonly string[]): Note[] =>
+      texts.map((text) => note({ id: 'n_a', text }));
+
+    it('gives each colliding row a different id, and the same ids on every call', () => {
+      // Four rows wearing one id, which is what copy-pasting a spreadsheet
+      // row three times produces. Distinctness alone is not enough — a
+      // constant derivation reaches it too, by way of random ids — so the
+      // second call has to agree with the first, in order, exactly.
+      const rows = colliding(['alpha', 'beta', 'gamma', 'delta']);
+      const first = dedupeNotes(rows, ZONE);
+      const second = dedupeNotes(rows, ZONE);
+      expect(first).toHaveLength(4);
+      expect(new Set(first.map((n) => n.id)).size).toBe(4);
+      expect(second.map((n) => n.id)).toEqual(first.map((n) => n.id));
+    });
+
+    it('derives the same id on another machine, on another day, from another seed', () => {
+      // "Separate calls" is the weak version of this; the real requirement is
+      // that two crew members, merging the same two files months apart, land
+      // on the same id — otherwise their corrected copies never dedupe
+      // against each other and the shared file grows on every exchange.
+      // Nothing may reach the clock or the random source.
+      const rows = colliding(['one', 'two']);
+      const idsUnder = (now: number, random: number): string[] => {
+        const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+        const seed = vi.spyOn(Math, 'random').mockReturnValue(random);
+        try {
+          return dedupeNotes(rows, ZONE).map((n) => n.id);
+        } finally {
+          clock.mockRestore();
+          seed.mockRestore();
+        }
+      };
+      expect(idsUnder(1_700_000_000_000, 0.125)).toEqual(idsUnder(1_900_000_000_000, 0.875));
+    });
+
+    it('ends every derived id in a letter, across enough of them to notice', () => {
+      // `mintNoteId` has its own 400-draw version of this test; the derived
+      // id needs one too, and a single sample cannot see a failure rate of
+      // 27.8%. Dragging a cell whose id ends in a digit invents ids for notes
+      // that do not exist.
+      const texts = Array.from({ length: 200 }, (_, i) => `note number ${i}`);
+      const out = dedupeNotes(colliding(texts), ZONE);
+      expect(out).toHaveLength(200);
+      for (const n of out) expect(n.id, n.text).toMatch(/[a-z]$/);
+    });
   });
 
   it('mints an id for a note with none', () => {
