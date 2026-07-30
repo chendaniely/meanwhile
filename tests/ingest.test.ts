@@ -965,3 +965,184 @@ describe('ingestFolder — inferring the event timezone', () => {
     expect(manifest.event.timezone).toBe('Europe/Zurich');
   });
 });
+
+/**
+ * `isManifestFile` and `isPeopleFile` match `manifest.json` and `people.csv`
+ * ANYWHERE in the tree, which is deliberate — it is how dragging a subfolder
+ * in works. What was not deliberate is that `ingestFolder` looped over every
+ * match without stopping, so the LAST one in path order won.
+ *
+ * Reproduced by a security review: adding `zz-crew/manifest.json` and
+ * `zz-crew/people.csv` replaced the event title, timezone, time window, course
+ * reference and whole roster — a 10-hour `clockOffset` included, which moves
+ * every photo on the timeline — with `importedFrom` naming the subfolder file
+ * and not one word said about it. Far likelier by ACCIDENT than by malice: a
+ * contributor zips their own working folder in.
+ */
+describe('ingestFolder — one manifest and one roster per folder, the shallowest', () => {
+  function textFile(path: string, text: string): PickedFile {
+    return { path, file: new File([text], path.slice(path.lastIndexOf('/') + 1)) };
+  }
+
+  const manifestJson = (title: string, timezone: string) => JSON.stringify({
+    schema: SCHEMA_VERSION,
+    event: {
+      title,
+      timezone,
+      range: { from: '2026-07-25T00:00:00Z', to: '2026-07-26T00:00:00Z' },
+    },
+    people: [{ id: 'p', name: title, clockOffset: 'PT10H' }],
+    items: [],
+  });
+
+  const ROOT_MANIFEST = manifestJson('Real race', 'America/Denver');
+  const NESTED_MANIFEST = manifestJson('Crew working folder', 'UTC');
+
+  it('keeps the root manifest when a subfolder carries one too', async () => {
+    const { manifest, importedFrom } = await ingestFolder([
+      textFile('zz-crew/manifest.json', NESTED_MANIFEST),
+      textFile('manifest.json', ROOT_MANIFEST),
+    ], { title: 'fallback' });
+
+    expect(importedFrom).toBe('manifest.json');
+    expect(manifest.event.title).toBe('Real race');
+    expect(manifest.event.timezone).toBe('America/Denver');
+  });
+
+  it('keeps the root manifest even when the subfolder one sorts last', async () => {
+    // The original bug: last file in path order wins. `zz-` sorts after
+    // `manifest.json`, which is exactly how the review reproduced it.
+    const { manifest } = await ingestFolder([
+      textFile('manifest.json', ROOT_MANIFEST),
+      textFile('zz-crew/manifest.json', NESTED_MANIFEST),
+    ], { title: 'fallback' });
+    expect(manifest.event.title).toBe('Real race');
+  });
+
+  it('keeps the root roster, clock offsets and all', async () => {
+    const { manifest } = await ingestFolder([
+      textFile('people.csv', 'id,name,role,clock_offset\np,Priya,runner,\n'),
+      textFile('zz-crew/people.csv', 'id,name,role,clock_offset\np,IMPOSTOR,,PT10H\n'),
+    ], { title: 'x' });
+
+    expect(manifest.people).toHaveLength(1);
+    expect(manifest.people[0]?.name).toBe('Priya');
+    expect(manifest.people[0]?.clockOffset).toBeUndefined();
+  });
+
+  it('says which file it used and which it ignored, in plain words', async () => {
+    const { noteProblems } = await ingestFolder([
+      textFile('manifest.json', ROOT_MANIFEST),
+      textFile('people.csv', 'id,name\np,Priya\n'),
+      textFile('zz-crew/manifest.json', NESTED_MANIFEST),
+      textFile('zz-crew/people.csv', 'id,name\np,IMPOSTOR\n'),
+    ], { title: 'x' });
+
+    const ignored = noteProblems.filter((p) => p.startsWith('Ignored'));
+    expect(ignored).toHaveLength(2);
+    expect(ignored[0]).toContain('zz-crew/manifest.json');
+    expect(ignored[0]).toContain('manifest.json');
+    expect(ignored[0]).toContain('closest to the top');
+    expect(ignored[1]).toContain('zz-crew/people.csv');
+    expect(ignored[1]).toContain('people.csv');
+  });
+
+  it('breaks a same-depth tie by path, so the same folder always loads the same way', async () => {
+    const first = await ingestFolder([
+      textFile('b.manifest.json', NESTED_MANIFEST),
+      textFile('a.manifest.json', ROOT_MANIFEST),
+    ], { title: 'x' });
+    const second = await ingestFolder([
+      textFile('a.manifest.json', ROOT_MANIFEST),
+      textFile('b.manifest.json', NESTED_MANIFEST),
+    ], { title: 'x' });
+    expect(first.importedFrom).toBe('a.manifest.json');
+    expect(second.importedFrom).toBe('a.manifest.json');
+  });
+
+  it('still uses a subfolder manifest when that is the only one there', async () => {
+    // Dropping one person's folder in is a supported way to work; nothing
+    // about this change may break it.
+    const { manifest, importedFrom, noteProblems } = await ingestFolder(
+      [textFile('crew/manifest.json', ROOT_MANIFEST)], { title: 'fallback' },
+    );
+    expect(importedFrom).toBe('crew/manifest.json');
+    expect(manifest.event.title).toBe('Real race');
+    expect(noteProblems.filter((p) => p.startsWith('Ignored'))).toEqual([]);
+  });
+});
+
+/**
+ * A malformed track used to be read in silence: an unclosed element ground
+ * the whole tab to a halt, and a `lat="999999"` was plotted as though it were
+ * a real place. `parseCourse` now says what was wrong with the file, and this
+ * is the wiring that puts it in front of the person who has to fix it.
+ */
+describe('ingestFolder — a track file with something wrong with it', () => {
+  function textFile(path: string, text: string): PickedFile {
+    return { path, file: new File([text], path.slice(path.lastIndexOf('/') + 1)) };
+  }
+
+  it('names the track file and what was wrong with it', async () => {
+    const xml =
+      '<?xml version="1.0"?><gpx><trk><trkseg>' +
+      '<trkpt lat="999999" lon="-110.5"><ele>1500</ele></trkpt>' +
+      '<trkpt lat="45.8" lon="-110.5"><ele>1500</ele></trkpt>' +
+      '<trkpt lat="45.81" lon="-110.5"><ele>1600</ele></trkpt>' +
+      '</trkseg></trk></gpx>';
+    const { course, noteProblems } = await ingestFolder(
+      [textFile('race/track.gpx', xml)], { title: 'x' },
+    );
+    expect(course?.samples).toHaveLength(2);
+    const reported = noteProblems.filter((p) => p.includes('not on Earth'));
+    expect(reported).toHaveLength(1);
+    expect(reported[0]).toContain('race/track.gpx');
+  });
+
+  it('says nothing about a track that is fine', async () => {
+    const xml =
+      '<?xml version="1.0"?><gpx><trk><trkseg>' +
+      '<trkpt lat="45.8" lon="-110.5"><ele>1500</ele></trkpt>' +
+      '<trkpt lat="45.81" lon="-110.5"><ele>1600</ele></trkpt>' +
+      '</trkseg></trk></gpx>';
+    const { noteProblems } = await ingestFolder([textFile('track.gpx', xml)], { title: 'x' });
+    expect(noteProblems).toEqual([]);
+  });
+});
+
+/**
+ * The other seam a tombstone can cross: a `notes.csv` row cancelling a note
+ * that came out of a legacy `manifest.json` sitting in the same folder.
+ * `mergeNotes` cannot see this one — by the time the two lists meet, they have
+ * already been through separate readers — so it is reported here instead.
+ */
+describe('ingestFolder — a tombstone that cancels a legacy manifest note', () => {
+  function textFile(path: string, text: string): PickedFile {
+    return { path, file: new File([text], path.slice(path.lastIndexOf('/') + 1)) };
+  }
+
+  it('says which file deleted it and what the note said', async () => {
+    const manifestJson = JSON.stringify({
+      schema: SCHEMA_VERSION,
+      event: { title: 'Race', timezone: 'UTC' },
+      people: [],
+      items: [],
+      notes: [{ id: 'n_old', at: '2026-07-25T15:00:00Z', text: 'the note in the old manifest' }],
+    });
+    const csv =
+      'id,year,month,day,hour,minute,duration,tz,utc_offset_min,people,photo,' +
+      'author,text,written,deleted,schema\n' +
+      'n_old,2026,7,25,15,0,,UTC,0,,,,.,,1,1\n';
+
+    const { notes, noteProblems } = await ingestFolder(
+      [textFile('manifest.json', manifestJson), textFile('notes.csv', csv)],
+      { title: 'x', timezone: 'UTC' },
+    );
+    expect(notes).toEqual([]);
+    const reported = noteProblems.filter((p) => p.includes('n_old'));
+    expect(reported).toHaveLength(1);
+    expect(reported[0]).toContain('notes.csv');
+    expect(reported[0]).toContain('the note in the old manifest');
+    expect(reported[0]).toContain('manifest.json');
+  });
+});

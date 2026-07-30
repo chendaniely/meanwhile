@@ -405,6 +405,79 @@ describe('mergeNotes', () => {
     const second = mergeNotes([file('notes.csv', blankIdRow)], ZONE, rowIdentity);
     expect(second.notes[0]?.id).toBe(first.notes[0]?.id);
   });
+
+  /**
+   * A `deleted` row cancels whichever note its `id` names, in EVERYONE's copy,
+   * and the next Save writes only the tombstone — so the original text leaves
+   * the disk. Ids are not secret: everybody handed a `notes.csv` has all of
+   * them, so a single row of `id,…,.,,1,1` in a file anyone contributes is
+   * enough, by carelessness as easily as by malice.
+   *
+   * The deletion is not refused — propagating a deletion is what the tombstone
+   * is FOR, and a delete another copy resurrects was itself a bug fixed
+   * earlier. What was wrong is that it happened in complete silence:
+   * `problems` came back empty. Reproduced exactly as below before the fix.
+   */
+  describe('a tombstone that removes somebody else\'s note is reported', () => {
+    const withDeleted = (name: string, body: string) => ({
+      name,
+      text:
+        'id,year,month,day,hour,minute,duration,tz,people,photo,author,text,written,deleted\n' +
+        body,
+    });
+    const REAL = 'n_real1,2026,7,25,15,0,,,,,Dan,Runner collapsed at mile 60 and we called it,,\n';
+    const TOMBSTONE = 'n_real1,2026,7,25,15,0,,,,,,.,,1\n';
+
+    it('names the file, the row, the id and the text that went', () => {
+      const { notes, problems } = mergeNotes([
+        withDeleted('notes.csv', REAL),
+        withDeleted('notes-crew.csv', TOMBSTONE),
+      ], ZONE);
+
+      expect(problems).toHaveLength(1);
+      const problem = problems[0] as string;
+      expect(problem).toContain('notes-crew.csv row 2');
+      expect(problem).toContain('n_real1');
+      expect(problem).toContain('Runner collapsed at mile 60 and we called it');
+      expect(problem).toContain('notes.csv row 2');
+      expect(problem).toContain('deleted');
+
+      // The deletion still happens — loud, not refused.
+      expect(notes.filter((n) => !n.deleted)).toHaveLength(0);
+    });
+
+    it('stays quiet for an ordinary deletion, where no live row is left to remove', () => {
+      // This is what a Save writes after the site deletes a note: the
+      // tombstone replaces the row rather than sitting beside it.
+      const { problems } = mergeNotes([withDeleted('notes.csv', TOMBSTONE)], ZONE);
+      expect(problems).toEqual([]);
+    });
+
+    it('reports it whichever order the two files are read in', () => {
+      const { problems } = mergeNotes([
+        withDeleted('notes-crew.csv', TOMBSTONE),
+        withDeleted('notes.csv', REAL),
+      ], ZONE);
+      expect(problems).toHaveLength(1);
+      expect(problems[0]).toContain('notes-crew.csv row 2');
+    });
+
+    it('reports a live row and a tombstone that sit in the SAME file', () => {
+      const { problems } = mergeNotes([withDeleted('notes.csv', REAL + TOMBSTONE)], ZONE);
+      expect(problems).toHaveLength(1);
+      expect(problems[0]).toContain('notes.csv row 3');
+    });
+
+    it('shortens a very long note rather than pasting a paragraph into the report', () => {
+      const long = 'x'.repeat(200);
+      const { problems } = mergeNotes([
+        withDeleted('notes.csv', `n_real1,2026,7,25,15,0,,,,,Dan,${long},,\n`),
+        withDeleted('notes-crew.csv', TOMBSTONE),
+      ], ZONE);
+      expect(problems[0]).toContain('…');
+      expect((problems[0] as string).length).toBeLessThan(400);
+    });
+  });
 });
 
 /**
@@ -547,6 +620,46 @@ describe('dedupeNotes', () => {
     const out = dedupeNotes([note({ text: 'one' }), note({ text: 'two' })]);
     expect(out).toHaveLength(2);
     expect(new Set(out.map((n) => n.id)).size).toBe(2);
+  });
+
+  /**
+   * The re-mint above must be DERIVED FROM THE CONTENT, not random.
+   *
+   * Reached by copy-pasting a row in a spreadsheet and editing the text: the
+   * copy wears an id that already belongs to another note, so one side has to
+   * be re-identified. When that id was minted at random it was different on
+   * every pass — so a folder holding both the saved file and the still
+   * uncorrected original grew by one note per save/merge cycle, measured at
+   * 3 → 4 → 5 → 6 → 7 before this fix. A content-derived id makes the second
+   * pass produce the id the first pass already saved, which then dedupes.
+   */
+  it('converges instead of growing when the same collision is merged five times over', () => {
+    const original = note({ id: 'n_a', text: 'original text' });
+    const clone = note({ id: 'n_a', text: 'edited copy' });
+
+    let saved = dedupeNotes([original], ZONE);
+    const counts: number[] = [];
+    for (let round = 0; round < 5; round++) {
+      // The saved file row-bound with the crew member's copy, which still
+      // carries the colliding id every time.
+      saved = dedupeNotes([...saved, clone], ZONE);
+      counts.push(saved.length);
+    }
+    expect(counts).toEqual([2, 2, 2, 2, 2]);
+    expect(saved.map((n) => n.text).sort()).toEqual(['edited copy', 'original text']);
+  });
+
+  it('gives the re-minted copy the same id every time, so a save round trip is stable', () => {
+    const first = dedupeNotes([note({ text: 'one' }), note({ text: 'two' })], ZONE);
+    const second = dedupeNotes([note({ text: 'one' }), note({ text: 'two' })], ZONE);
+    expect(second.map((n) => n.id)).toEqual(first.map((n) => n.id));
+  });
+
+  it('still ends the derived id in a letter, which Excel\'s fill handle leaves alone', () => {
+    // Same rule as `mintNoteId`: dragging a cell whose id ends in a digit
+    // increments it, inventing ids for notes that do not exist.
+    const out = dedupeNotes([note({ text: 'one' }), note({ text: 'two' })], ZONE);
+    expect(out[1]?.id).toMatch(/^n_[0-9a-z]*[a-z]$/);
   });
 
   it('mints an id for a note with none', () => {

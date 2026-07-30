@@ -821,13 +821,138 @@ export function dedupeNotes(
       // The same row seen twice is one note. A different row wearing the
       // same id is a copy, and gets its own identity.
       if (seen.get(next.id) === fingerprint) continue;
-      next.id = mintUnique();
+      // DERIVED from the copy's own content, not minted at random — see
+      // `deriveNoteId`. A random re-mint made the count grow by one on every
+      // save/merge cycle (measured 2 → 3 → 4 → 5 → 6 over five rounds with
+      // the same two files), because the file that keeps re-introducing the
+      // collision gets a different new id each time and so never matches the
+      // copy already saved.
+      next.id = deriveNoteId(fingerprint);
+      const held = seen.get(next.id);
+      // The derived id may already be in use: by this exact content (the copy
+      // has been through here before in this same merge — one note), or, far
+      // less likely, by different content that happens to hash to it.
+      if (held === fingerprint) continue;
+      if (held !== undefined) next.id = mintUnique();
     }
     seen.set(next.id, fingerprint);
     out.push(next);
   }
 
   return out;
+}
+
+/**
+ * The id given to a row that turns up wearing an id another row already has.
+ *
+ * **Derived from the content, so repeated merges converge.** Reached by
+ * copy-pasting a row in a spreadsheet and editing the text: the copy collides
+ * with the original's id, and one side has to be re-identified. When that was
+ * `mintNoteId()` the new id was different on every pass, so a folder holding
+ * the saved file AND the still-uncorrected original grew by one note per
+ * save/merge cycle forever. A content-derived id makes the second pass produce
+ * the id the first pass already saved, which then dedupes as the same note.
+ *
+ * **This is not the rejected "mint a blank-id row's id from its content"**
+ * (see `mergeSessionNotes` in `viewer/media/ingest.ts`, which explains why that
+ * would break editing). A colliding copy has no stable identity to protect —
+ * its id belongs to a different note — so deriving one is strictly better than
+ * the random id it had before, which changed on *every* parse rather than only
+ * when the text does.
+ *
+ * FNV-1a twice over, for 64 bits of spread from arithmetic that stays exact in
+ * a double. **Ends in a letter**, for the same reason `mintNoteId` does:
+ * Excel's fill handle increments a trailing digit when a cell is dragged.
+ */
+function deriveNoteId(fingerprint: string): string {
+  let a = 0x811c9dc5;
+  let b = 0x01000193;
+  for (let i = 0; i < fingerprint.length; i++) {
+    const c = fingerprint.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193) >>> 0;
+    b = Math.imul(b ^ (c + i), 0x85ebca6b) >>> 0;
+  }
+  const letters = 'abcdefghijklmnopqrstuvwxyz';
+  return `n_${a.toString(36)}${b.toString(36)}${letters[a % 26] as string}`;
+}
+
+/**
+ * One file's notes, together with the file's name and — when the caller has
+ * them — the line each note came from, so a problem can point at a row rather
+ * than at a whole file.
+ */
+export interface NoteSource {
+  /** As it should be named to a person: the path they will look for. */
+  name: string;
+  notes: readonly Note[];
+  /** 1-indexed file lines, aligned by index with `notes`. */
+  lines?: readonly number[];
+}
+
+/**
+ * Report every note a `deleted` row cancels — LOUDLY, by name and by text.
+ *
+ * **Ids are not secret.** Everyone handed a `notes.csv` has every id in it, so
+ * one row of `id,…,.,,1,1` in a file anybody contributes removes whichever
+ * note that id names, from everyone's copy, on the next merge — and the next
+ * Save writes only the tombstone, so the original text goes off disk. Before
+ * this, `mergeNotes` reported nothing at all: the note was simply not there
+ * any more.
+ *
+ * The deletion still happens. Propagating a deletion is the whole point of the
+ * tombstone (a delete that another copy resurrects was itself a bug), so
+ * refusing it here would trade one silent loss for another. What changes is
+ * that it is now impossible to miss: the file, the row, the id, and the text
+ * that went are all named, through the same `noteProblems` channel the ingest
+ * report already shows.
+ *
+ * **Only tombstones that actually removed something are reported.** A note
+ * deleted the ordinary way leaves a tombstone and no live row anywhere, so the
+ * normal case stays quiet — this fires exactly when one file cancels a note
+ * another file (or another row of the same file) still holds.
+ */
+export function reportTombstoneRemovals(sources: readonly NoteSource[]): string[] {
+  const live = new Map<string, Array<{ note: Note; where: string }>>();
+  for (const source of sources) {
+    source.notes.forEach((note, i) => {
+      if (note.deleted || !note.id) return;
+      const list = live.get(note.id) ?? [];
+      list.push({ note, where: sourceLabel(source, i) });
+      live.set(note.id, list);
+    });
+  }
+
+  const problems: string[] = [];
+  for (const source of sources) {
+    source.notes.forEach((note, i) => {
+      if (!note.deleted || !note.id) return;
+      for (const victim of live.get(note.id) ?? []) {
+        problems.push(
+          `${sourceLabel(source, i)} marks note "${note.id}" as deleted, so the note ` +
+            `"${excerpt(victim.note.text)}" written in ${victim.where} has been removed and ` +
+            'will not be saved. If that was not meant to happen, clear the 1 in the deleted ' +
+            `column of ${sourceLabel(source, i)} and open the folder again.`,
+        );
+      }
+    });
+  }
+  return problems;
+}
+
+/**
+ * "notes-crew.csv row 2", or just the file name when no lines were given.
+ *
+ * Not called `at` — that is the name of a `Note`'s timestamp field, and this
+ * is a place in a file.
+ */
+function sourceLabel(source: NoteSource, i: number): string {
+  const line = source.lines?.[i];
+  return line === undefined ? source.name : `${source.name} row ${line}`;
+}
+
+/** Enough of a note to recognise it by, without pasting a paragraph. */
+function excerpt(text: string): string {
+  return text.length <= 60 ? text : `${text.slice(0, 59)}…`;
 }
 
 /** Split a merged list into the notes to show and the tombstones to keep. */
@@ -846,6 +971,10 @@ export function partitionDeleted(notes: readonly Note[]): { live: Note[]; delete
  * no locking and no merge UI. Two people who edited a copy of the same note
  * produce two notes at the same time, which the timeline shows one after the
  * other — accepted, not an error.
+ *
+ * `problems` carries an unreadable row AND — since a security review found it
+ * happening in complete silence — every note a `deleted` row in one file
+ * cancelled in another. See `reportTombstoneRemovals`.
  */
 export function mergeNotes(
   files: ReadonlyArray<{ name: string; text: string }>,
@@ -855,9 +984,16 @@ export function mergeNotes(
 ): { notes: Note[]; problems: string[] } {
   const rows: Note[] = [];
   const problems: string[] = [];
+  // Kept per file, and only for this: a tombstone that cancels somebody else's
+  // note has to be reported against the file and row it arrived in. See
+  // `reportTombstoneRemovals`.
+  const sources: NoteSource[] = [];
 
   for (const file of files) {
     const table = parseCsv(file.text);
+    const fileNotes: Note[] = [];
+    const fileLines: number[] = [];
+    sources.push({ name: file.name, notes: fileNotes, lines: fileLines });
     table.rows.forEach((row, i) => {
       const result = rowToNote(row, eventTimezone);
       if ('error' in result) {
@@ -872,8 +1008,14 @@ export function mergeNotes(
         return;
       }
       rows.push(result);
+      fileNotes.push(result);
+      fileLines.push(table.rowLines[i] ?? i + 2);
     });
   }
+
+  // Before the dedupe, which is where a tombstone silently takes its victim
+  // out — so this still has both sides to name.
+  problems.push(...reportTombstoneRemovals(sources));
 
   const notes = dedupeNotes(rows, eventTimezone, rowIdentity);
   notes.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));

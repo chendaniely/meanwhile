@@ -152,6 +152,117 @@ describe('rejecting what cannot be used', () => {
     expect(parseCourse('')).toBeNull();
   });
 
+  /**
+   * `parseCourse` runs SYNCHRONOUSLY during ingest, so a track that takes
+   * minutes to scan is not a slow load — it is a tab that has to be killed.
+   *
+   * The scanner used to hand an unclosed `<trkpt>` the ENTIRE REST OF THE
+   * FILE as its body, then regex-scan that for `<ele>`, `<hr>` and `<cad>`,
+   * none of which are there — so every scan ran to the end, once per point.
+   * Measured before the fix, on a file of nothing but unclosed tags:
+   * 1,000 points 381 ms, 2,000 points (101 KB) 2,989 ms. A megabyte would
+   * have frozen the tab for minutes.
+   *
+   * The assertion is on the SHAPE of the curve, not on a wall-clock budget: a
+   * fixed millisecond limit is either flaky on a loaded machine or so loose it
+   * catches nothing. Doubling the input must not much more than double the
+   * time; quadratic quadruples it, and the pre-fix ratio was 7.8.
+   */
+  it('scans a file of unclosed trkpts in close to linear time, not quadratic', () => {
+    const unclosed = (n: number) => {
+      const points = Array.from(
+        { length: n },
+        (_v, i) => `<trkpt lat="45.${i}" lon="-110.${i}"><ele>${1500 + i}</ele>`,
+      ).join('\n');
+      return `<?xml version="1.0"?><gpx><trk><trkseg>${points}</trkseg></trk></gpx>`;
+    };
+    const time = (xml: string): number => {
+      const started = performance.now();
+      parseCourse(xml);
+      return performance.now() - started;
+    };
+
+    const small = unclosed(2000);
+    const large = unclosed(8000);
+    // One untimed pass each, so the comparison is not measuring warm-up.
+    time(small);
+    time(large);
+
+    const smallMs = Math.max(time(small), 1);
+    const largeMs = time(large);
+    // Four times the input. Linear is ~4x, quadratic is ~16x. Ten leaves
+    // room for a busy machine and still fails on any return to quadratic.
+    expect(largeMs / smallMs).toBeLessThan(10);
+    // And an absolute ceiling, generous enough never to flake: the pre-fix
+    // implementation took ~3 s on the SMALLER of these two.
+    expect(largeMs).toBeLessThan(2000);
+  });
+
+  it('says so when a track never closes an element, rather than failing silently', () => {
+    const xml =
+      '<?xml version="1.0"?><gpx><trk><trkseg>' +
+      '<trkpt lat="45.8" lon="-110.5"><ele>1500</ele>' +
+      '<trkpt lat="45.81" lon="-110.5"><ele>1600</ele>' +
+      '<trkpt lat="45.82" lon="-110.5"><ele>1550</ele></trkpt>' +
+      '</trkseg></trk></gpx>';
+    const course = parseCourse(xml) as Course;
+    // Bounded, not thrown away: the two malformed points still read as far as
+    // the next <trkpt>, so their position and elevation survive.
+    expect(course.samples).toHaveLength(3);
+    expect(course.samples[0]?.ele).toBe(1500);
+    expect(course.problems).toHaveLength(1);
+    expect(course.problems[0]).toContain('2 <trkpt>');
+    expect(course.problems[0]).toContain('never closed');
+  });
+
+  it('reports nothing at all for a well-formed track', () => {
+    expect((parseCourse(gpx(LINE)) as Course).problems).toEqual([]);
+    expect((parseCourse(tcx(LINE)) as Course).problems).toEqual([]);
+  });
+
+  /**
+   * `exif.ts` has range-checked its coordinates from the start; this file did
+   * not, so `lat="999999"` was plotted. One such point stretches the map's
+   * bounds across the whole planet and drags the distance total with it —
+   * which is the same class of failure as `ON_COURSE_TOLERANCE_M`, and gets
+   * the same answer: leave it out and say so.
+   */
+  it('leaves a point that is not on Earth out of the course, and says so', () => {
+    const xml =
+      '<?xml version="1.0"?><gpx><trk><trkseg>' +
+      '<trkpt lat="999999" lon="-110.5"><ele>1500</ele></trkpt>' +
+      '<trkpt lat="45.8" lon="-999" ><ele>1500</ele></trkpt>' +
+      '<trkpt lat="45.81" lon="-110.5"><ele>1600</ele></trkpt>' +
+      '<trkpt lat="45.82" lon="-110.5"><ele>1550</ele></trkpt>' +
+      '</trkseg></trk></gpx>';
+    const course = parseCourse(xml) as Course;
+    expect(course.samples).toHaveLength(2);
+    expect(course.bounds.maxLat).toBeCloseTo(45.82, 6);
+    expect(course.bounds.minLon).toBeCloseTo(-110.5, 6);
+    expect(course.problems).toHaveLength(1);
+    expect(course.problems[0]).toContain('2 points');
+    expect(course.problems[0]).toContain('not on Earth');
+  });
+
+  it('range-checks a TCX the same way it range-checks a GPX', () => {
+    const course = parseCourse(tcx([
+      { lat: 91, lon: -110.5, t: 0 },
+      ...LINE,
+    ])) as Course;
+    expect(course.samples).toHaveLength(LINE.length);
+    expect(course.problems[0]).toContain('not on Earth');
+  });
+
+  it('keeps the poles and the antimeridian, which are real places', () => {
+    const course = parseCourse(gpx([
+      { lat: 90, lon: 180, t: 0 },
+      { lat: -90, lon: -180, t: 600 },
+      { lat: 0, lon: 0, t: 1200 },
+    ])) as Course;
+    expect(course.samples).toHaveLength(3);
+    expect(course.problems).toEqual([]);
+  });
+
   it('never places a point with no time at the epoch', () => {
     const broken = gpx(LINE).replace(/<time>[^<]*<\/time>/, '');
     const course = parseCourse(broken) as Course;
@@ -428,7 +539,7 @@ describe('anchorItems', () => {
   const untimed: Course = {
     samples, length: 199 * 111, timed: false, from: null, to: null,
     bounds: { minLat: 45, maxLat: 45.199, minLon: -110, maxLon: -110 },
-    has: { elevation: false, hr: false, cadence: false }, ascent: 0,
+    has: { elevation: false, hr: false, cadence: false }, ascent: 0, problems: [],
   };
   const none = new Map<string, number>();
 

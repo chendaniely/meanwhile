@@ -16,8 +16,8 @@ import {
 import { parseCourse, type Course } from '../../core/course.ts';
 import { isManifestFile, isNotesFile, isPeopleFile, isTrackFile } from '../../core/metadata.ts';
 import {
-  dedupeNotes, fingerprintNote, mergeNotes, partitionDeleted, resolveNotePhotos,
-  type Note, type NoteRowIdentity,
+  dedupeNotes, fingerprintNote, mergeNotes, partitionDeleted, reportTombstoneRemovals,
+  resolveNotePhotos, type Note, type NoteRowIdentity,
 } from '../../core/notes.ts';
 import {
   displayName, parsePeopleCsv, resolvePersonNames, type PeopleExtra,
@@ -187,6 +187,15 @@ export interface IngestResult {
    * ./core/notes.ts); and a roster row with an unrecognised `role` or an
    * unparseable `clock_offset` keeps the person, blanking just that column
    * rather than saving it wrong (`parsePeopleCsv`).
+   *
+   * **It is no longer only about rows**, after a security review found three
+   * things going wrong in complete silence. Also reported here: a second
+   * `manifest.json` or `people.csv` found deeper in the folder and therefore
+   * ignored (`ignoredCandidate`); a `deleted` row that cancelled a note some
+   * other file still held, with the text that went (`reportTombstoneRemovals`
+   * in ./core/notes.ts); and a malformed track file
+   * (`Course.problems`). Every one of them used to change what the timeline
+   * showed with nothing said anywhere.
    */
   noteProblems: string[];
 }
@@ -201,9 +210,11 @@ export async function ingestFolder(
   // None of a track, a manifest, notes, or a roster is media; each takes its
   // own path.
   const tracks = files.filter((f) => isTrackFile(f.path));
-  const manifests = files.filter((f) => isManifestFile(f.path));
+  // Shallowest first, so the folder's OWN manifest and roster win over a copy
+  // that came along inside somebody's subfolder. See `shallowestFirst`.
+  const manifests = shallowestFirst(files.filter((f) => isManifestFile(f.path)));
   const notesFiles = files.filter((f) => isNotesFile(f.path));
-  const peopleFiles = files.filter((f) => isPeopleFile(f.path));
+  const peopleFiles = shallowestFirst(files.filter((f) => isPeopleFile(f.path)));
   const media = files.filter(
     (f) =>
       !isTrackFile(f.path) &&
@@ -225,7 +236,26 @@ export async function ingestFolder(
   let imported: Manifest | null = null;
   let importedFrom: string | null = null;
   let importError: string | null = null;
+  /*
+   * ONE manifest per folder, and it is the first one this loop accepts — which
+   * `shallowestFirst` has already made the one closest to the top.
+   *
+   * This loop used to run to the end without a `break`, so the LAST file in
+   * path order won. A contributor who zips their own working folder in — much
+   * likelier than malice — could therefore replace the event title, timezone,
+   * time window, course reference and whole roster (a 10-hour `clockOffset`
+   * included, which moves every photo) from `zz-crew/manifest.json`, with
+   * nothing said about it anywhere.
+   */
+  const ignoredCandidates: string[] = [];
   for (const found of manifests) {
+    // Tested on `importedFrom` rather than on `imported`, though the two are
+    // set together: it is the one that gives the message the name of the file
+    // that WAS used, with no cast needed to persuade the type checker of it.
+    if (importedFrom !== null) {
+      ignoredCandidates.push(ignoredCandidate('manifest', found.path, importedFrom));
+      continue;
+    }
     try {
       const parsed: unknown = JSON.parse(await found.file.text());
       const result = validateManifest(parsed);
@@ -244,6 +274,10 @@ export async function ingestFolder(
 
   let course: Course | null = null;
   let courseFile: string | null = null;
+  // A track that is malformed enough to be worth saying so about: an element
+  // the file never closes, a latitude off the planet. Reported, never guessed
+  // through — see `parseCourse`.
+  const courseProblems: string[] = [];
   for (const track of tracks) {
     const parsed = parseCourse(await track.file.text());
     // Prefer whichever carries the most: a TCX has heart rate and cadence
@@ -252,19 +286,29 @@ export async function ingestFolder(
       course = parsed;
       courseFile = track.path;
     }
+    for (const problem of parsed?.problems ?? []) courseProblems.push(`${track.path}: ${problem}`);
   }
 
   // A roster kept in people.csv is a spreadsheet edit away, which is the
   // whole point of this file — so it outranks `existingPeople`, the same way
   // an imported manifest.json already does.
+  //
+  // ONE roster per folder, the shallowest — exactly as for the manifest above,
+  // and for the same reason: this loop used to let the last `people.csv` in
+  // path order win, so a roster inside anybody's subfolder replaced the real
+  // one, names, roles and clock offsets together.
   let peopleFromCsv: Person[] | null = null;
   const peopleExtra: PeopleExtra = new Map();
   const rosterProblems: string[] = [];
-  for (const found of peopleFiles) {
-    const { people, problems, extra } = parsePeopleCsv(await found.file.text());
+  const rosterFile = peopleFiles[0];
+  if (rosterFile) {
+    const { people, problems, extra } = parsePeopleCsv(await rosterFile.file.text());
     if (people.length > 0) peopleFromCsv = people;
     for (const [id, columns] of extra) peopleExtra.set(id, columns);
-    for (const p of problems) rosterProblems.push(`${found.path}: ${p}`);
+    for (const p of problems) rosterProblems.push(`${rosterFile.path}: ${p}`);
+    for (const other of peopleFiles.slice(1)) {
+      ignoredCandidates.push(ignoredCandidate('roster', other.path, rosterFile.path));
+    }
   }
 
   const results = new Array<IngestedFile | null>(media.length);
@@ -386,8 +430,19 @@ export async function ingestFolder(
     opts.deletedNoteFingerprints ?? new Set(),
   );
   const noteProblems = [
+    ...ignoredCandidates,
+    ...courseProblems,
     ...rosterProblems,
     ...csvNoteProblems,
+    // A tombstone in notes*.csv can also cancel a note that came out of a
+    // legacy manifest.json in the same folder — the same silent loss, across
+    // the other seam. `mergeNotes` has already collapsed the notes files into
+    // one list by here, so the tombstone side is named by the files it could
+    // have come from.
+    ...reportTombstoneRemovals([
+      { name: importedFrom ?? 'manifest.json', notes: migratedNotes },
+      { name: noteFiles.map((f) => f.name).join(' or ') || 'notes.csv', notes: csvNotes },
+    ]),
     ...photoProblems,
     ...reportUnresolvedNoteNames(notes, manifest.people),
   ];
@@ -632,6 +687,35 @@ export function reportUnresolvedNoteNames(notes: readonly Note[], people: readon
     );
   }
   return problems;
+}
+
+/**
+ * Order candidates so the one closest to the top of the folder comes first,
+ * ties broken by path so the choice is the same every time.
+ *
+ * `isManifestFile`/`isPeopleFile` match `manifest.json` and `people.csv`
+ * ANYWHERE in the tree, which is deliberate — it is how dragging a subfolder
+ * in works. What was not deliberate is that whichever copy sorted last then
+ * won. Depth is the right tiebreak: the file the author put beside their
+ * photographs is the folder's own, and anything nested inside came along with
+ * somebody's working directory.
+ */
+function shallowestFirst<T extends { path: string }>(files: readonly T[]): T[] {
+  const depth = (path: string): number => path.split('/').length;
+  return [...files].sort((a, b) => depth(a.path) - depth(b.path) || a.path.localeCompare(b.path));
+}
+
+/** Plain words for "there were two of these and I used the other one". */
+function ignoredCandidate(kind: 'manifest' | 'roster', ignored: string, used: string): string {
+  const what =
+    kind === 'manifest'
+      ? 'the event name, timezone, time window, course and people in it'
+      : 'the names, roles and clock offsets in it';
+  return (
+    `Ignored the extra ${kind === 'manifest' ? 'manifest' : 'people.csv'} "${ignored}": ` +
+    `meanwhile reads one ${kind} per folder, the one closest to the top, and that is ` +
+    `"${used}". So ${what} were not used. Move or delete the file if you meant that one instead.`
+  );
 }
 
 /** How many optional series a track carries, for choosing between files. */

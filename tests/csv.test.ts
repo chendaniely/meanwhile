@@ -113,6 +113,67 @@ describe('formatCsv', () => {
 });
 
 /**
+ * The guard used to be `/^['=+\-@]/`, anchored at character zero — and Excel
+ * and LibreOffice STRIP leading whitespace before deciding whether a cell is a
+ * formula. A CSV field can carry a TAB or a CR quite legally, so
+ * `\t=cmd|'/c calc'!A0` sailed straight through: found by a security review
+ * round-tripping it unguarded through an unknown `notes.csv` column, which is
+ * the realistic path (`rowToNote` trims `text`, but every column this app does
+ * not know the meaning of is written back exactly as it arrived). The owner
+ * merges a crew member's file, saves, opens the result in Excel, and the DDE
+ * payload runs.
+ *
+ * The guard belongs here in `csv.ts` rather than in each writer precisely so
+ * one fix covers `notes*.csv`, `people.csv`, and anything written later.
+ */
+describe('formula guard: leading whitespace does not get a cell past it', () => {
+  const HOSTILE = [
+    '\t=cmd|\'/c calc\'!A0',
+    '\r=1+1',
+    '\n=1+1',
+    ' =HYPERLINK("http://evil","click")',
+    '\t\t@SUM(A1)',
+    '  +1',
+    '\t-2+3+cmd|\' /C calc\'!A0',
+  ];
+
+  for (const hostile of HOSTILE) {
+    it(`guards ${JSON.stringify(hostile)} and still round-trips it exactly`, () => {
+      const text = formatCsv(['a'], [{ a: hostile }]);
+      // The guard is what a spreadsheet sees: an apostrophe before anything
+      // it could mistake for a formula.
+      expect(text).toContain(`'${hostile.replace(/"/g, '""')}`);
+      // ...and the round trip stays lossless, which is the constraint that
+      // makes guarding safe to do unconditionally.
+      expect(parseCsv(text).rows[0]?.a).toBe(hostile);
+    });
+  }
+
+  it('leaves a legitimate -PT4S clock offset readable after the round trip', () => {
+    // `people.csv` writes an ISO-8601 duration here, and a negative one starts
+    // with `-`. It is guarded (it always was) and must come back byte-exact.
+    const text = formatCsv(['clock_offset'], [{ clock_offset: '-PT4S' }]);
+    expect(parseCsv(text).rows[0]?.clock_offset).toBe('-PT4S');
+  });
+
+  it("leaves a name that genuinely starts with an apostrophe exactly as typed", () => {
+    const text = formatCsv(['name'], [{ name: "'Bear' Malone" }]);
+    expect(parseCsv(text).rows[0]?.name).toBe("'Bear' Malone");
+  });
+
+  it('does not guard text that merely contains a formula character later on', () => {
+    const text = formatCsv(['text'], [{ text: 'mile 60 = the wall' }]);
+    expect(text).not.toContain("'mile 60");
+    expect(parseCsv(text).rows[0]?.text).toBe('mile 60 = the wall');
+  });
+
+  it('leaves an all-whitespace cell alone', () => {
+    const text = formatCsv(['a'], [{ a: ' \t ' }]);
+    expect(parseCsv(text).rows[0]?.a).toBe(' \t ');
+  });
+});
+
+/**
  * `José` composed (U+00E9) and `José` decomposed (e + U+0301) render
  * identically and compare unequal as JavaScript strings — verified in both
  * directions against `resolvePersonNames`, which matched neither against the

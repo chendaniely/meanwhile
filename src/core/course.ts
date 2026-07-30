@@ -71,6 +71,17 @@ export interface Course {
   has: { elevation: boolean; hr: boolean; cadence: boolean };
   /** Cumulative ascent in metres, smoothed to ignore GPS jitter. */
   ascent: number;
+  /**
+   * What was wrong with the file, in plain words — an element it never closes,
+   * a coordinate off the planet.
+   *
+   * Empty for every well-formed track, which is nearly all of them. The
+   * alternative to reporting is what this used to do: plot the bad point
+   * anyway (a `lat="999999"` blew the map bounds out to the whole world) or
+   * grind through a malformed file for minutes. Surfaced by `ingestFolder`
+   * into the ingest report alongside the notes and roster problems.
+   */
+  problems: string[];
 }
 
 export interface CoursePoint {
@@ -92,11 +103,45 @@ export interface CoursePoint {
 // A very small XML scanner
 // ---------------------------------------------------------------------------
 
-/** Element bodies for a tag, ignoring any namespace prefix. */
-function* elements(xml: string, tag: string): Generator<string> {
+/**
+ * Element bodies for a tag, ignoring any namespace prefix.
+ *
+ * **An element's body never runs past the next opening tag of the same name,
+ * and the scan never restarts from the beginning.** Both halves of that are
+ * the fix for a quadratic hang found by a security review: an unclosed
+ * `<trkpt>` used to be handed the ENTIRE REST OF THE FILE as its body, which
+ * was then regex-scanned for `<ele>`, `<hr>` and `<cad>` — none of which are
+ * there, so each scan runs to the end. Measured before the fix on a 101 KB
+ * file of unclosed tags: 2,000 points took 3.0 seconds, and ~1 MB would have
+ * frozen the tab for minutes. `parseCourse` runs synchronously during ingest,
+ * so there is no way out of it but closing the tab.
+ *
+ * Nothing legitimate is lost. `<trkpt>` and `<Trackpoint>` cannot nest, so the
+ * next opening tag is a hard ceiling on where the current element can end; a
+ * well-formed file always closes before it, and this changes nothing for one.
+ * A malformed element still yields whatever it did contain — the point is to
+ * bound the work, not to throw the file away — and `parseCourse` reports it.
+ *
+ * `closeRe` is a single global regex whose `lastIndex` only ever moves
+ * forward, so finding the closing tags costs one pass over the file in total
+ * rather than one pass per element.
+ */
+function* elements(
+  xml: string,
+  tag: string,
+  problems?: string[],
+): Generator<string> {
   // Both `<trkpt ...>...</trkpt>` and the self-closing form appear in real
   // files, and every tag may carry a prefix like `gpxtpx:`.
   const re = new RegExp(`<(?:[\\w.-]+:)?${tag}\\b([^>]*?)(/?)>`, 'gi');
+  const closeRe = new RegExp(`</(?:[\\w.-]+:)?${tag}\\s*>`, 'gi');
+  let unclosed = 0;
+  // Once `closeRe` has run off the end, there is no closing tag left anywhere
+  // after it, so asking again would rescan the whole remaining file for
+  // nothing — which on a file with NO closing tags at all is quadratic all on
+  // its own. Measured: without this flag, 4,000 unclosed tags still took 259
+  // ms and doubling still quadrupled it.
+  let noMoreCloses = false;
   let match: RegExpExecArray | null;
   while ((match = re.exec(xml)) !== null) {
     const attrs = match[1] ?? '';
@@ -104,12 +149,38 @@ function* elements(xml: string, tag: string): Generator<string> {
       yield `${attrs}>`;
       continue;
     }
-    const closeRe = new RegExp(`</(?:[\\w.-]+:)?${tag}\\s*>`, 'i');
-    const rest = xml.slice(re.lastIndex);
-    const close = closeRe.exec(rest);
-    const body = close ? rest.slice(0, close.index) : rest;
-    yield `${attrs}>${body}`;
-    if (close) re.lastIndex += close.index + close[0].length;
+    const bodyStart = re.lastIndex;
+
+    // Where the next element of this kind begins — the ceiling on this one.
+    // Peeking costs a second pass over the gap and no more, because `re` is
+    // restored and re-scans only from `bodyStart`.
+    const saved = re.lastIndex;
+    const peek = re.exec(xml);
+    const ceiling = peek ? peek.index : xml.length;
+    re.lastIndex = saved;
+
+    if (closeRe.lastIndex < bodyStart) closeRe.lastIndex = bodyStart;
+    const close = noMoreCloses ? null : closeRe.exec(xml);
+    if (close === null) noMoreCloses = true;
+
+    if (close && close.index <= ceiling) {
+      yield `${attrs}>${xml.slice(bodyStart, close.index)}`;
+      re.lastIndex = close.index + close[0].length;
+      continue;
+    }
+
+    // Unclosed. Rewind `closeRe` so the tag it did find — which belongs to
+    // some later element — is still available to that one.
+    if (close) closeRe.lastIndex = close.index;
+    unclosed++;
+    yield `${attrs}>${xml.slice(bodyStart, ceiling)}`;
+  }
+  if (unclosed > 0 && problems) {
+    problems.push(
+      `${unclosed} <${tag}> ${unclosed === 1 ? 'element is' : 'elements are'} never closed, so ` +
+        `${unclosed === 1 ? 'it was' : 'they were'} read only as far as the next <${tag}>. ` +
+        'Re-export the track if anything looks wrong.',
+    );
   }
 }
 
@@ -147,10 +218,34 @@ function instant(source: string, tag: string): Instant | undefined {
 
 /** Parse a GPX or TCX track. Returns null if there is nothing usable in it. */
 export function parseCourse(xml: string): Course | null {
+  const problems: string[] = [];
   const raw = xml.includes('<Trackpoint') || xml.includes(':Trackpoint')
-    ? parseTcx(xml)
-    : parseGpx(xml);
-  return raw.length >= 2 ? build(raw) : null;
+    ? parseTcx(xml, problems)
+    : parseGpx(xml, problems);
+  return raw.length >= 2 ? build(raw, problems) : null;
+}
+
+/**
+ * Whether a coordinate is somewhere on Earth.
+ *
+ * `exif.ts` has range-checked its coordinates from the start; this file did
+ * not, so `lat="999999"` was plotted — one bad point stretched the map's
+ * bounds across the whole planet and dragged the distance total with it.
+ * Rejecting the point and saying so is the same rule the rest of the project
+ * follows: a visible gap beats a confident lie.
+ */
+function onEarth(lat: number, lon: number): boolean {
+  return Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+}
+
+/** One line about however many points had to be dropped, not one per point. */
+function reportOffEarth(count: number, problems: string[]): void {
+  if (count === 0) return;
+  problems.push(
+    `${count} ${count === 1 ? 'point is' : 'points are'} not on Earth — a latitude outside ` +
+      '-90 to 90, or a longitude outside -180 to 180 — so ' +
+      `${count === 1 ? 'it was' : 'they were'} left out of the course.`,
+  );
 }
 
 interface RawSample {
@@ -164,15 +259,20 @@ interface RawSample {
   reported?: number;
 }
 
-function parseGpx(xml: string): RawSample[] {
+function parseGpx(xml: string, problems: string[]): RawSample[] {
   const out: RawSample[] = [];
-  for (const point of elements(xml, 'trkpt')) {
+  let offEarth = 0;
+  for (const point of elements(xml, 'trkpt', problems)) {
     const lat = attr(point, 'lat');
     const lon = attr(point, 'lon');
     // Time is optional here, and its absence is a whole supported mode rather
     // than a broken file — see `Course.timed`.
     const at = instant(point, 'time');
     if (lat === undefined || lon === undefined) continue;
+    if (!onEarth(lat, lon)) {
+      offEarth++;
+      continue;
+    }
 
     const sample: RawSample = { lat, lon };
     if (at !== undefined) sample.at = at;
@@ -187,16 +287,22 @@ function parseGpx(xml: string): RawSample[] {
     if (cadence !== undefined) sample.cadence = cadence;
     out.push(sample);
   }
+  reportOffEarth(offEarth, problems);
   return out;
 }
 
-function parseTcx(xml: string): RawSample[] {
+function parseTcx(xml: string, problems: string[]): RawSample[] {
   const out: RawSample[] = [];
-  for (const point of elements(xml, 'Trackpoint')) {
+  let offEarth = 0;
+  for (const point of elements(xml, 'Trackpoint', problems)) {
     const at = instant(point, 'Time');
     const lat = num(point, 'LatitudeDegrees');
     const lon = num(point, 'LongitudeDegrees');
     if (at === undefined || lat === undefined || lon === undefined) continue;
+    if (!onEarth(lat, lon)) {
+      offEarth++;
+      continue;
+    }
 
     const sample: RawSample = { at, lat, lon };
     const ele = num(point, 'AltitudeMeters');
@@ -213,6 +319,7 @@ function parseTcx(xml: string): RawSample[] {
     if (reported !== undefined) sample.reported = reported;
     out.push(sample);
   }
+  reportOffEarth(offEarth, problems);
   return out;
 }
 
@@ -250,7 +357,7 @@ const ASCENT_THRESHOLD_M = 3;
  */
 const TIMED_FRACTION = 0.9;
 
-function build(raw: RawSample[]): Course {
+function build(raw: RawSample[], problems: string[]): Course {
   // Is this a run, or just a route?
   //
   // A few missing times mean a GPS dropout mid-race: drop those points and
@@ -338,6 +445,7 @@ function build(raw: RawSample[]): Course {
       cadence: samples.some((s) => s.cadence !== undefined),
     },
     ascent,
+    problems,
   };
 }
 

@@ -5,10 +5,11 @@
  * BOM: Excel on Windows misreads UTF-8 without one, and notes are exactly
  * where apostrophes, em dashes and emoji turn up.
  *
- * FORMULA GUARD: a cell beginning `=`, `+`, `-` or `@` is executed when the
- * file is opened. These files are meant to be passed between people, so that
- * is a live risk rather than a theoretical one. A leading apostrophe disarms
- * it; spreadsheets hide the apostrophe, and `parseCsv` removes it.
+ * FORMULA GUARD: a cell whose first non-whitespace character is `=`, `+`, `-`
+ * or `@` is executed when the file is opened. These files are meant to be
+ * passed between people, so that is a live risk rather than a theoretical one.
+ * A leading apostrophe disarms it; spreadsheets hide the apostrophe, and
+ * `parseCsv` removes it. See `FORMULA_LEAD` for why the whitespace matters.
  *
  * NFC: every cell is written in Unicode Normalization Form C. `José` typed on
  * a Mac (which composes to NFD in some input paths) and `José` typed on
@@ -40,7 +41,25 @@ export interface CsvTable {
 }
 
 const BOM = '﻿';
-const FORMULA_LEAD = /^['=+\-@]/;
+
+/**
+ * A cell a spreadsheet would run instead of showing.
+ *
+ * **Not `/^[=+\-@]/`.** Excel and LibreOffice STRIP leading whitespace before
+ * deciding whether a cell is a formula, and a CSV field can carry a TAB or a
+ * CR quite legally — so `\t=cmd|'/c calc'!A0` is a live DDE payload that an
+ * anchored guard never sees. Verified before this fix: such a cell
+ * round-tripped through an unknown `notes.csv` column completely unguarded,
+ * which meant the owner could merge a crew member's file, save it, open the
+ * result in Excel, and run whatever that cell said. `text` happened to be safe
+ * only because `rowToNote` trims it; every other column is written back
+ * verbatim.
+ *
+ * The apostrophe branch stays ANCHORED, deliberately: `'` is this module's own
+ * guard character and `unguard` only strips one from position 0, so guarding a
+ * cell whose apostrophe sits after a space would not round-trip.
+ */
+const FORMULA_LEAD = /^(?:'|[\s\u0000-\u001f]*[=+\-@])/;
 
 /**
  * The version of the on-disk CSV layout this build reads and writes.
