@@ -165,7 +165,12 @@ A pure kernel module with no dependencies — GPX is just
    lane goes silent. This is the signature image of the product.
 3. **A map that needs no tiles.** The course draws as an SVG polyline with
    people plotted on it — zero dependencies, zero external requests. Basemap
-   tiles are an optional later garnish, not a prerequisite.
+   tiles are an optional later garnish, not a prerequisite. **Corrected
+   post-M10:** this was reversed. The map is now Leaflet, and it fetches
+   raster tiles from OpenTopoMap, Esri, OSM, and optionally Thunderforest
+   unconditionally on every render — a bare polyline of a mountain race shows
+   no ridges, valleys or switchbacks. See the "no map library" rule's
+   reversal in `CLAUDE.md`.
 4. **Automatic clock alignment.** The watch is GPS-synced, so the track is
    authoritative time. For any photo carrying GPS, locate that point on the
    track, read the track's time there, and the difference *is* that device's
@@ -182,6 +187,12 @@ One state object, four projections:
 { cursor: Time, visible: Set<PersonId>, zoom, view, axis: 'time' | 'distance' }
 ```
 
+**Corrected post-M10:** three views shipped, not four — `feed`, `lanes`, and
+`course` (`ViewName` in `src/core/state.ts`). There is no separate map view or
+moment-grid view; the map lives inside the course view, and the shape of
+`AppState` as built has no `zoom` or `axis` field either. See "Three views,
+one cursor" in `CLAUDE.md` for the shape that actually shipped.
+
 Switching view changes only `view`. **The cursor survives every switch** —
 scrub to 06:12 in the swimlanes, flip to the moment grid, and you are
 looking at 06:12. That shared cursor is what makes the toggle feel like
@@ -196,10 +207,15 @@ goggles rather than four separate pages.
   tagged by person. This is the phone view, and the one the crew will
   actually open.
 - **Moment grid** — everything captured within ±N minutes of the cursor, as
-  a grid. The shareable one.
+  a grid. The shareable one. **Corrected post-M10:** not built as a view. A
+  `MomentStrip` component showing the photographs at the cursor exists, but
+  it lives under the swimlanes rather than as a fourth view of its own — see
+  `TODO.md`/README's "Still missing".
 - **Map** — positions at the cursor on the course polyline. Auto-enables
   when GPS coverage clears a threshold and hides itself otherwise, so it is
-  never a broken empty box.
+  never a broken empty box. **Corrected post-M10:** not a separate view
+  either. The map lives inside the course view, alongside the
+  elevation/HR/cadence/pace charts.
 
 **Cursor state lives in the URL** (`#t=2026-08-22T13:12Z&view=grid`), so any
 moment is a link you can text to someone. This falls out of the state design

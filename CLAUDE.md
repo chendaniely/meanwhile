@@ -357,7 +357,7 @@ and `tests/media-store.test.ts` fails if any URL is created and not revoked.
   fake element through that exact sequence.
 - **Only one video plays at a time**, tracked in `MediaContext`.
 
-### One state object, four projections *(M5, M7)*
+### One state object, three projections *(M5, M7)*
 
 `src/core/state.ts` holds `{ view, cursor, range, visible }` and nothing else.
 Switching view changes `view` alone, which is what makes the cursor survive
@@ -820,7 +820,7 @@ ergonomic trick: scrub to 3am in the lanes, and the compose box is already at
 3am. Typing a timestamp is the fallback, not the path.
 
 **Scrolling the feed moves that same cursor** — the feed was the one view not
-taking part in "one cursor, four projections", so you could scrub in the lanes
+taking part in "one cursor, three projections", so you could scrub in the lanes
 and flip to the feed but not the reverse. Its scroll-spy fires once per moment
 crossed rather than per scroll event, so this does not churn the URL.
 
@@ -1003,8 +1003,11 @@ everyone captured right then) is not built — see `TODO.md`/README's "Still
 missing".
 
 ```ts
-{ cursor: Time, visible: Set<PersonId>, zoom, view, axis: 'time' | 'distance' }
+{ view: ViewName, cursor: Instant | null, range: TimeWindow | null, visible: ReadonlySet<PersonId> | null }
 ```
+
+(`zoom` and a pluggable `time`/`distance` `axis` were in the original design;
+neither exists in `AppState` as built.)
 
 The owner asked to "goggle" between them. The cursor **survives every
 switch**, and lives in the URL (`#t=...&view=course`) so any moment is a

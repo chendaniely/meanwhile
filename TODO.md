@@ -1,7 +1,10 @@
 # TODO
 
-Ideas and items deliberately deferred. Move to `TODO-completed.md` with a
-commit hash when done.
+Ideas and items deliberately deferred. Completed items are struck through in
+place, with a short note of when and what happened, so the reasoning that
+justified deferring them stays attached to the note that it's done — see the
+basemap-tiles entry below for the pattern. Nothing gets moved to a separate
+file; see `TODO-completed.md` for why.
 
 ## Deferred from the 2026-07-28 design session
 
