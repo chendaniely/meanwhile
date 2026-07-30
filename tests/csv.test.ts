@@ -26,6 +26,34 @@ describe('parseCsv', () => {
     expect(parseCsv('a\n1\n\n2\n').rows).toEqual([{ a: '1' }, { a: '2' }]);
   });
 
+  /**
+   * `rowLines` carries each surviving record's REAL 1-indexed line in the
+   * file, which is the whole reason it exists: `parsePeopleCsv` and
+   * `mergeNotes` quote it back to someone who is going to open the file in a
+   * spreadsheet and jump to the row that is wrong. Counting position in
+   * `rows` instead understates it, and the cases below are exactly where a
+   * hand-rolled line counter goes wrong — each is silent, and none would be
+   * caught by any other assertion in this suite.
+   */
+  it('numbers a row by its real line, skipping the blank lines it dropped', () => {
+    expect(parseCsv('a\n1\n\n2\n').rowLines).toEqual([2, 4]);
+  });
+
+  it('numbers a row past the lines a quoted field consumed', () => {
+    // The first record opens on line 2 and its quoted field swallows line 3,
+    // so the next record is line 4 — not line 3. This is the assertion that
+    // fails if the counter stops looking inside quotes.
+    expect(parseCsv('a,b\n"x, y","one\ntwo"\n3,4\n').rowLines).toEqual([2, 4]);
+  });
+
+  it('does not double-count the LF of a CRLF ending', () => {
+    expect(parseCsv('a,b\r\n1,2\r\n3,4\r\n').rowLines).toEqual([2, 3]);
+  });
+
+  it('does not count the byte-order mark as a line', () => {
+    expect(parseCsv('﻿a\n1\n').rowLines).toEqual([2]);
+  });
+
   it('pads a short row with blank cells', () => {
     const table = parseCsv('a,b,c\n1\n');
     expect(table.rows[0]).toEqual({ a: '1', b: '', c: '' });

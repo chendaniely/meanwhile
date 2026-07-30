@@ -63,8 +63,16 @@ describe('Feed: notes do not disappear when no photo falls in the window', () =>
       );
     });
 
-    expect(container.textContent).toContain('Asleep at Cottonwood.');
-    expect(container.textContent).not.toContain('Nothing to show');
+    // Assert on STRUCTURE, not on copy. An earlier version checked
+    // `container.textContent` for the literal "Nothing to show", which this
+    // same audit rewrote twice — a negative assertion against wording that
+    // moves passes against any other wording, including a broken one. It was
+    // also too loose positively: the note text appearing anywhere in the
+    // subtree says nothing about it having rendered AS a note.
+    const note = container.querySelector('.feed__note');
+    expect(note).not.toBeNull();
+    expect(note?.querySelector('.feed__note-text')?.textContent).toBe('Asleep at Cottonwood.');
+    expect(container.querySelector('.callout')).toBeNull();
   });
 
   it('still shows the empty-state callout when there are no moments AND no notes', () => {
@@ -76,6 +84,7 @@ describe('Feed: notes do not disappear when no photo falls in the window', () =>
       );
     });
 
-    expect(container.textContent).toContain('Nothing to show');
+    expect(container.querySelector('.callout')).not.toBeNull();
+    expect(container.querySelector('.feed__note')).toBeNull();
   });
 });
