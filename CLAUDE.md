@@ -4,7 +4,7 @@
 
 As of 2026-07-29 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **399 tests pass** (`make check`).
+the race. **462 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -991,17 +991,22 @@ render time. So Drive, a bucket, Google Photos links, and a local folder are
 indistinguishable to the viewer, and the hosting question is answered
 per-event rather than once forever.
 
-### Four views, one cursor
+### Three views, one cursor
 
-Swimlanes (default), merged feed, moment grid, and map — **four projections
-of one state object**, not four features:
+`src/core/state.ts` defines `ViewName = 'feed' | 'lanes' | 'course'` — merged
+feed, swimlanes (default), and course. **Three projections of one state
+object**, not three separate features. There is no separate map view: the
+map lives inside the course view, alongside the elevation/HR/cadence/pace
+charts. The moment grid from the original design (pick a time, see what
+everyone captured right then) is not built — see `TODO.md`/README's "Still
+missing".
 
 ```ts
 { cursor: Time, visible: Set<PersonId>, zoom, view, axis: 'time' | 'distance' }
 ```
 
 The owner asked to "goggle" between them. The cursor **survives every
-switch**, and lives in the URL (`#t=...&view=grid`) so any moment is a
+switch**, and lives in the URL (`#t=...&view=course`) so any moment is a
 textable link.
 
 Design notes that matter: in the swimlanes, **gaps are the point** — the
@@ -1168,8 +1173,16 @@ structure, or behavior MUST update the affected docs in the SAME commit:
   `make help` to see them. A Makefile that lies is worse than none.
 - `PROMPTS.md` — append-only log of the owner's prompts (**verbatim**) and
   the decisions made. Every session, append.
-- `TODO.md` — anything deliberately deferred.
-- `TODO-completed.md` — move items here when done, with the commit hash.
+- `TODO.md` — anything deliberately deferred. **Completed items are struck
+  through in place**, with a short note of when and what happened, right
+  next to the reasoning that justified deferring them in the first place —
+  see the basemap-tiles entry for the pattern. Nothing gets moved to a
+  separate file.
+- `TODO-completed.md` — a stub. The contract used to say completed items
+  move here with a commit hash; in practice they never have, they get struck
+  through inline in `TODO.md` instead, which keeps the surrounding context
+  attached. This file stays as a pointer so a search for "completed" still
+  finds the answer.
 - `CHANGELOG.md` — pair what changed with the owner's guiding prompt(s),
   quoted verbatim from `PROMPTS.md`. The point is to show the project is
   human-guided, not blindly vibe-coded. Keep that framing.
@@ -1178,6 +1191,7 @@ structure, or behavior MUST update the affected docs in the SAME commit:
   0.1.0 entry was drafted at M11 and was stale two commits later; anything
   reconstructed afterwards from `git log` loses exactly the reasoning the file
   exists to keep.
+- The spec in `docs/superpowers/specs/` — update if the design changes.
 
 ### Releases: three things that must agree
 
@@ -1194,7 +1208,6 @@ The target only tags. Pushing stays a deliberate act:
 make release VERSION=0.1.0
 git push origin main && git push origin v0.1.0
 ```
-- The spec in `docs/superpowers/specs/` — update if the design changes.
 
 ## Aesthetic — RESOLVED *(session 2)*
 

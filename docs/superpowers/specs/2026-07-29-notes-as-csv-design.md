@@ -29,13 +29,25 @@ files a person can read is what this design does.
 
 | | Before | After |
 |---|---|---|
-| Notes | `manifest.notes[]` | `notes*.csv` |
-| Photo captions | `manifest.items[].note` | `notes*.csv`, `photo` column filled in |
-| People, roles, clock offsets | `manifest.people[]` | `people.csv` |
+| Notes | `manifest.notes[]` | `notes*.csv` (manifest no longer carries these on save) |
+| Photo captions | `manifest.items[].note` | `notes*.csv`, `photo` column filled in (manifest no longer carries these on save) |
+| People, roles, clock offsets | `manifest.people[]` | **edited** in `people.csv`, which wins on load |
 | Everything else | `manifest.json` | unchanged |
 
+**The manifest still carries `people[]`, and must** — `validateManifest`
+requires it, so a manifest has to be usable on its own with no CSV beside it.
+`manifestForSave()` strips `notes` and `items[].note` from what gets written,
+but deliberately does **not** strip `people`: a saved `manifest.json` keeps a
+full, redundant copy of the roster alongside `people.csv`. On load,
+`people.csv` wins when both are present. So `people.csv` is where the roster
+is *edited*, not the only place it's *stored* — unlike notes, which really
+do move out of the manifest. This is a known asymmetry, not an oversight;
+see `CLAUDE.md`'s decision record for the manifest.
+
 The manifest's job becomes sayable in one line: **it describes the event and
-caches what was read from the files; the CSVs hold what a person wrote.**
+caches what was read from the files, plus a redundant copy of the roster;
+the CSVs hold what a person wrote and are where the roster and notes are
+edited.**
 
 ### A caption IS a note
 

@@ -6,8 +6,10 @@ relation to everyone else.*
 > **Status: working, but not finished.**
 > Point it at a folder and you get a chronological feed and a swimlane view of
 > everyone's photos and video, croppable to the part of the event you care
-> about. The moment grid and the map aren't built yet, and neither is the
-> course profile. See [Running it](#running-it).
+> about. Drop a GPX or TCX in too and a course view appears — a real
+> topographic map with the elevation, heart rate, cadence and pace charts
+> underneath. The moment grid isn't built yet. See
+> [Running it](#running-it).
 
 ## Two things to know before you start
 
@@ -151,17 +153,22 @@ worked out from the distance and time between points.
 
 ## The views
 
-All four share one cursor, so switching between them keeps your place in time
-— and that place lives in the address bar, so any moment is a link you can
-text to someone.
+There are three, and they all share one cursor, so switching between them
+keeps your place in time — and that place lives in the address bar, so any
+moment is a link you can text to someone.
 
 - **Feed** ✅ — everything interleaved into one chronological scroll, grouped
   into moments and tagged by who shot it. The phone view.
 - **Swimlanes** ✅ — one lane per person across a shared clock. The gaps are
   the point: the six-hour hole in the runner's lane while three crew lanes are
   busy *is* the story of the night section.
-- **Moment grid** — pick a time, see what everyone captured right then.
-- **Map** — where everyone was, drawn on the course. Needs the GPX.
+- **Course** ✅ — the map, drawn on real terrain, with elevation, heart rate,
+  cadence and pace charts underneath, and photo dots plotted on the route.
+  Needs a GPX or TCX; there is no separate "map view" — the map lives inside
+  this one.
+
+Not yet built: a **moment grid** — pick a time, see what everyone captured
+right then, in a grid rather than a scroll.
 
 ## Running it
 
@@ -290,7 +297,7 @@ without touching the website at all.
 | `duration` | How long it lasted, only if it's a span rather than an instant — `PT3H40M` for three hours forty minutes. Leave it blank for something that happened at one moment. |
 | `tz` | Only fill this in if the note happened in a different timezone than the event itself. Leave it blank otherwise. |
 | `people` | Who the note is about. Several names, separated by semicolons — `Priya;Sam`. |
-| `photo` | If this note is a caption, the filename of the photo it belongs to. Blank for a note with no photo. |
+| `photo` | If this note is a caption, the photo it belongs to. Blank for a note with no photo. The site writes the full path (e.g. `priya/PXL_….jpg` when photos sit in a folder per person); if you type a plain filename by hand, it works too, as long as only one photo in the folder has that name. |
 | `author` | Who wrote it. Same rule as `people` — semicolons for more than one name. |
 | `text` | What happened. |
 
