@@ -67,6 +67,10 @@ export function PersonPicker({ people, value, onChange, label }: Props) {
 
   function removeAt(name: string) {
     onChange(value.filter((v) => v !== name));
+    // Removing a chip re-admits that person into `matches`, at whatever
+    // position it sorts to — leaving the old index in place would highlight
+    // an unrelated item. `commit` resets for the same reason.
+    setHighlight(0);
   }
 
   return (

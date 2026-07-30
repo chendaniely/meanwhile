@@ -222,10 +222,6 @@
   list-style: none;
 }
 
-.chip--person {
-  background: var(--mw-surface-raised);
-}
-
 .chip__remove {
   background: none;
   border: none;
@@ -632,6 +628,13 @@
 .chip--plain[aria-pressed='true'] {
   border-color: var(--mw-fg-faint);
   color: var(--mw-fg);
+}
+
+/* A chosen name in the person picker — not a time-window chip, but the same
+   pill shape, so it borrows the base rule and only overrides its fill. Must
+   be declared after `.chip` (equal specificity; last writer wins). */
+.chip--person {
+  background: var(--mw-surface-raised);
 }
 
 /* ---- feed -------------------------------------------------------------- */
