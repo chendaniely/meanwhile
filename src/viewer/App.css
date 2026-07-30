@@ -1386,6 +1386,61 @@
   margin-left: var(--mw-space-2);
 }
 
+/* ---- notes in the lanes -------------------------------------------------
+   A note in a person's lane carries that person's own lane colour — it
+   reads as theirs, the same way a photo mark does. The event-level row
+   (no `people` on the note) uses OVERFLOW_COLOR from palette.ts instead of
+   inventing a ninth hue: that colour already means "neutral, not a
+   person's" everywhere else it appears. */
+
+.lanes__label--notes .lanes__name {
+  color: var(--mw-fg-muted);
+}
+
+/* A visual break between the event-level row and the person lanes below
+   it, so "notes" reads as its own row rather than an extra person. */
+.lanes__notes-row {
+  border-bottom: 2px solid var(--mw-border);
+}
+
+/* A note mark is never scaled by a count the way a photo bar is — it is one
+   authored event, not an aggregate. So the "never thinner than a quarter of
+   the lane" rule for photo marks does not apply literally; what it protects
+   (presence must not read as absence) is kept a different way: a fixed
+   minimum footprint that cannot shrink to nothing at any zoom. */
+.lanes__note {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  padding: 0;
+  border: 1px solid var(--mw-bg);
+  border-radius: 50%;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lanes__note-glyph {
+  color: var(--brand-near-black);
+}
+
+/* A span note is a bar from its start across its length, not a point — see
+   CLAUDE.md: crewing is mostly spans, not instants. `left` still marks the
+   start, so only the vertical centering carries over from the point style. */
+.lanes__note--span {
+  transform: translateY(-50%);
+  height: 10px;
+  min-width: 6px;
+  border-radius: var(--mw-radius);
+}
+
 /* ---- moment strip ------------------------------------------------------ */
 
 /* The photographs for whatever the cursor is on. Without this the swimlanes

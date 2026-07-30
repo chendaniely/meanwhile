@@ -1,12 +1,14 @@
 import { scaleTime } from 'd3-scale';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { assignLaneColors, orderPeople } from '../../core/palette.ts';
+import { assignLaneColors, orderPeople, OVERFLOW_COLOR } from '../../core/palette.ts';
+import { resolvePersonNames } from '../../core/people-csv.ts';
 import type { Manifest, PersonId } from '../../core/schema.ts';
 import { isVisible, type AppState } from '../../core/state.ts';
 import { laneBins } from '../../core/timeline.ts';
 import { formatClock, formatDateTime, formatSpan } from '../../core/time.ts';
 import type { Instant } from '../../core/time.ts';
-import type { PlacedItem, TimeWindow } from '../../core/window.ts';
+import { excludingCaptions } from '../../core/window.ts';
+import type { PlacedItem, PlacedNote, TimeWindow } from '../../core/window.ts';
 import { MomentStrip, momentRadius } from './MomentStrip.tsx';
 
 /**
@@ -55,9 +57,27 @@ interface Props {
   onRange?: (next: TimeWindow) => void;
   /** Forwarded to the moment strip's tiles — see `Feed`'s prop of the same name. */
   captionByItem?: ReadonlyMap<string, string>;
+  /**
+   * Notes inside the current window, NOT yet filtered for captions — this
+   * component excludes those itself (via `excludingCaptions`, the same
+   * function `Feed`'s caller applies) rather than trusting every caller to
+   * remember. A caption lives on its photo, which is already on screen as a
+   * mark; showing it again as a lane mark would say the same thing twice.
+   *
+   * A note whose `people` resolves to one or more roster ids is drawn in
+   * EACH of those people's lanes — this is what lets a note explain a gap in
+   * someone's lane (CLAUDE.md: "person is optional and does real work").
+   * A note with no resolvable people (an empty list, or names that match
+   * nobody on the roster) is event-level and gets its own row, pinned above
+   * every person lane.
+   */
+  notes?: readonly PlacedNote[];
 }
 
 const LANE_HEIGHT = 44;
+/** Shorter than a person's lane: this row never carries a photo count, only
+ * a handful of note glyphs. */
+const NOTES_ROW_HEIGHT = 28;
 /** Roughly one mark per two pixels at a typical width. */
 const BINS = 480;
 
@@ -73,6 +93,7 @@ export function Swimlanes({
   bounds,
   onRange,
   captionByItem,
+  notes = [],
 }: Props) {
   const zone = manifest.event.timezone;
   const track = useRef<HTMLDivElement>(null);
@@ -112,6 +133,42 @@ export function Swimlanes({
     () => laneBins(placed, shown.map((p) => p.id), range, BINS),
     [placed, shown, range],
   );
+
+  /**
+   * Notes, split into "belongs to a lane" and "event-level" — see the
+   * `notes` prop doc for why captions are dropped here rather than trusted
+   * to every caller, and why an unresolvable `people` name is treated the
+   * same as no people at all: a note that would otherwise vanish silently
+   * (nobody's lane, and not drawn anywhere) is worse than one that lands in
+   * the event row unexpectedly.
+   */
+  const laneNotes = useMemo(() => excludingCaptions(notes), [notes]);
+
+  const resolvedNotes = useMemo(
+    () =>
+      laneNotes.map((placedNote) => ({
+        placedNote,
+        people: resolvePersonNames(placedNote.note.people, manifest.people).ids,
+      })),
+    [laneNotes, manifest.people],
+  );
+
+  const eventNotes = useMemo(
+    () => resolvedNotes.filter((entry) => entry.people.length === 0),
+    [resolvedNotes],
+  );
+
+  const notesByPerson = useMemo(() => {
+    const map = new Map<PersonId, typeof resolvedNotes>();
+    for (const entry of resolvedNotes) {
+      for (const id of entry.people) {
+        const list = map.get(id);
+        if (list) list.push(entry);
+        else map.set(id, [entry]);
+      }
+    }
+    return map;
+  }, [resolvedNotes]);
 
   // Ticks only. d3-scale picks round numbers a human would have chosen.
   const ticks = useMemo(() => {
@@ -212,6 +269,69 @@ export function Swimlanes({
   const at = scrub ?? state.cursor;
   const radius = momentRadius(total);
 
+  /**
+   * One note mark, reused for the event-level row and for a person's lane.
+   *
+   * Positioned in the SAME coordinate system as the photo marks, the marker
+   * lines and the cursor — `percentOf`, derived from `range` — rather than a
+   * fixed clock interval, so a note lines up with the photographs around it
+   * at every zoom (CLAUDE.md: "the gaps are the encoding").
+   *
+   * A photo mark's height scales with how many photos share a bin, and is
+   * never thinner than a quarter of the lane so a single photo reads as
+   * clearly as a burst. A note carries no count to scale by — it is one
+   * authored event, not an aggregate — so that rule does not apply
+   * literally. What it protects (presence must not read as absence) is kept
+   * a different way instead: a point note is a small fixed-size glyph that
+   * never shrinks away regardless of zoom, and a span note has a CSS floor
+   * on its width so a very short span still reads as a bar, not a hairline.
+   */
+  function renderNoteMark(entry: { placedNote: PlacedNote }, key: string, color: string) {
+    const { placedNote } = entry;
+    const left = percentOf(placedNote.instant);
+    const isSpan = placedNote.until !== undefined;
+    // `visibleNotes` in App.tsx only requires a note's START to be inside
+    // the crop, so a span's `until` can run past `range.to`. Clamp the far
+    // end so the bar cannot bleed out past the track.
+    const width = isSpan
+      ? Math.max(0, percentOf(Math.min(placedNote.until as number, range.to)) - left)
+      : null;
+
+    return (
+      <button
+        key={key}
+        type="button"
+        className={isSpan ? 'lanes__note lanes__note--span' : 'lanes__note'}
+        style={{
+          left: `${left}%`,
+          background: color,
+          ...(width !== null ? { width: `${width}%` } : {}),
+        }}
+        title={placedNote.note.text}
+        aria-label={`Note at ${formatClock(placedNote.instant, zone)}: ${placedNote.note.text}`}
+        // Stop the click reaching the track underneath. The track's own
+        // pointerdown/click already scrubs and toggles the pin from the
+        // clicked PIXEL, which is only approximately the note's instant —
+        // doing both would fire `onCursor` twice with two different values.
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          setScrub(placedNote.instant);
+          onCursor(placedNote.instant);
+          // Same toggle the track itself does on click: the gesture that
+          // pins a moment is one gesture everywhere in the lanes.
+          setLocked((was) => !was);
+        }}
+      >
+        {!isSpan && (
+          <span aria-hidden="true" className="lanes__note-glyph">
+            ✎
+          </span>
+        )}
+      </button>
+    );
+  }
+
   return (
     <section className="lanes" aria-label="Swimlanes">
       <header className="lanes__head">
@@ -243,6 +363,22 @@ export function Swimlanes({
 
       <div className="lanes__grid">
         <div className="lanes__labels">
+          {/* Pinned above every person lane, and only drawn when there is
+              something to put in it — an empty row would take up vertical
+              space on a folder with no event-level notes. Person lanes stay
+              about that person; a note with nobody named goes here instead. */}
+          {eventNotes.length > 0 && (
+            <div className="lanes__label lanes__label--notes" style={{ height: NOTES_ROW_HEIGHT }}>
+              <span className="lanes__name">
+                <span
+                  className="lanes__swatch"
+                  style={{ background: OVERFLOW_COLOR }}
+                  aria-hidden="true"
+                />
+                <span className="lanes__name-text">Notes</span>
+              </span>
+            </div>
+          )}
           {shown.map((person) => {
             const lane = lanes.find((l) => l.person === person.id);
             // One row, exactly the height of its lane. Anything taller drifts
@@ -307,6 +443,14 @@ export function Swimlanes({
             ))}
           </div>
 
+          {eventNotes.length > 0 && (
+            <div className="lanes__lane lanes__notes-row" style={{ height: NOTES_ROW_HEIGHT }}>
+              {eventNotes.map((entry) =>
+                renderNoteMark(entry, entry.placedNote.note.id, OVERFLOW_COLOR),
+              )}
+            </div>
+          )}
+
           {lanes.map((lane) => (
             <div key={lane.person} className="lanes__lane" style={{ height: LANE_HEIGHT }}>
               {lane.bins.map((count, i) =>
@@ -324,6 +468,16 @@ export function Swimlanes({
                       background: colors.get(lane.person),
                     }}
                   />
+                ),
+              )}
+              {/* A note in this person's lane — see the `notes` prop doc:
+                  this is what lets a note explain a gap, e.g. "asleep at
+                  Cottonwood" sitting in the six-hour hole it names. */}
+              {(notesByPerson.get(lane.person) ?? []).map((entry) =>
+                renderNoteMark(
+                  entry,
+                  `${entry.placedNote.note.id}-${lane.person}`,
+                  colors.get(lane.person) ?? OVERFLOW_COLOR,
                 ),
               )}
             </div>

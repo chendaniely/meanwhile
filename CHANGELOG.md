@@ -8,6 +8,29 @@ already built, and the reasons are worth keeping.
 
 ## Unreleased
 
+### Notes now appear in the swimlanes
+
+> "what i did notice is when i create a note i do not see it in the swimlane"
+
+`Swimlanes.tsx` had no reference to notes at all — CLAUDE.md had described
+this as built since M9 ("`person` is optional and does real work... the note
+sits in that person's lane"), and the six-pass documentation audit below
+still missed it, because the claim had no code near it to contradict.
+
+- A note whose `people` list is non-empty now draws in EACH of those
+  people's lanes, at its time, in that person's own lane colour — so it can
+  actually explain a gap, e.g. "asleep at Cottonwood" sitting in the
+  six-hour hole it names.
+- A note with nobody named (or nobody the roster recognises) is
+  event-level: its own row, pinned above every person lane, coloured with
+  the palette's existing neutral rather than an invented ninth hue.
+- A note with a `duration` draws as a span, not a point.
+- The row is omitted entirely when a folder has no notes.
+- A caption (`note.photo` set) is excluded the same way `Feed`'s caller
+  already excludes it, so it does not appear a second time as a lane mark.
+- Clicking a note mark moves the shared cursor to the note's own time, not
+  the pixel clicked.
+
 ### A documentation audit, looped six times — and the bugs it turned up
 
 > "I want you to take another thorough pass-through all of the comments and the

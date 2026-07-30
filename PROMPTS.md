@@ -975,3 +975,28 @@ families were converging — fifteen of seventeen fully propagated, none
 reopened — but each pass had also been auditing roughly the surface the
 previous pass named, so a pass that found nothing would have meant the search
 had stopped, not that the repository was clean.
+
+
+---
+
+> what i did notice is when i create a note i do not see it in the swimlane
+
+True: `Swimlanes.tsx` had no reference to notes at all. CLAUDE.md's "Notes are
+first-class" section had said, since M9, that a note with a `person` sits in
+that person's lane so it can explain a gap — and the six-pass documentation
+audit just above this entry checked the file's claims against the code and
+still missed it, because the claim had no code near it to contradict: it lived
+in `Swimlanes.tsx`'s absence, not in a comment sitting next to a wrong
+implementation. The audit's method — read a claim, find the code, check they
+agree — has no answer for a claim whose code was never written.
+
+Built: a note whose `people` list is non-empty draws in each of those people's
+lanes, at its time, in that person's own lane colour; a note with nobody named
+(or nobody the roster recognises) gets its own event-level row pinned above
+every person lane, coloured with the palette's existing neutral rather than an
+invented ninth hue; a note with a `duration` draws as a span, not a point; the
+row disappears entirely when a folder has no notes; and a caption is excluded
+the same way `Feed`'s caller already excludes it, so it does not appear twice.
+Clicking a mark moves the shared cursor to the note's own time, not the pixel
+clicked. See `tests/swimlanes-notes.test.tsx` and CLAUDE.md's "Notes in the
+swimlanes" entry.

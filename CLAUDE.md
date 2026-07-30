@@ -4,15 +4,15 @@
 
 As of 2026-07-29 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **497 tests pass** (`make check`).
+the race. **504 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
 `metadata.ts`, `assemble.ts`, `palette.ts`, `window.ts`, `state.ts`,
 `course.ts`, `csv.ts`, `notes.ts`, `people-csv.ts`, `timeline.ts`. Viewer: folder/file
 picking, ingest report, the media pipeline, the two-handle time window with
-density histogram, the feed, the swimlanes with a moment strip, the
-lightbox, the unplaced tray, and the **course view** — Leaflet map with
+density histogram, the feed, the swimlanes with a moment strip and notes in
+the lanes, the lightbox, the unplaced tray, and the **course view** — Leaflet map with
 terrain basemaps, elevation/HR/cadence/pace charts, and a shared distance
 focus linking the two. Plus `scripts/inspect-media.ts` (`make inspect
 DIR=...`).
@@ -867,7 +867,8 @@ Three decisions worth keeping:
 - **`person` is optional and does real work.** With one, the note sits in that
   person's lane — which is what lets a note EXPLAIN A GAP. Six empty hours is
   the story of the night section, and "asleep at Cottonwood" is the caption
-  that gap never had.
+  that gap never had. (This was true of the *design* from M9 on but not of
+  the *code* until much later — see "Notes in the swimlanes" below.)
 - **`until` makes it a span**, because crewing is mostly spans: waiting,
   driving, sleeping, boiling water. A span ending before it starts is
   degraded to a moment rather than refused at render, and refused at
@@ -897,6 +898,47 @@ shape at ingest time; the writer never emits either field again
 notes are still first class, the cursor is still the default time for a new
 one, and `people` still exists to explain a gap in someone's lane. See the
 three sections below for what changed and why.
+
+### Notes in the swimlanes — this file said it was built; it was not *(bugfix)*
+
+> "what i did notice is when i create a note i do not see it in the
+> swimlane"
+
+`Swimlanes.tsx` had **no reference to notes at all** until this fix — the
+"person is optional and does real work" bullet above described the intended
+UI, not shipped code, and nothing near it in the source would have
+contradicted the claim during an eight-pass documentation audit. Notes
+rendered in exactly two places: `Feed.tsx`, and the notes list in
+`Notes.tsx`. Built now, in `Swimlanes.tsx`:
+
+- **A note whose `people` list is non-empty draws in EACH of those people's
+  lanes**, at its time, in that person's own lane colour — this is what
+  actually lets a note explain a gap, making the bullet above true.
+- **A note with an empty `people` list — or names that match nobody on the
+  roster — is event-level** and gets its own row, pinned ABOVE every person
+  lane, labelled "Notes" and coloured with `OVERFLOW_COLOR` from
+  `palette.ts` (the same neutral already reserved for a ninth person)
+  rather than an invented hue.
+- **A note with a `duration` draws as a SPAN** — a bar from its start
+  across its length — not a point, reading `PlacedNote.until`
+  (`core/window.ts`).
+- **The row is omitted entirely when there are no notes in the window**, so
+  a folder with none does not carry an empty strip.
+- Captions (`note.photo` set) are excluded via `excludingCaptions`, the
+  same filter `Feed`'s caller applies — a caption already has a mark, on
+  its photo, so a lane mark too would say it twice.
+- A note mark's size is not scaled by a count the way a photo mark's is —
+  a note carries no count, it is one authored event — so the "never
+  thinner than a quarter of the lane" rule for photo marks does not apply
+  literally. What it protects (presence must not read as absence) is kept
+  a different way: a fixed minimum footprint, a small glyph for a point
+  and a CSS-floored width for a span.
+- Clicking a note mark moves the shared cursor to the note's OWN time —
+  `onCursor(placedNote.instant)`, not the pixel clicked — via
+  `stopPropagation` so the track underneath does not also fire and scrub to
+  an approximate position.
+
+See `tests/swimlanes-notes.test.tsx`.
 
 ### `notes*.csv`: the timestamp is five integers, not one string *(notes-as-csv)*
 

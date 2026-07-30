@@ -163,7 +163,11 @@ moment is a link you can text to someone.
   into moments and tagged by who shot it. The phone view.
 - **Swimlanes** ✅ — one lane per person across a shared clock. The gaps are
   the point: the six-hour hole in the runner's lane while three crew lanes are
-  busy *is* the story of the night section.
+  busy *is* the story of the night section. A note you write for someone shows
+  up right in their lane — which is what lets it explain a gap, like "asleep
+  at Cottonwood" captioning those six empty hours. A note for nobody in
+  particular gets its own row above everyone else's; a note with a duration
+  draws as a bar instead of a dot.
 - **Course** ✅ — the map, drawn on real terrain, with elevation, heart rate,
   cadence and pace charts underneath, and photo dots plotted on the route.
   Needs a GPX or TCX; there is no separate "map view" — the map lives inside

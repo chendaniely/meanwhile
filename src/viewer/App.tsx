@@ -1223,6 +1223,7 @@ export function App() {
                     {...(bounds ? { bounds } : {})}
                     onRange={setWindow}
                     captionByItem={captionByItem}
+                    notes={visibleNotes}
                   />
                 )}
 
