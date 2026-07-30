@@ -13,9 +13,11 @@ import {
   itemsInWindow,
   placeItems,
   placeNotes,
+  resolveDefaultRange,
   shiftWindow,
   unionSpan,
   windowFromCourse,
+  windowIncludingNotes,
   type PlacedItem,
 } from '../src/core/window.ts';
 
@@ -399,5 +401,95 @@ describe('excludingCaptions', () => {
   it('is a no-op when nothing is a caption', () => {
     const placed = placeNotes([note({ id: 'a', at: '2026-07-25T09:00:00Z', text: 'x' })]);
     expect(excludingCaptions(placed)).toEqual(placed);
+  });
+});
+
+describe('windowIncludingNotes', () => {
+  // people/author default empty, matching what mergeNotes/rowToNote produce.
+  const note = (over: Partial<Note> & { id: string; at: string; text: string }): Note => ({
+    people: [],
+    author: [],
+    ...over,
+  });
+
+  it('widens a window to cover a note that falls outside it', () => {
+    const window = { from: 0, to: HOUR };
+    const notes = placeNotes([note({ id: 'n', at: new Date(3 * HOUR).toISOString(), text: 'x' })]);
+    const widened = windowIncludingNotes(window, notes) as { from: number; to: number };
+    expect(isWithin(3 * HOUR, widened)).toBe(true);
+    // Only pushed out, never pulled in from the photo-derived edge.
+    expect(widened.from).toBeLessThanOrEqual(window.from);
+  });
+
+  it("covers a span note's until end, not just its start", () => {
+    const window = { from: 0, to: HOUR };
+    const notes = placeNotes([
+      note({ id: 'n', at: new Date(HOUR).toISOString(), duration: 'PT2H', text: 'asleep in the car' }),
+    ]);
+    const widened = windowIncludingNotes(window, notes) as { from: number; to: number };
+    // Starts at 1h and runs 2h more, so the far edge is 3h.
+    expect(widened.to).toBeGreaterThanOrEqual(3 * HOUR);
+  });
+
+  it('is a no-op when there are no notes', () => {
+    const window = { from: 0, to: HOUR };
+    expect(windowIncludingNotes(window, [])).toBe(window);
+    expect(windowIncludingNotes(null, [])).toBeNull();
+  });
+
+  it('never narrows a window that already covers every note', () => {
+    const window = { from: 0, to: 10 * HOUR };
+    const notes = placeNotes([note({ id: 'n', at: new Date(5 * HOUR).toISOString(), text: 'x' })]);
+    expect(windowIncludingNotes(window, notes)).toEqual(window);
+  });
+});
+
+describe('resolveDefaultRange', () => {
+  // people/author default empty, matching what mergeNotes/rowToNote produce.
+  const note = (over: Partial<Note> & { id: string; at: string; text: string }): Note => ({
+    people: [],
+    author: [],
+    ...over,
+  });
+
+  // The exact repro that shipped this fix: two photos two hours apart, each
+  // its own single-item cluster, with two notes written in between. Before
+  // the fix, `densestWindow` alone picked one photo's zero-width cluster and
+  // both notes fell outside it with nothing on screen to say so.
+  const photos = at(Date.parse('2026-07-24T11:30:00Z'), Date.parse('2026-07-24T13:31:00Z'));
+  const notes = placeNotes([
+    note({ id: 'n1', at: '2026-07-24T12:45:00Z', text: 'first note' }),
+    note({ id: 'n2', at: '2026-07-24T13:10:00Z', text: 'second note' }),
+  ]);
+  const bounds = fullSpan(photos) as { from: number; to: number };
+
+  it('includes every note in the computed default window', () => {
+    const range = resolveDefaultRange(photos, notes, bounds, null, null);
+    for (const n of notes) expect(isWithin(n.instant, range)).toBe(true);
+  });
+
+  it('does not widen an explicit range from a shared link', () => {
+    // Chosen so both notes fall outside it — proving the crop is honoured
+    // exactly rather than stretched to reach them.
+    const explicit = {
+      from: Date.parse('2026-07-24T12:00:00Z'),
+      to: Date.parse('2026-07-24T12:30:00Z'),
+    };
+    const range = resolveDefaultRange(photos, notes, bounds, explicit, null);
+    expect(range).toEqual(explicit);
+  });
+
+  it("does not widen the manifest's saved event.range", () => {
+    const saved = {
+      from: Date.parse('2026-07-24T12:00:00Z'),
+      to: Date.parse('2026-07-24T12:30:00Z'),
+    };
+    const range = resolveDefaultRange(photos, notes, bounds, null, saved);
+    expect(range).toEqual(saved);
+  });
+
+  it('produces the same window as before when the folder has no notes', () => {
+    const withoutNotes = resolveDefaultRange(photos, [], bounds, null, null);
+    expect(withoutNotes).toEqual(densestWindow(photos) ?? bounds);
   });
 });

@@ -20,13 +20,13 @@ import { isVisible, toggleVisible, VIEW_NAMES, type ViewName } from '../core/sta
 import { formatClock, type Instant } from '../core/time.ts';
 import { assignLaneColors } from '../core/palette.ts';
 import {
-  clampWindow,
-  densestWindow,
   excludingCaptions,
   fullSpan,
   isWithin,
   placeItems,
   placeNotes,
+  resolveDefaultRange,
+  windowIncludingNotes,
   type PlacedItem,
   type TimeWindow,
 } from '../core/window.ts';
@@ -501,16 +501,7 @@ export function App() {
    */
   const bounds = useMemo(() => {
     if (!placement) return null;
-    const span = fullSpan(placement.placed);
-    if (placedNotes.length === 0) return span;
-    let from = span?.from ?? Number.POSITIVE_INFINITY;
-    let to = span?.to ?? Number.NEGATIVE_INFINITY;
-    for (const n of placedNotes) {
-      if (n.instant < from) from = n.instant;
-      const end = n.until ?? n.instant;
-      if (end > to) to = end;
-    }
-    return Number.isFinite(from) && Number.isFinite(to) ? { from, to } : span;
+    return windowIncludingNotes(fullSpan(placement.placed), placedNotes);
   }, [placement, placedNotes]);
 
   /**
@@ -631,22 +622,29 @@ export function App() {
    *
    * The guess matters. A folder is rarely just the event — this one spans 46
    * days for a two-day race — so opening on the full span would show mostly
-   * empty timeline. Falling back to the densest cluster lands on the race.
+   * empty timeline. Falling back to the densest cluster lands on the race —
+   * but that cluster is built from photos alone, so it is then widened to
+   * cover every note too. Two photos two hours apart can cluster down to a
+   * single instant, which would otherwise crop out notes written between
+   * them with no on-screen sign that anything was hidden.
    */
   const range: TimeWindow | null = useMemo(() => {
     if (!manifest || !placement || !bounds) return null;
-    // A shared link wins over the manifest: whoever sent it meant that crop.
-    if (view.range) return clampWindow(view.range, bounds);
     const saved = manifest.event.range;
+    let savedWindow: TimeWindow | null = null;
     if (saved) {
       const from = Date.parse(saved.from);
       const to = Date.parse(saved.to);
-      if (!Number.isNaN(from) && !Number.isNaN(to)) return clampWindow({ from, to }, bounds);
+      if (!Number.isNaN(from) && !Number.isNaN(to)) savedWindow = { from, to };
     }
-    return densestWindow(placement.placed) ?? bounds;
-    // `view.range` is read above, so it must be a dependency — without it the
-    // crop only refreshed when something else happened to change.
-  }, [manifest, placement, bounds, view.range]);
+    // Precedence lives in `resolveDefaultRange`: an explicit link wins, then
+    // the manifest's saved crop honoured exactly, and only the last resort —
+    // the computed default — gets widened to cover every note.
+    return resolveDefaultRange(placement.placed, placedNotes, bounds, view.range, savedWindow);
+    // `view.range` is read inside `resolveDefaultRange`, so it must be a
+    // dependency — without it the crop only refreshed when something else
+    // happened to change.
+  }, [manifest, placement, bounds, view.range, placedNotes]);
 
   /**
    * The one set every view works from: inside the crop, and belonging to

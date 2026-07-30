@@ -290,6 +290,65 @@ export function placeNotes(notes: readonly Note[]): PlacedNote[] {
 }
 
 /**
+ * Widen a window (never narrow it) so every note falls inside it.
+ *
+ * A note is authorship — the author wrote it for this event — so unlike a
+ * stray photo from three weeks before the race, it is never noise to crop
+ * away by accident. `densestWindow` only looks at photos, so a folder with
+ * a couple of photos hours apart and notes in between could pick a
+ * single-photo window that excludes every note, with nothing on screen to
+ * say so. This covers a span note's `until` end too, not just its start.
+ *
+ * Only meant for a *computed* default window. An explicit range — a shared
+ * link, or the manifest's saved `event.range` — is a crop the author chose
+ * on purpose and must be honoured exactly, so callers must not run one of
+ * those through this.
+ */
+export function windowIncludingNotes(
+  base: TimeWindow | null,
+  notes: readonly PlacedNote[],
+): TimeWindow | null {
+  if (notes.length === 0) return base;
+  let from = base?.from ?? Number.POSITIVE_INFINITY;
+  let to = base?.to ?? Number.NEGATIVE_INFINITY;
+  for (const n of notes) {
+    if (n.instant < from) from = n.instant;
+    const end = n.until ?? n.instant;
+    if (end > to) to = end;
+  }
+  return Number.isFinite(from) && Number.isFinite(to) ? { from, to } : base;
+}
+
+/**
+ * The window to show on load: what was asked for, explicitly or via the
+ * manifest's saved crop — or a computed guess when neither exists.
+ *
+ * Precedence, most to least authoritative:
+ *
+ * 1. `explicit` — a shared link's range. Whoever sent it meant that crop.
+ * 2. `saved` — the manifest's `event.range`. The author cropped it on
+ *    purpose, so this is honoured EXACTLY: it is never widened by notes,
+ *    only clamped to stay inside the data the folder actually has.
+ * 3. The densest photo cluster, widened to cover every note — see
+ *    `windowIncludingNotes` for why notes get that treatment and stray
+ *    photos do not.
+ *
+ * Both `explicit` and `saved` are clamped to `bounds`, because a stale link
+ * or a hand-edited manifest can point outside what the folder has.
+ */
+export function resolveDefaultRange(
+  placed: readonly PlacedItem[],
+  notes: readonly PlacedNote[],
+  bounds: TimeWindow,
+  explicit: TimeWindow | null | undefined,
+  saved: TimeWindow | null | undefined,
+): TimeWindow {
+  if (explicit) return clampWindow(explicit, bounds);
+  if (saved) return clampWindow(saved, bounds);
+  return windowIncludingNotes(densestWindow(placed), notes) ?? bounds;
+}
+
+/**
  * Drop notes that are photo captions (`note.photo` set).
  *
  * A caption lives ON its photo: the tile's speech-bubble glyph is how you
