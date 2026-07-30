@@ -238,9 +238,12 @@ A pure kernel module with no dependencies — GPX is just
    people plotted on it — zero dependencies, zero external requests. Basemap
    tiles are an optional later garnish, not a prerequisite. **Corrected
    post-M10:** this was reversed. The map is now Leaflet, and it fetches
-   raster tiles from OpenTopoMap, Esri, OSM, and optionally Thunderforest
-   unconditionally on every render, and on every VIEW — the course rail
-   mounts a second `CourseMap` on Feed and Swimlanes — a bare polyline of a
+   raster tiles from OpenTopoMap, Esri and OSM (plus Thunderforest only with
+   a build key), two hosts at a time at most — the chosen basemap and the
+   optional Esri hillshade. They load on their own once a track is in the
+   folder: on the Course view, and on Feed and Swimlanes too as soon as
+   anything is placed on the timeline, since the course rail mounts a second
+   `CourseMap` there. The reversal's reason: a bare polyline of a
    mountain race shows
    no ridges, valleys or switchbacks. See the "no map library" rule's
    reversal in `CLAUDE.md`. **"Zero external requests" is doubly stale**: the
@@ -370,8 +373,13 @@ on an iPhone regardless.
 The single highest-leverage instruction to give contributors, and it belongs
 in the README:
 
-> **AirDrop or Drive. Never iMessage or WhatsApp.** Those recompress and
-> strip EXIF, and a photo with no timestamp has no lane to sit in.
+> **AirDrop, a shared Drive/Dropbox folder, or a Google Photos album.
+> Never iMessage, WhatsApp, Messenger, Instagram, or Slack.**
+
+Those apps recompress photos and strip EXIF, and a photo with no timestamp
+has no lane to sit in. (Quoted verbatim from `README.md`, which is where the
+rule lives — the shortened two-app version this file carried until 2026-07-30
+was a third wording of the project's most-repeated sentence.)
 
 ## 8. Clock alignment
 
@@ -543,10 +551,12 @@ aesthetic section and `src/viewer/styles/tokens.css`.
 
 Atkinson Hyperlegible is self-hosted (~56KB, an estimate — measured size is
 52,380 bytes across four files) so the app shell itself makes zero external
-requests. **Corrected post-M10:** map tiles (OpenTopoMap, Esri/ArcGIS, OSM,
-and optionally Thunderforest) are external and load unconditionally on every
-render, and on every VIEW rather than only the course one — the course rail
-mounts a second `CourseMap` on Feed and Swimlanes. See the "no map library"
+requests. **Corrected post-M10:** map tiles (OpenTopoMap, Esri/ArcGIS and
+OSM, plus Thunderforest only with a build key — two hosts at a time at most,
+the chosen basemap and the optional Esri hillshade) are external and load on
+their own once a track is in the folder: on the Course view, and on Feed and
+Swimlanes too as soon as anything is placed on the timeline, since the course
+rail mounts a second `CourseMap` there. See the "no map library"
 rule's reversal in `CLAUDE.md`. The optional Strava embed iframe is external too,
 though it is click-to-load. **Corrected again (`f904fff`):** the deployed
 site also loads Google Analytics — `googleAnalytics()` in `vite.config.ts` is

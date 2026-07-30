@@ -19,15 +19,25 @@ import type { CourseRef } from '../../core/schema.ts';
  * cannot be derived.
  *
  * THE IFRAME IS CLICK-TO-LOAD. That does NOT make it the only external
- * request meanwhile makes — map tiles (OpenTopoMap, Esri, OSM, and
- * optionally Thunderforest; see src/viewer/map/basemaps.ts) fetch from four
- * external hosts unconditionally, on every render and on every VIEW: the
- * course rail mounts a second CourseMap on Feed and Swimlanes. What click-to-
- * load buys is narrower: this iframe is the only one of those requests that
- * waits for a person to ask for it. Whoever pastes the URL consents to that
- * click; whoever they later send the manifest to did not, and loading it on
- * their behalf would hand their IP address to Strava before they had decided
- * to look. One click is a small price for that staying true.
+ * request meanwhile makes: once a TRACK is in the folder, map tiles fetch on
+ * their own — OpenTopoMap, Esri and OSM, plus Thunderforest only when a build
+ * key is configured (`basemaps()` filters it out otherwise; see
+ * src/viewer/map/basemaps.ts) — and on Feed and Swimlanes too, because the
+ * course rail mounts a second CourseMap there. At most two of those hosts are
+ * fetched at a time, the chosen basemap plus the optional Esri hillshade, and
+ * CourseMap's layer effect removes the previous layers when either changes.
+ *
+ * NONE OF THAT REACHES THIS PANEL, which is why the text below must not claim
+ * it does. App.tsx renders this only when there is no course to draw
+ * (`view.view === 'course' && !stage.course`), and both CourseMap mount sites
+ * require `stage.course` — so a Strava link draws no map anywhere and fetches
+ * no tile at all, leaving this iframe as the page's only external request
+ * besides the deployed build's analytics tag.
+ *
+ * What click-to-load buys is the same either way: whoever pastes the URL
+ * consents to that click; whoever they later send the manifest to did not,
+ * and loading it on their behalf would hand their IP address to Strava before
+ * they had decided to look. One click is a small price for that staying true.
  */
 
 interface Props {
@@ -72,7 +82,7 @@ export function CourseFallback({ course }: Props) {
 
       <p className="app__hint">
         {course.kind === 'strava-embed'
-          ? 'Strava’s widget is a sealed box — it cannot follow the cursor here. The map tiles on this page load from other servers automatically; this is the only thing that waits for you to click first.'
+          ? 'Strava’s widget is a sealed box — it cannot follow the cursor here. Nothing else on this page reaches another server: with no track there is no map, so no tiles load at all. What meanwhile does fetch on its own — map tiles once a track is in the folder, and the analytics tag on the published site — never waits for you; this iframe is the one thing that does.'
           : 'A plain activity URL cannot be embedded: the embed needs a code that only Strava’s share dialog produces.'}{' '}
         To light up the course view, ask the athlete for <strong>Export TCX</strong>
         {' '}(heart rate and cadence) or <strong>Export GPX</strong>, and drop the file

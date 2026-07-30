@@ -63,7 +63,8 @@ code they describe, and a `Makefile` message that printed empty values fixed.
   The course rail mounts a second map on Feed and Swimlanes, so **once a track
   is in the folder, tiles load on every view**. Six places now agree, and
   CLAUDE.md records the second mount site by name so this stops flipping — it
-  had flipped three times.
+  had flipped three times. (Pass 3 found that sentence *nearly* right and
+  narrowed it once more — see below.)
 - **Preserved rows reintroduced unbounded merge growth**: two files carrying
   the same refused row grew 2 → 3 → 4 → 5 → 6 over five rounds — the exact
   signature of the clone bug 0.3.0 fixed. Deduped by content fingerprint, and
@@ -95,6 +96,36 @@ code they describe, and a `Makefile` message that printed empty values fixed.
   in a scratch directory and was never wired to anything, which is the other
   reason it missed this.
 - A roster message read `"Bob" is now "Bob"` when only a clock offset changed.
+
+**Pass 3: the privacy sentence, and two invariants nothing was holding**
+
+Run against pass 2 the same way pass 2 was run against pass 1.
+
+- **A sentence about map tiles was false exactly where a user reads it.** The
+  panel shown for a Strava link told people "the map tiles on this page load
+  from other servers automatically" — but that panel only renders when there
+  is *no* track, and every map in the app needs one, so no tile is fetched
+  there at all. It now says what is true of that page: nothing on it reaches
+  another server except the Strava iframe, which still waits for a click.
+- **Tiles: two gates, not one.** Pass 2's "every view" missed that Feed and
+  Swimlanes also need a time range, which does not exist until a photo is
+  placed or a note is written. A folder holding a track and nothing else gets
+  tiles on the Course view alone. Corrected in all six places, along with
+  "four external hosts unconditionally" — at most two are fetched at a time,
+  the chosen basemap plus the optional hillshade, and Thunderforest needs a
+  build key it does not have by default.
+- **Pass 2's own dedupe had two invariants no test held.** Breaking the
+  per-file tally lost a row that someone had genuinely typed twice — and every
+  existing test stayed green, because they all happened to read the file with
+  more copies first. Relaxing the tie-break rewrote the order of rows nobody
+  touched. Both are pinned now, each proved by making the change and watching
+  exactly one test fail.
+- **`TODO.md` listed a shipped behaviour among the fixes not taken.** Doubling
+  our own formula guard on write is not an option to weigh: it already ships,
+  and it cannot reach the bug described, which is a first read of a file
+  meanwhile never wrote. The bug itself was re-verified and stays open.
+- The design spec still carried the old two-app wording of the data-quality
+  rule, which README and CLAUDE.md had already been fixed to share verbatim.
 
 ## 0.3.0 — 2026-07-30 — hardened before it carries anything irreversible
 

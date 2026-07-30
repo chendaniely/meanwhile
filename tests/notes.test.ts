@@ -1184,6 +1184,49 @@ describe('a refused row several files carry is one row, not several', () => {
     expect(preserved.every((p) => p.file === 'notes.csv')).toBe(true);
   });
 
+  it('keeps the maximum when the file carrying FEWER is read first', () => {
+    // The test above reads the two-copy file first, and so passes even if the
+    // per-file tally is broken outright: the survivors are every row of the
+    // winning file, so miscounting both files as 1 still leaves that file
+    // holding two. Read them the other way round and the count is the only
+    // thing deciding it — with `notes-crew.csv` (one copy) first, a tally
+    // that does not accumulate hands the win to the file carrying fewer and
+    // silently deletes somebody's own duplicate. Verified by mutation:
+    // replacing the `+ 1` accumulation with a flat 1 takes this from 2 to 1
+    // while every other notes and ingest test stays green.
+    const once = [HEADER, REFUSED].join('\n');
+    const twice = [HEADER, REFUSED, REFUSED].join('\n');
+    const { preserved } = mergeNotes(
+      [{ name: 'notes-crew.csv', text: once }, { name: 'notes.csv', text: twice }],
+      'UTC',
+    );
+    expect(preserved).toHaveLength(2);
+    expect(preserved.every((p) => p.file === 'notes.csv')).toBe(true);
+  });
+
+  it('breaks a tie towards the file read FIRST, so the bytes written are stable', () => {
+    // Every tie is between rows that fingerprint the same, so no CONTENT
+    // rides on this — the order the survivors are written in does. Two crew
+    // files carrying the same two refused rows in opposite orders is the
+    // smallest case that shows it: whichever file wins the tie dictates the
+    // order of the saved file, so a tie-break that drifts rewrites rows that
+    // nobody touched. Verified by mutation: `count > best.count` relaxed to
+    // `>=` hands both ties to the file read last and flips the saved order to
+    // n_y, n_x, while all other notes tests stay green.
+    const X = 'n_x,2026,7,25,11,0,,UTC,0,,,,newer build, first row,,,2';
+    const Y = 'n_y,2026,7,25,12,0,,UTC,0,,,,newer build, second row,,,2';
+    const mine = [HEADER, X, Y].join('\n');
+    const crew = [HEADER, Y, X].join('\n');
+    const { merged, text } = save([
+      { name: 'notes.csv', text: mine },
+      { name: 'notes-crew.csv', text: crew },
+    ]);
+
+    expect(merged.preserved.map((p) => p.file)).toEqual(['notes.csv', 'notes.csv']);
+    expect(merged.preserved.map((p) => p.cells['id'])).toEqual(['n_x', 'n_y']);
+    expect(parseCsv(text).rows.map((r) => r['id'])).toEqual(['n_x', 'n_y']);
+  });
+
   it('holds a single file own duplicate flat across rounds too', () => {
     let notes = [HEADER, READABLE, REFUSED, REFUSED].join('\n');
     const counts: number[] = [];

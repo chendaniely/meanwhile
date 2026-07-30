@@ -2,11 +2,13 @@
  *
  * Self-hosted rather than loaded from Google Fonts, so no FONT is fetched
  * from a third party. The page as a whole does make external requests: map
- * tiles (OpenTopoMap, Esri, OSM, and optionally Thunderforest — see
- * src/viewer/map/basemaps.ts) load unconditionally on every view once a
- * track is loaded, the course rail putting a map on Feed and Swimlanes too;
- * Google Analytics loads on the deployed build only (see vite.config.ts);
- * and an optional Strava embed iframe loads on a click.
+ * tiles (OpenTopoMap, Esri, OSM, plus Thunderforest only with a build key —
+ * see src/viewer/map/basemaps.ts, and at most two of them at a time, the
+ * chosen basemap plus the optional Esri hillshade) load on their own once a
+ * track is in the folder, on the Course view and — the course rail putting a
+ * map on Feed and Swimlanes too — on those as soon as anything is placed on
+ * the timeline; Google Analytics loads on the deployed build only (see
+ * vite.config.ts); and an optional Strava embed iframe loads on a click.
  *
  * Latin subset only (52,380 bytes total across four files, measured). */
 

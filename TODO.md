@@ -400,10 +400,17 @@ patch, and the gate was for verified regressions:
   `formatCsv` guards any cell whose FIRST character is one of those four, so
   a cell someone typed as `'=x` (apostrophe deliberate) is indistinguishable
   from one we guarded.
-- **Doubling our own guard on write** (`''twas`) round-trips exactly but
-  changes what a spreadsheet shows for every existing file.
+- **Doubling our own guard on write** (`''twas`) is not an option to weigh:
+  it already ships, and it does not touch this bug. `FORMULA_LEAD` in
+  `csv.ts` carries an anchored `'` branch, so `formatCsv(['a'], [{ a:
+  "'twas" }])` emits `''twas`, which parses back to `'twas` — verified
+  2026-07-30, pass 3. A file meanwhile wrote therefore already round-trips,
+  and a file it did NOT write has no doubled guard in it to read, which is
+  precisely the case above. Nothing on the write side can reach a first read
+  of somebody else's file.
 
-Whichever is picked, it needs a migration story for files already written,
-which is why it is a task rather than a one-liner. Note the size of the
-problem honestly: it costs an apostrophe at the start of a cell, and nothing
-else. See CLAUDE.md's "Verbatim means the cells, not the bytes".
+So there is one candidate rather than two, and it needs a migration story for
+the files already written under the current rule — which is why this is a
+task rather than a one-liner. Note the size of the problem honestly: it costs
+an apostrophe at the start of a cell, and nothing else. See CLAUDE.md's
+"Verbatim means the cells, not the bytes".

@@ -100,9 +100,11 @@ Two ways to use it:
   Google Analytics console rather than something a website can request for
   itself — see `CLAUDE.md` if you're the one who'd need to flip it. Once a
   track (GPX/TCX) is in the folder, **map tiles** load from OpenTopoMap, Esri
-  and OpenStreetMap on **every view** — the Course view draws the big map, and
-  Feed and Swimlanes draw a small one alongside the photos, so those tile
-  servers see you whichever tab you are on. If you would rather not be measured at all, run it
+  and OpenStreetMap — the Course view draws the big map, and Feed and
+  Swimlanes draw a small one alongside the photos, so those tile servers see
+  you whichever tab you are on. (A folder holding a track and *nothing else*
+  has no photos to list, so there are no Feed or Swimlanes tabs and the tiles
+  load on the Course view alone.) If you would rather not be measured at all, run it
   locally with `make dev`, which loads no analytics whatsoever — `make
   preview` still serves the deployed build, Google Analytics included.
 - **Shared with others.** Publish the description file with links to your

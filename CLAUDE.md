@@ -4,7 +4,7 @@
 
 As of 2026-07-30 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **766 tests pass** (`make check`).
+the race. **768 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -2031,21 +2031,37 @@ bytes across four files, measured)
 so no font is fetched from a third party. That does NOT mean the page makes
 no external requests — three things do:
 
-1. **Map tiles** (OpenTopoMap, Esri/ArcGIS, OSM, and optionally Thunderforest
-   — see `src/viewer/map/basemaps.ts`), loaded unconditionally on **every
-   view** once a track is loaded, not just the course view.
+1. **Map tiles** — OpenTopoMap, Esri/ArcGIS and OSM, plus Thunderforest
+   only when a build key is configured, since `basemaps()` filters it out
+   otherwise (see `src/viewer/map/basemaps.ts`). **Two of those hosts at
+   most are fetched at once**: the chosen basemap plus the optional Esri
+   hillshade, and `CourseMap`'s layer effect removes the previous layers
+   when either changes. Describe what loads at a time — counting the
+   configured hosts is how "four external hosts unconditionally" got
+   written, and it was never true of any single render.
 
-   **`CourseMap` has TWO mount sites, and this claim has now flipped three
-   times because people check the import and stop.** `App.tsx` mounts it
-   directly under `view.view === 'course'`; `CourseRail.tsx` mounts it a
-   second time, and `App.tsx` mounts *that* under `view.view !== 'course'`
-   — i.e. exactly Feed and Swimlanes. `CourseMap`'s basemap effect builds
-   the tile layer unconditionally; its `compact` prop gates a className and
-   one block of chrome, **not the tiles**. So the honest sentence is "once a
-   track is in the folder, map tiles load on every view", and the tempting
-   one ("only on the Course view") is false. Before editing this paragraph
-   again, grep for `CourseMap` and check every MOUNT site, not just the
-   import.
+   **WHEN they load takes two gates, not one.** The honest sentence is:
+   *once a track is in the folder, map tiles load on the Course view, and
+   on Feed and Swimlanes as soon as anything is placed on the timeline.*
+   Neither half may be dropped:
+
+   - **`CourseMap` has TWO mount sites, and this claim has now flipped
+     three times because people check the import and stop.** `App.tsx`
+     mounts it directly under `view.view === 'course'`; `CourseRail.tsx`
+     mounts it a second time, and `App.tsx` mounts *that* under
+     `view.view !== 'course'` — i.e. exactly Feed and Swimlanes.
+     `CourseMap`'s basemap effect builds the tile layer unconditionally;
+     its `compact` prop gates a className and one block of chrome, **not
+     the tiles**. So "only on the Course view" is false.
+   - **The rail also needs `range`**, which is null until `bounds` exists,
+     which needs a placed photo or a note (`App.tsx`'s `bounds` memo is
+     `windowIncludingNotes(fullSpan(placement.placed), placedNotes)`). A
+     folder holding a track and *nothing else* has no Feed or Swimlanes to
+     draw — `available` does not even offer those tabs — so it gets tiles
+     on the Course view alone. So the flat "every view" is false too.
+
+   Before editing this paragraph again, grep for `CourseMap` and check
+   every MOUNT site *and its gate*, not just the import.
 2. **Google Analytics**, on the DEPLOYED site only — `googleAnalytics()` in
    `vite.config.ts` is `apply: 'build'`, so `make dev` loads no tag at all.
    That split is deliberate: local mode reads somebody's private photographs
