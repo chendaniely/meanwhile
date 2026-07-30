@@ -1646,6 +1646,40 @@ How to run one:
   by `parseDuration`, was found), and imperative `must`/`never` rules with
   nothing enforcing them.
 
+### The review is a PRE-RELEASE GATE — it runs before anything is pushed
+
+> "let's do a multi subagent review of the docs, bugs, tests, and comments.
+> loop through that process until all issues are resolved. we'll treat this as
+> a process that happens before we release anything. once we're happy with
+> this we can push the release live"
+
+The order is **work → gate → release → push**. Not push-then-review, which is
+what happened for 0.3.0 and is why this is written down.
+
+Five reviewers, **disjoint scopes so they cannot converge on the same easy
+observations**, run in parallel and all starting from *assume it is wrong*:
+
+1. `src/core/` comments against the code
+2. `src/viewer/` comments **and every user-visible string**
+3. `tests/` — does each test assert what its name claims, and does it BITE
+4. A free-hand bug hunt in whatever shipped most recently
+5. Prose docs across both repos, including the data repo
+
+Then fix, then loop. **Keep looping until a pass returns clean** — across
+eight passes on this repo, every single pass found errors introduced by the
+previous pass's own fixes, including one written by the pass that was
+correcting false claims.
+
+Two rules that make the gate worth running rather than ceremonial:
+
+- **A finding is real only when verified against the code.** Require agents to
+  report DISPUTED with evidence rather than fixing on suspicion; a meaningful
+  fraction of findings each pass are themselves wrong, and one agent refusing
+  four of my own instructions with `git log -S` evidence was right to.
+- **For any test claiming to guard something, break the production code and
+  confirm the test fails.** A green suite proves nothing about a test that
+  asserts nothing, and this repo has shipped several.
+
 ### Releases are semantic, and the changelog is written as you go
 
 > "let's make sure going forward we are doing semantic releases, updating the

@@ -1307,3 +1307,33 @@ Also on record, verified rather than assumed: nothing sensitive has ever been
 in either repository — every object, reachable and unreachable, in both — and
 no photograph, its EXIF, its GPS or its bytes can reach the network, because
 no network call exists in the kernel at all.
+
+
+---
+
+> i want you to make sure that docs and comments when reading and reviewing
+> them should never be trusted, always confirm the docs and comments. having
+> said that. let's do a multi subagent review of the docs, bugs, tests, and
+> comments. loop through that process until all issues are resolved. we'll
+> treat this as a process that happens before we release anything. once we're
+> happy with this we can push the release live
+
+The instruction that turns the review from something done when it occurs to
+someone into a **gate**: work, then gate, then release, then push. Written up
+in CLAUDE.md rather than left as a habit, because the previous release did it
+in the wrong order — 0.3.0 was pushed and then reviewed, which is only
+tolerable because nothing found afterwards was serious.
+
+"Never trust a comment" is stronger than scepticism and is meant literally.
+The evidence for it is this project's own history: a header comment that
+stated the time-source ranking exactly backwards, in the same file whose
+decision record warns a future session will be tempted to reverse it; a
+comment claiming two guards were dead code when an experiment proved them
+load-bearing; and a claim that `manifest.json` could be regenerated from the
+photographs, which was false and would have cost the crop, the markers and
+every hand-placed photo had anyone acted on it.
+
+The failure mode this guards against is specific to a vibe-coded project. The
+owner does not read JavaScript, so a wrong comment is undetectable to them,
+and CLAUDE.md is loaded as context by every future session — which makes a
+wrong decision-record entry an *instruction* rather than a cosmetic defect.
