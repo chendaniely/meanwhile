@@ -88,7 +88,14 @@ export function orderPeople(people: readonly Person[]): Person[] {
   return [runner, ...people.filter((_, i) => i !== runnerIndex)];
 }
 
-/** True when there are more people than distinguishable hues. */
+/**
+ * True when there are more people NEEDING an automatic hue than there are
+ * distinguishable hues to give them.
+ *
+ * Only counts people without an explicit `color` — someone who hand-assigned
+ * a colour has already made their own distinguishability call and should not
+ * be warned about running out of a palette they opted out of.
+ */
 export function isOvercrowded(people: readonly Person[]): boolean {
   return people.filter((p) => !p.color).length > MAX_DISTINCT_PEOPLE;
 }

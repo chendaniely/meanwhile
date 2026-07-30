@@ -69,6 +69,19 @@ describe('people.csv', () => {
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('pixel8');
   });
+
+  /**
+   * `parseCsv` drops blank lines rather than emitting empty rows for them
+   * (see `tests/csv.test.ts`), so a row's position in the parsed `rows`
+   * array is NOT its line in the file whenever a blank line sits above it.
+   * Line 1 is the header, line 2 is "pixel8,Priya", line 3 is blank, line 4
+   * is the bad row — so the message must say "Row 4", not "Row 3".
+   */
+  it('reports the true file line, not the row\'s position after blank lines are dropped', () => {
+    const { problems } = parsePeopleCsv('id,name\npixel8,Priya\n\n,Nobody\n');
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('Row 4');
+  });
 });
 
 describe('resolvePersonNames', () => {

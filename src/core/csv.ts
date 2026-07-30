@@ -16,6 +16,18 @@
 export interface CsvTable {
   headers: string[];
   rows: Array<Record<string, string>>;
+  /**
+   * The 1-indexed file line each entry in `rows` started on, aligned by
+   * index with `rows`.
+   *
+   * NOT the same as `rows`'s own index plus a fixed offset: `parseCsv` drops
+   * blank lines rather than emitting empty rows for them (see below), and a
+   * blank line can sit anywhere — above the first data row, between two
+   * others — so the number of blank lines already skipped varies row to
+   * row. A caller reporting "Row N" to someone about to open the file in a
+   * spreadsheet needs the real line this array carries, not `i + 2`.
+   */
+  rowLines: number[];
 }
 
 const BOM = '﻿';
@@ -29,27 +41,41 @@ export function parseCsv(text: string): CsvTable {
   // value (`headers.map(cell)`), so a header must be unguarded symmetrically
   // or a round-tripped formula-like column name comes back with a leading
   // apostrophe baked in and never matches the name it was written under.
-  const headers = (records.shift() ?? []).map((h) => unguard(h.trim()));
+  const headerRecord = records.shift();
+  const headers = (headerRecord?.fields ?? []).map((h) => unguard(h.trim()));
   const rows: Array<Record<string, string>> = [];
+  const rowLines: number[] = [];
   for (const record of records) {
     // A trailing newline yields one empty record; so does a blank line left
-    // behind by a spreadsheet. Neither is a row.
-    if (record.length === 1 && record[0] === '') continue;
+    // behind by a spreadsheet. Neither is a row — and neither gets a slot in
+    // `rowLines` either, which is exactly why it cannot be reconstructed from
+    // the index afterwards.
+    if (record.fields.length === 1 && record.fields[0] === '') continue;
     const row: Record<string, string> = {};
     headers.forEach((header, i) => {
-      row[header] = unguard(record[i] ?? '');
+      row[header] = unguard(record.fields[i] ?? '');
     });
     rows.push(row);
+    rowLines.push(record.line);
   }
-  return { headers, rows };
+  return { headers, rows, rowLines };
+}
+
+/** One parsed record together with the file line it started on. */
+interface RawRecord {
+  fields: string[];
+  /** 1-indexed, matching what a spreadsheet or text editor shows. */
+  line: number;
 }
 
 /** Split into records, honouring quotes — newlines inside them are data. */
-function splitRecords(text: string): string[][] {
-  const records: string[][] = [];
+function splitRecords(text: string): RawRecord[] {
+  const records: RawRecord[] = [];
   let field = '';
-  let record: string[] = [];
+  let fields: string[] = [];
   let quoted = false;
+  let line = 1;
+  let recordLine = 1;
 
   for (let i = 0; i < text.length; i++) {
     const ch = text[i] as string;
@@ -62,6 +88,10 @@ function splitRecords(text: string): string[][] {
           quoted = false;
         }
       } else {
+        // A newline embedded in a quoted field is a real line break in the
+        // file even though it does not end the record, so the counter used
+        // for the NEXT record's line still has to move past it.
+        if (ch === '\n') line++;
         field += ch;
       }
       continue;
@@ -69,22 +99,24 @@ function splitRecords(text: string): string[][] {
     if (ch === '"') {
       quoted = true;
     } else if (ch === ',') {
-      record.push(field);
+      fields.push(field);
       field = '';
     } else if (ch === '\n' || ch === '\r') {
       // Swallow the LF of a CRLF pair rather than emitting a blank record.
       if (ch === '\r' && text[i + 1] === '\n') i++;
-      record.push(field);
-      records.push(record);
+      fields.push(field);
+      records.push({ fields, line: recordLine });
       field = '';
-      record = [];
+      fields = [];
+      line++;
+      recordLine = line;
     } else {
       field += ch;
     }
   }
-  if (field !== '' || record.length > 0) {
-    record.push(field);
-    records.push(record);
+  if (field !== '' || fields.length > 0) {
+    fields.push(field);
+    records.push({ fields, line: recordLine });
   }
   return records;
 }

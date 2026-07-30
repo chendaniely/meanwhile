@@ -205,7 +205,18 @@ export function shiftWindow(w: TimeWindow, byMs: number, bounds: TimeWindow): Ti
   return { from, to: from + width };
 }
 
-/** Keep a window inside the data's bounds, and never inverted or zero-width. */
+/**
+ * Keep a window inside the data's bounds, never inverted, and at least a
+ * minute wide whenever the bounds have room for that — a zero-width or
+ * inverted INPUT window (both handles dragged together, or crossed) is
+ * widened back out to something visible.
+ *
+ * The one case this does NOT widen: bounds that are themselves zero-width,
+ * e.g. a folder with exactly one placed item and no notes. There is no room
+ * inside a single instant to put a minute of width without showing time the
+ * data does not cover, so the result stays zero-width too rather than
+ * inventing extent that was not there.
+ */
 export function clampWindow(w: TimeWindow, bounds: TimeWindow): TimeWindow {
   const min = bounds.from;
   const max = bounds.to;

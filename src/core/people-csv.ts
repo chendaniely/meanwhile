@@ -26,13 +26,18 @@ export const PEOPLE_HEADERS = ['id', 'name', 'role', 'clock_offset'] as const;
  * reference, and every hand-placed time on the next open.
  */
 export function parsePeopleCsv(text: string): { people: Person[]; problems: string[] } {
-  const { rows } = parseCsv(text);
+  const { rows, rowLines } = parseCsv(text);
   const people: Person[] = [];
   const problems: string[] = [];
   const seenIds = new Set<string>();
 
   rows.forEach((row, i) => {
-    const line = i + 2; // header is row 1; spreadsheets are 1-indexed.
+    // The row's real file line, not `i + 2`: `parseCsv` drops blank lines
+    // rather than emitting empty rows for them, so a blank line anywhere
+    // above this one would make that arithmetic understate every message
+    // below it. `rowLines[i]` is never actually missing — it is built in
+    // lockstep with `rows` — the fallback only satisfies the type checker.
+    const line = rowLines[i] ?? i + 2;
     const id = row['id']?.trim();
     const name = row['name']?.trim();
 

@@ -65,7 +65,13 @@ export class Reader {
     return out;
   }
 
-  /** A NUL-terminated ASCII field, with trailing NULs and spaces trimmed. */
+  /**
+   * A NUL-terminated ASCII field, with the NUL and surrounding whitespace
+   * trimmed. `.trim()` strips both ends, not just the trailing padding EXIF
+   * fields are usually written with — harmless for the fields this reads
+   * (Make, Model, DateTimeOriginal, and friends), none of which carry a
+   * meaningful leading space.
+   */
   asciiZ(offset: number, maxLength: number): string | null {
     const raw = this.ascii(offset, maxLength);
     if (raw === null) return null;

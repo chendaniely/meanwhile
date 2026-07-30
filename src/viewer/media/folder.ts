@@ -4,7 +4,10 @@
  * Two routes, because browser support is split:
  *
  *   - `showDirectoryPicker()` in Chrome, Edge, and Opera. Grants a handle to
- *     a real directory, which we can also hold on to for re-reads.
+ *     a real directory — `pickFolder` below reads it once and discards the
+ *     handle rather than keeping it, so re-reading the same folder means
+ *     calling the picker again (and a second permission prompt). Retaining
+ *     the handle would let a re-read skip that prompt; nothing does today.
  *   - `<input type="file" webkitdirectory>` everywhere else, including
  *     Safari and Firefox. One-shot, gives a flat FileList carrying relative
  *     paths.
