@@ -76,16 +76,35 @@ function courseUrlOf(manifest: Manifest): string {
 }
 
 /**
- * `meanwhile-<slug of the event title>.zip`, or `meanwhile.zip` when there is
- * no title to slug — a blank event name must still produce a legal filename.
+ * `meanwhile-<slug of the event title>-<when>.zip`, or
+ * `meanwhile-<when>.zip` when there is no title to slug — a blank event name
+ * must still produce a legal filename.
+ *
+ * The stamp is the moment of SAVING, not anything about the event, and it is
+ * there because saving is not a one-off: you open the folder, write a few
+ * notes, save, write more, save again. Without it every download collides in
+ * the browser's downloads folder and you get `meanwhile-race (3).zip`, which
+ * sorts by nothing and tells you nothing about which is newest.
+ *
+ * `YYYY-MM-DD-HHMM`, local time and 24-hour, so the names sort
+ * chronologically as plain text and match the date format used everywhere
+ * else here. Colons would be illegal on Windows, so the time runs together.
+ *
+ * `now` is a parameter rather than read inside so the format can be pinned by
+ * a test without faking the clock.
  */
-function filenameForSave(title: string): string {
+export function filenameForSave(title: string, now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const when =
+    `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}` +
+    `-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
   const slug = title
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  return slug ? `meanwhile-${slug}.zip` : 'meanwhile.zip';
+  return slug ? `meanwhile-${slug}-${when}.zip` : `meanwhile-${when}.zip`;
 }
 
 /**

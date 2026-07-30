@@ -10,7 +10,9 @@ notes*.csv
 people.csv
 
 # What the Save button downloads: one zip of notes.csv + people.csv +
-# manifest.json. See filenameForSave() in src/viewer/App.tsx.
+# manifest.json, named `meanwhile-<event>-<when>.zip`. See filenameForSave()
+# in src/viewer/App.tsx. The bare `meanwhile.zip` is no longer produced —
+# kept because saves made before the timestamp was added still carry it.
 meanwhile.zip
 meanwhile-*.zip
 
