@@ -1,21 +1,30 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import type { Note } from '../../core/notes.ts';
 import type { Manifest } from '../../core/schema.ts';
 import type { Instant } from '../../core/time.ts';
 import { NoteComposer } from './Notes.tsx';
 
 /**
- * A note composer that floats over a scrolling view.
+ * A note composer that floats over whichever view is showing.
  *
- * The feed is unbounded — two thousand photographs is a normal folder — so
- * anything placed after it is unreachable in practice. Writing a note is
- * something you do WHILE reading, which makes "scroll to the end to find the
- * box" exactly the wrong shape. This stays put instead.
+ * Rendered once in App.tsx, outside every view branch, so it is present in
+ * the feed, the swimlanes and the course alike — writing a note is something
+ * you do WHILE reading, not a feature of one page. It used to be inline
+ * under the lanes and separately in the feed and the course: three
+ * placements and two shapes for one action. See CLAUDE.md's "The note dock
+ * is app chrome, not a feature of one view".
  *
- * Collapsed to a button until wanted, because the feed is the subject and a
- * permanently open form over it would be noise. It opens with the timeline
- * cursor already filled in, so scrolling to the small hours and writing a note
- * about the small hours is two actions rather than a typed timestamp.
+ * The feed in particular is unbounded — two thousand photographs is a
+ * normal folder — so anything placed after it is unreachable in practice.
+ * "Scroll to the end to find the box" is exactly the wrong shape there, and
+ * floating rather than sitting inline is why this is not a problem in any
+ * of the three views.
+ *
+ * Collapsed to a button until wanted, because the view underneath is the
+ * subject and a permanently open form over it would be noise. It opens with
+ * the timeline cursor already filled in, so scrolling to the small hours and
+ * writing a note about the small hours is two actions rather than a typed
+ * timestamp.
  */
 
 interface Props {
@@ -38,23 +47,19 @@ interface Props {
    * worst outcome here, and silently widening the crop would be a surprise.
    */
   notice?: { text: string; action: string; onAction: () => void; onDismiss: () => void } | undefined;
-  /** Opened from elsewhere — "Note here" on the course, for instance. */
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
+  /**
+   * Whether the panel is open. Always controlled by App.tsx — clicking the
+   * course, for instance, opens the dock via `pickOnCourse` setting this
+   * true, same as the button below does by hand.
+   */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 export function NoteDock({
-  manifest, cursor, timezone, author, onAdd, count, notice, open: openProp, onOpenChange,
+  manifest, cursor, timezone, author, onAdd, count, notice, open, onOpenChange,
 }: Props) {
-  const [ownOpen, setOwnOpen] = useState(false);
-  // Controlled when a parent supplies `open`, self-managed otherwise, so the
-  // dock works standalone in the feed and can also be thrown open from the
-  // course view.
-  const open = openProp ?? ownOpen;
-  const setOpen = (next: boolean) => {
-    setOwnOpen(next);
-    onOpenChange?.(next);
-  };
+  const setOpen = onOpenChange;
   const panel = useRef<HTMLDivElement>(null);
 
   // Escape closes, and focus moves into the panel when it opens — it is a

@@ -408,7 +408,7 @@ export function App() {
 
   /** A note that landed outside the crop, so it can be pointed at. */
   const [noteOutside, setNoteOutside] = useState<Instant | null>(null);
-  /** Opened from "Note here" on the course, so the dock appears already open. */
+  /** Opened by clicking the course (see `pickOnCourse` below), so the dock appears already open. */
   const [noteOpen, setNoteOpen] = useState(false);
   const rangeRef = useRef<TimeWindow | null>(null);
 
@@ -1021,324 +1021,337 @@ export function App() {
       )}
 
       {stage.name === 'loaded' && (
-        <main className="app__loaded">
-          {/*
-            * Settings and the ingest report are REFERENCE: read once when the
-            * folder lands, then rarely. Collapsed and placed above the views,
-            * they cost one line until wanted — where before they sat below the
-            * feed and could not be reached at all.
-            */}
-          <details className="panel">
-            <summary className="panel__summary">
-              <span className="panel__title">Event settings and report</span>
-              <span className="panel__digest mw-mono">
-                {summaryLine}
-              </span>
-            </summary>
+        // Wraps the ENTIRE loaded stage, not just the views at the bottom —
+        // the unplaced tray sits in the reference panel above the views and
+        // needs a thumbnail too (see UnplacedTray.tsx: it was rendered
+        // outside any provider before, so `useMedia()` always returned the
+        // default `{ store: null }` and no tile in the tray ever acquired
+        // one). `MediaProvider` is a context provider, not a DOM element, so
+        // lifting it here changes nothing about the rendered tree or CSS.
+        <MediaProvider store={store}>
+          <main className="app__loaded">
+            {/*
+              * Settings and the ingest report are REFERENCE: read once when the
+              * folder lands, then rarely. Collapsed and placed above the views,
+              * they cost one line until wanted — where before they sat below the
+              * feed and could not be reached at all.
+              */}
+            <details className="panel">
+              <summary className="panel__summary">
+                <span className="panel__title">Event settings and report</span>
+                <span className="panel__digest mw-mono">
+                  {summaryLine}
+                </span>
+              </summary>
 
-            <div className="panel__body">
-              <div className="event-fields">
-                <TimezoneField
-                  value={stage.manifest.event.timezone ?? ''}
-                  onChange={(next) => updateEvent({ timezone: next })}
-                />
-                <label className="field">
-                  <span className="field__label">Strava activity (optional)</span>
-                  <input
-                    className="field__input mw-mono"
-                    value={courseUrlOf(stage.manifest)}
-                    placeholder="https://www.strava.com/activities/…"
-                    onChange={(e) => updateCourse(e.target.value)}
+              <div className="panel__body">
+                <div className="event-fields">
+                  <TimezoneField
+                    value={stage.manifest.event.timezone ?? ''}
+                    onChange={(next) => updateEvent({ timezone: next })}
                   />
-                </label>
-              </div>
-              <p className="app__hint">
-                A Strava link renders as a link and nothing more &mdash; it carries no
-                time-and-distance data, so there is no elevation profile and no map.
-                Those need a <strong>GPX export</strong> from the
-                activity (the &hellip; menu &rarr; Export GPX), which works the same from
-                Garmin or COROS. Camera clock differences are corrected by hand, in{' '}
-                <code>people.csv</code>, whichever course option you use.
-              </p>
+                  <label className="field">
+                    <span className="field__label">Strava activity (optional)</span>
+                    <input
+                      className="field__input mw-mono"
+                      value={courseUrlOf(stage.manifest)}
+                      placeholder="https://www.strava.com/activities/…"
+                      onChange={(e) => updateCourse(e.target.value)}
+                    />
+                  </label>
+                </div>
+                <p className="app__hint">
+                  A Strava link renders as a link and nothing more &mdash; it carries no
+                  time-and-distance data, so there is no elevation profile and no map.
+                  Those need a <strong>GPX export</strong> from the
+                  activity (the &hellip; menu &rarr; Export GPX), which works the same from
+                  Garmin or COROS. Camera clock differences are corrected by hand, in{' '}
+                  <code>people.csv</code>, whichever course option you use.
+                </p>
 
-              <IngestReport
-                manifest={stage.manifest}
-                grouping={stage.grouping}
-                {...(range ? { range } : {})}
-                onRename={renamePerson}
-                onRole={setRole}
-              />
-
-              {placement && (
-                <UnplacedTray manifest={stage.manifest} unplaced={placement.unplaced} />
-              )}
-
-              <section className="notes" aria-label="Notes">
-                <h2 className="notes__heading">Notes</h2>
-                <NoteList
+                <IngestReport
                   manifest={stage.manifest}
-                  notes={placedNotes}
-                  onEdit={editNote}
-                  onDelete={deleteNote}
-                  onGo={(cursor) => setView({ cursor })}
+                  grouping={stage.grouping}
+                  {...(range ? { range } : {})}
+                  onRename={renamePerson}
+                  onRole={setRole}
+                />
+
+                {placement && (
+                  <UnplacedTray manifest={stage.manifest} unplaced={placement.unplaced} />
+                )}
+
+                <section className="notes" aria-label="Notes">
+                  <h2 className="notes__heading">Notes</h2>
+                  <NoteList
+                    manifest={stage.manifest}
+                    notes={placedNotes}
+                    onEdit={editNote}
+                    onDelete={deleteNote}
+                    onGo={(cursor) => setView({ cursor })}
+                    {...(stage.manifest.event.timezone
+                      ? { timezone: stage.manifest.event.timezone }
+                      : {})}
+                  />
+                </section>
+              </div>
+            </details>
+
+            {stage.importError && (
+              <p className="callout callout--warn">
+                A manifest was found but could not be used, so nothing from it was
+                applied: {stage.importError}
+              </p>
+            )}
+            {stage.noteProblems.length > 0 && (
+              <p className="callout callout--warn">
+                {stage.noteProblems.length === 1 ? 'A row' : `${stage.noteProblems.length} rows`} in
+                notes.csv or people.csv needed a closer look rather than being guessed
+                at &mdash; some were skipped entirely (an unreadable date, a missing
+                name), others were kept but left with something unresolved (like a
+                photo filename that matches more than one file): {stage.noteProblems.join('; ')}
+              </p>
+            )}
+            {stage.importedFrom && (
+              <p className="callout">
+                Loaded your saved work from <strong>{stage.importedFrom}</strong> &mdash;
+                names and hand-placed times came back with it. Notes and
+                captions live in notes.csv now, and load the same way when
+                it&rsquo;s in the folder alongside it. A hand-placed time stays
+                exactly as you set it; every automatic timestamp is still
+                re-read fresh from the file itself.
+              </p>
+            )}
+
+            {placement && bounds && range && placement.placed.length > 0 && (
+              <TimeWindowSlider
+                placed={placement.placed}
+                bounds={bounds}
+                range={range}
+                onChange={setWindow}
+                onReset={() => setWindow(null)}
+                {...(stage.manifest.event.timezone ? { timezone: stage.manifest.event.timezone } : {})}
+              />
+            )}
+
+            {/* The course stands on its own: a GPX with no photos yet is a
+                perfectly good thing to look at, and gating the tabs on a time
+                range — which only photos produce — hid it completely. */}
+            {available.length > 0 && (
+              <nav className="views" aria-label="View">
+                {VIEW_NAMES.filter((name) => available.includes(name)).map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    className={view.view === name ? 'view-tab view-tab--on' : 'view-tab'}
+                    aria-pressed={view.view === name}
+                    onClick={() => setView({ view: name })}
+                  >
+                    {name === 'feed' ? 'Feed' : name === 'lanes' ? 'Swimlanes' : 'Course'}
+                  </button>
+                ))}
+              </nav>
+            )}
+
+            {/* Outside the media gate on purpose: the map and profile need no
+                photos and no time range, only the track. */}
+            {view.view === 'course' && !stage.course && stage.manifest.course && (
+              <CourseFallback course={stage.manifest.course} />
+            )}
+
+            {view.view === 'course' && stage.course && (
+              <>
+                <CourseMap
+                  manifest={stage.manifest}
+                  course={stage.course}
+                  track={track}
+                  items={items}
+                  at={view.cursor}
+                  focus={focus}
+                  onFocus={setFocus}
+                  onCursor={(cursor) => setView({ cursor })}
+                  {...(thumbnails ? { thumbnails } : {})}
+                  onPick={pickOnCourse}
+                />
+                <CourseCharts
+                  course={stage.course}
+                  track={track}
+                  {...(range ? { range } : {})}
+                  at={view.cursor}
+                  focus={focus}
+                  onFocus={setFocus}
+                  onCursor={(cursor) => setView({ cursor })}
+                  onPick={pickOnCourse}
                   {...(stage.manifest.event.timezone
                     ? { timezone: stage.manifest.event.timezone }
                     : {})}
                 />
-              </section>
-            </div>
-          </details>
+              </>
+            )}
 
-          {stage.importError && (
-            <p className="callout callout--warn">
-              A manifest was found but could not be used, so nothing from it was
-              applied: {stage.importError}
-            </p>
-          )}
-          {stage.noteProblems.length > 0 && (
-            <p className="callout callout--warn">
-              {stage.noteProblems.length === 1 ? 'A row' : `${stage.noteProblems.length} rows`} in
-              notes.csv or people.csv needed a closer look rather than being guessed
-              at &mdash; some were skipped entirely (an unreadable date, a missing
-              name), others were kept but left with something unresolved (like a
-              photo filename that matches more than one file): {stage.noteProblems.join('; ')}
-            </p>
-          )}
-          {stage.importedFrom && (
-            <p className="callout">
-              Loaded your saved work from <strong>{stage.importedFrom}</strong> &mdash;
-              names and hand-placed times came back with it. Notes and
-              captions live in notes.csv now, and load the same way when
-              it&rsquo;s in the folder alongside it. A hand-placed time stays
-              exactly as you set it; every automatic timestamp is still
-              re-read fresh from the file itself.
-            </p>
-          )}
-
-          {placement && bounds && range && placement.placed.length > 0 && (
-            <TimeWindowSlider
-              placed={placement.placed}
-              bounds={bounds}
-              range={range}
-              onChange={setWindow}
-              onReset={() => setWindow(null)}
-              {...(stage.manifest.event.timezone ? { timezone: stage.manifest.event.timezone } : {})}
-            />
-          )}
-
-          {/* The course stands on its own: a GPX with no photos yet is a
-              perfectly good thing to look at, and gating the tabs on a time
-              range — which only photos produce — hid it completely. */}
-          {available.length > 0 && (
-            <nav className="views" aria-label="View">
-              {VIEW_NAMES.filter((name) => available.includes(name)).map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  className={view.view === name ? 'view-tab view-tab--on' : 'view-tab'}
-                  aria-pressed={view.view === name}
-                  onClick={() => setView({ view: name })}
-                >
-                  {name === 'feed' ? 'Feed' : name === 'lanes' ? 'Swimlanes' : 'Course'}
-                </button>
-              ))}
-            </nav>
-          )}
-
-          {/* Outside the media gate on purpose: the map and profile need no
-              photos and no time range, only the track. */}
-          {view.view === 'course' && !stage.course && stage.manifest.course && (
-            <CourseFallback course={stage.manifest.course} />
-          )}
-
-          {view.view === 'course' && stage.course && (
-            <>
-              <CourseMap
+            {/* The course, riding along with the photographs. The Course tab
+                answers "what did the race look like"; this answers the question
+                you have while scrolling, which is "where was this taken". */}
+            {stage.course && range && view.view !== 'course' && (
+              <CourseRail
                 manifest={stage.manifest}
                 course={stage.course}
                 track={track}
                 items={items}
-                at={view.cursor}
                 focus={focus}
                 onFocus={setFocus}
+                at={view.cursor}
                 onCursor={(cursor) => setView({ cursor })}
+                unplaceable={unplaceable}
                 {...(thumbnails ? { thumbnails } : {})}
-                onPick={pickOnCourse}
-              />
-              <CourseCharts
-                course={stage.course}
-                track={track}
-                {...(range ? { range } : {})}
-                at={view.cursor}
-                focus={focus}
-                onFocus={setFocus}
-                onCursor={(cursor) => setView({ cursor })}
                 onPick={pickOnCourse}
                 {...(stage.manifest.event.timezone
                   ? { timezone: stage.manifest.event.timezone }
                   : {})}
               />
-            </>
-          )}
+            )}
 
-          {/* The course, riding along with the photographs. The Course tab
-              answers "what did the race look like"; this answers the question
-              you have while scrolling, which is "where was this taken". */}
-          {stage.course && range && view.view !== 'course' && (
-            <CourseRail
-              manifest={stage.manifest}
-              course={stage.course}
-              track={track}
-              items={items}
-              focus={focus}
-              onFocus={setFocus}
-              at={view.cursor}
-              onCursor={(cursor) => setView({ cursor })}
-              unplaceable={unplaceable}
-              {...(thumbnails ? { thumbnails } : {})}
-              onPick={pickOnCourse}
-              {...(stage.manifest.event.timezone
-                ? { timezone: stage.manifest.event.timezone }
-                : {})}
-            />
-          )}
+            {placement && range && store && (
+              // The provider itself now lives above, wrapping the whole
+              // loaded stage (see the comment by `<MediaProvider>` up top) —
+              // this fragment just keeps the same gate on rendering these
+              // views until placement, range and the store are all ready.
+              <>
+                {view.view === 'lanes' && (
+                  <Swimlanes
+                    manifest={stage.manifest}
+                    placed={placement.placed}
+                    range={range}
+                    state={view}
+                    onCursor={(cursor) => {
+                      setView({ cursor });
+                      // A null cursor is the scrub being cleared, not a moment.
+                      if (stage.course && cursor !== null) focusAt(cursor);
+                    }}
+                    onTogglePerson={(person: PersonId) =>
+                      setView({
+                        visible: toggleVisible(view, person, stage.manifest.people.map((p) => p.id)),
+                      })
+                    }
+                    onOpen={(entry) => setOpenId(entry.item.id)}
+                    lightboxOpen={openIndex >= 0}
+                    {...(bounds ? { bounds } : {})}
+                    onRange={setWindow}
+                    captionByItem={captionByItem}
+                  />
+                )}
 
-          {placement && range && store && (
-            <MediaProvider store={store}>
-              {view.view === 'lanes' && (
-                <Swimlanes
-                  manifest={stage.manifest}
-                  placed={placement.placed}
-                  range={range}
-                  state={view}
-                  onCursor={(cursor) => {
-                    setView({ cursor });
-                    // A null cursor is the scrub being cleared, not a moment.
-                    if (stage.course && cursor !== null) focusAt(cursor);
-                  }}
-                  onTogglePerson={(person: PersonId) =>
-                    setView({
-                      visible: toggleVisible(view, person, stage.manifest.people.map((p) => p.id)),
-                    })
-                  }
-                  onOpen={(entry) => setOpenId(entry.item.id)}
-                  lightboxOpen={openIndex >= 0}
-                  {...(bounds ? { bounds } : {})}
-                  onRange={setWindow}
-                  captionByItem={captionByItem}
-                />
-              )}
+                {view.view === 'feed' && (
+                  <Feed
+                    manifest={stage.manifest}
+                    items={items}
+                    notes={feedNotes}
+                    captionByItem={captionByItem}
+                    onOpen={(entry) => setOpenId(entry.item.id)}
+                    onActive={(moment: readonly PlacedItem[]) => {
+                      const first = moment[0];
+                      if (!first) return;
 
-              {view.view === 'feed' && (
-                <Feed
-                  manifest={stage.manifest}
-                  items={items}
-                  notes={feedNotes}
-                  captionByItem={captionByItem}
-                  onOpen={(entry) => setOpenId(entry.item.id)}
-                  onActive={(moment: readonly PlacedItem[]) => {
-                    const first = moment[0];
-                    if (!first) return;
+                      /*
+                       * Scrolling the feed moves the SHARED cursor.
+                       *
+                       * The premise of this app is one cursor and three
+                       * projections of it, and the feed was the one view not
+                       * taking part: you could scrub in the lanes and flip to
+                       * the feed, but not the other way. It also gives the note
+                       * composer a sensible default time — scroll to the small
+                       * hours, and a new note is already in the small hours.
+                       *
+                       * Fires once per moment crossed, not per scroll event —
+                       * the observer in Feed dedupes — so this does not churn
+                       * the URL.
+                       */
+                      setView({ cursor: first.instant });
 
-                    /*
-                     * Scrolling the feed moves the SHARED cursor.
-                     *
-                     * The premise of this app is one cursor and three
-                     * projections of it, and the feed was the one view not
-                     * taking part: you could scrub in the lanes and flip to
-                     * the feed, but not the other way. It also gives the note
-                     * composer a sensible default time — scroll to the small
-                     * hours, and a new note is already in the small hours.
-                     *
-                     * Fires once per moment crossed, not per scroll event —
-                     * the observer in Feed dedupes — so this does not churn
-                     * the URL.
-                     */
-                    setView({ cursor: first.instant });
-
-                    if (!stage.course) return;
-                    // The first item in the moment that can be placed on the
-                    // course at all. Some carry no GPS and some fall outside a
-                    // timed track's span; those simply do not move the marker
-                    // rather than moving it wrongly.
-                    for (const entry of moment) {
-                      const anchor = anchors.get(entry.item.id);
-                      if (anchor) {
-                        setFocus(anchor.distance);
-                        setUnplaceable(false);
-                        return;
+                      if (!stage.course) return;
+                      // The first item in the moment that can be placed on the
+                      // course at all. Some carry no GPS and some fall outside a
+                      // timed track's span; those simply do not move the marker
+                      // rather than moving it wrongly.
+                      for (const entry of moment) {
+                        const anchor = anchors.get(entry.item.id);
+                        if (anchor) {
+                          setFocus(anchor.distance);
+                          setUnplaceable(false);
+                          return;
+                        }
                       }
-                    }
-                    setFocus(null);
-                    setUnplaceable(true);
-                  }}
-                />
-              )}
+                      setFocus(null);
+                      setUnplaceable(true);
+                    }}
+                  />
+                )}
 
-              {openIndex >= 0 && (
-                <Lightbox
-                  items={items}
-                  index={openIndex}
-                  onIndex={(next) => setOpenId(items[next]?.item.id ?? null)}
-                  onClose={() => setOpenId(null)}
-                  colors={assignLaneColors(stage.manifest.people)}
-                  names={new Map(stage.manifest.people.map((p) => [p.id, p.name]))}
-                  notes={notes}
-                  onCaption={setCaption}
-                  {...(stage.manifest.event.timezone
-                    ? { timezone: stage.manifest.event.timezone }
-                    : {})}
-                />
-              )}
-            </MediaProvider>
-          )}
+                {openIndex >= 0 && (
+                  <Lightbox
+                    items={items}
+                    index={openIndex}
+                    onIndex={(next) => setOpenId(items[next]?.item.id ?? null)}
+                    onClose={() => setOpenId(null)}
+                    colors={assignLaneColors(stage.manifest.people)}
+                    names={new Map(stage.manifest.people.map((p) => [p.id, p.name]))}
+                    notes={notes}
+                    onCaption={setCaption}
+                    {...(stage.manifest.event.timezone
+                      ? { timezone: stage.manifest.event.timezone }
+                      : {})}
+                  />
+                )}
+              </>
+            )}
 
-          {/*
-            * Present in EVERY view, because writing a note is a thing you do
-            * while reading, not a feature of one page. It was in the feed and
-            * the course but inline under the lanes, which meant scrolling to
-            * reach it there and a different shape in each place.
-            */}
-          {/* Hidden while the lightbox is up: a floating button over a
-              full-screen photograph is noise, and it cannot be used there. */}
-          {placement && openIndex < 0 && (
-            <NoteDock
-              manifest={stage.manifest}
-              cursor={view.cursor}
-              author={me}
-              onAdd={addNote}
-              count={noteCount}
-              open={noteOpen}
-              onOpenChange={setNoteOpen}
-              notice={
-                pickFailed
-                  ? {
-                      text: 'No photographs either side of there, so there is no time to place a note at.',
-                      action: 'Dismiss',
-                      onAction: () => setPickFailed(false),
-                      onDismiss: () => setPickFailed(false),
-                    }
-                  : noteOutside === null || !range
-                  ? undefined
-                  : {
-                      text: `Added at ${formatClock(noteOutside, stage.manifest.event.timezone)} — outside the window, so it is not shown.`,
-                      action: 'Show it',
-                      onAction: () => {
-                        setWindow({
-                          from: Math.min(range.from, noteOutside - 60_000),
-                          to: Math.max(range.to, noteOutside + 60_000),
-                        });
-                        setNoteOutside(null);
-                      },
-                      onDismiss: () => setNoteOutside(null),
-                    }
-              }
-              {...(stage.manifest.event.timezone
-                ? { timezone: stage.manifest.event.timezone }
-                : {})}
-            />
-          )}
-        </main>
+            {/*
+              * Present in EVERY view, because writing a note is a thing you do
+              * while reading, not a feature of one page. It was in the feed and
+              * the course but inline under the lanes, which meant scrolling to
+              * reach it there and a different shape in each place.
+              */}
+            {/* Hidden while the lightbox is up: a floating button over a
+                full-screen photograph is noise, and it cannot be used there. */}
+            {placement && openIndex < 0 && (
+              <NoteDock
+                manifest={stage.manifest}
+                cursor={view.cursor}
+                author={me}
+                onAdd={addNote}
+                count={noteCount}
+                open={noteOpen}
+                onOpenChange={setNoteOpen}
+                notice={
+                  pickFailed
+                    ? {
+                        text: 'No photographs either side of there, so there is no time to place a note at.',
+                        action: 'Dismiss',
+                        onAction: () => setPickFailed(false),
+                        onDismiss: () => setPickFailed(false),
+                      }
+                    : noteOutside === null || !range
+                    ? undefined
+                    : {
+                        text: `Added at ${formatClock(noteOutside, stage.manifest.event.timezone)} — outside the window, so it is not shown.`,
+                        action: 'Show it',
+                        onAction: () => {
+                          setWindow({
+                            from: Math.min(range.from, noteOutside - 60_000),
+                            to: Math.max(range.to, noteOutside + 60_000),
+                          });
+                          setNoteOutside(null);
+                        },
+                        onDismiss: () => setNoteOutside(null),
+                      }
+                }
+                {...(stage.manifest.event.timezone
+                  ? { timezone: stage.manifest.event.timezone }
+                  : {})}
+              />
+            )}
+          </main>
+        </MediaProvider>
       )}
     </div>
   );

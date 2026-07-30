@@ -47,8 +47,14 @@ interface Props {
  *     portrait photo reserves a landscape box and the grid jolts on load.
  *   - **The ratio is clamped.** A 9:16 phone video next to a 4:3 photo makes
  *     a grid row nearly twice as tall as its neighbours, which reads as
- *     broken. Clamping keeps the shape recognisable while the rows stay even;
- *     `object-fit: cover` takes a centre crop of the difference.
+ *     broken. Clamping keeps the shape recognisable while the rows stay
+ *     even. `.tile__image` sets no `object-fit` (see App.css), so the
+ *     browser default of `fill` stretches the image to the clamped box
+ *     rather than cropping it — a shape outside [MIN_ASPECT, MAX_ASPECT]
+ *     comes out slightly squashed or stretched, not cropped. (A different
+ *     rule, `object-fit: cover`, governs the small square tiles in the
+ *     moment strip — see `.moment-strip__tile img` in App.css — which does
+ *     not go through this clamp at all.)
  */
 const MIN_ASPECT = 0.75; // 3:4 portrait
 const MAX_ASPECT = 1.78; // 16:9 landscape

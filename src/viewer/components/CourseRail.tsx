@@ -14,12 +14,17 @@ import { CourseMap } from '../map/CourseMap.tsx';
  * profile stay in view while the photos move past, and it follows whatever
  * moment is currently on screen.
  *
- * WHAT DRIVES IT, and why that is not obvious. On a timed track the answer is
- * simply position-at-time. **The owner's track has no times at all**, so
- * there is no such thing — and interpolating one would put the marker
- * confidently in the wrong place. Instead each photo is placed on the course
- * by ITS OWN GPS (see `anchorItems`), which is a measurement rather than a
- * guess, and works whether or not the track was ever timestamped.
+ * WHAT DRIVES IT, and why that is not obvious. Placement follows the same
+ * precedence as everywhere else in this app: TIME first, GPS only as a
+ * fallback (see `anchorItems` in `core/course.ts`, and "Placing media ON the
+ * course" in CLAUDE.md). A photo's own clock, corrected once per device, is
+ * a constant and correctable error; a single GPS fix is noisy and per-shot
+ * and cannot be corrected at all. GPS still does real work here — it is the
+ * only anchor for an item that falls outside the timed track's own span, and
+ * it is the ONLY anchor at all when the track carries no times whatsoever, a
+ * real case (a Strava route export has none). So this works whether or not
+ * the track was ever timestamped, without ever interpolating a time that was
+ * never recorded.
  *
  * The profile is deliberately a slim strip here rather than the full stack of
  * charts: it is a reference while you read the photos, not the subject.

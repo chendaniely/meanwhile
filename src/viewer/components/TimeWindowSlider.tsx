@@ -47,7 +47,19 @@ interface Props {
   timezone?: string;
 }
 
-/** Enough bars to resolve a few minutes across a couple of days. */
+/**
+ * Number of histogram bars.
+ *
+ * NOT "a few minutes", as an earlier version of this comment claimed. 180
+ * bins over the two-day extent that "a couple of days" implies is a
+ * ~16-minute bin (48h × 60 / 180). At the default PADDED extent
+ * `framedAround` builds around a real race window — 30% added onto each
+ * side, so a ~47-hour race (see the densest-window numbers in CLAUDE.md)
+ * frames to roughly 75 hours — that widens to about 25 minutes per bar.
+ * Coarse enough that a lone photo can still land inside an otherwise-empty
+ * bin and read as a gap. Treat this as "where the clusters are", not as a
+ * per-photo view.
+ */
 const BINS = 180;
 
 /** How much context to keep around the range when framing the slider. */
@@ -103,8 +115,17 @@ export function TimeWindowSlider({
   const ratio = (t: number) => (total > 0 ? ((t - extent.from) / total) * 100 : 0);
   const clamp01 = (n: number) => Math.min(100, Math.max(0, n));
 
-  // A thousand steps across the extent: fine enough to land on a given
-  // minute, coarse enough that a keyboard arrow does something visible.
+  // A thousand steps across the extent. NOT fine enough to land on a given
+  // minute in general, as an earlier version of this comment claimed: step
+  // (ms) = extent / 1000, i.e. step-in-minutes ≈ extent-in-hours × 0.06,
+  // and the steps are not minute-aligned even when the step itself is
+  // sub-minute. That only lands on an arbitrary minute (step ≤ 60s) below
+  // an extent of about 16h40m. At the padded extent around a real
+  // multi-day race window (see BINS above) it is more like four or five
+  // minutes, and at "Whole folder" — extent = the full bounds, unpadded —
+  // a folder spanning weeks makes it well over an hour. What this is
+  // actually protecting is that a keyboard arrow always does something
+  // visible.
   const step = Math.max(1, Math.round(total / 1000));
 
   const set = (next: Partial<TimeWindow>) => {

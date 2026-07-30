@@ -56,6 +56,19 @@ export function Lightbox({ items, index, onIndex, onClose, colors, names, timezo
   const [failed, setFailed] = useState(false);
   const dialog = useRef<HTMLDivElement>(null);
   const returnFocusTo = useRef<Element | null>(null);
+  /**
+   * Whether the gesture currently in progress actually STARTED on the
+   * backdrop, not just where it ended up.
+   *
+   * `event.target === event.currentTarget` alone is not a drift guard: a
+   * pointer that goes down on `.lightbox__media` and is released over the
+   * backdrop resolves the resulting `click`'s target to their common
+   * ancestor — this very `.lightbox` div — so that check alone passes and a
+   * drag-to-select on the photo closes the viewer. Recording where the
+   * POINTERDOWN landed and requiring that to have been the backdrop too is
+   * what actually stops a drift from closing.
+   */
+  const downOnBackdrop = useRef(false);
 
   const go = useCallback(
     (delta: number) => {
@@ -115,9 +128,15 @@ export function Lightbox({ items, index, onIndex, onClose, colors, names, timezo
       tabIndex={-1}
       ref={dialog}
       // Only a click on the backdrop itself closes; one that started on the
-      // image and drifted must not.
+      // image and drifted must not — see `downOnBackdrop` above for why
+      // checking the click's target alone is not enough.
+      onPointerDown={(event) => {
+        downOnBackdrop.current = event.target === event.currentTarget;
+      }}
       onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        const started = downOnBackdrop.current;
+        downOnBackdrop.current = false;
+        if (started && event.target === event.currentTarget) onClose();
       }}
     >
       <div className="lightbox__stage">
