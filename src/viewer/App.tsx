@@ -10,7 +10,9 @@ import {
   type TimeAnchor,
 } from '../core/course.ts';
 import { formatCsv } from '../core/csv.ts';
-import { mintNoteId, noteHeadersFor, noteToRow, stampBlankAuthors, type Note } from '../core/notes.ts';
+import {
+  fingerprintNote, mintNoteId, noteHeadersFor, noteToRow, stampBlankAuthors, type Note,
+} from '../core/notes.ts';
 import { formatPeopleCsv } from '../core/people-csv.ts';
 import type { Manifest, PersonId } from '../core/schema.ts';
 import { isVisible, toggleVisible, VIEW_NAMES, type ViewName } from '../core/state.ts';
@@ -186,11 +188,31 @@ export function App() {
   // note and caption written since the folder was opened).
   const notesRef = useRef<Note[]>([]);
   notesRef.current = notes;
+  // Mirrors the event's timezone, read by `deleteNote` below without needing
+  // it in that callback's own dependency array — same reason `notesRef`
+  // exists. `fingerprintNote` needs it to match what `ingestFolder` computes
+  // fingerprints against.
+  const timezoneRef = useRef<string | undefined>(timezone);
+  timezoneRef.current = timezone;
   // Ids removed from `notes` this session. A delete only changes in-memory
   // state — nothing is written until Save — so a re-ingest must be told
   // which ids were deliberately removed, or it re-reads them straight off
   // disk and resurrects them.
   const deletedNoteIds = useRef<Set<string>>(new Set());
+  // Content fingerprints of deleted notes, alongside their ids.
+  //
+  // A blank-`id` row — the documented way to hand-add a note — has no stable
+  // identity across parses: `dedupeNotes` mints a FRESH random id every
+  // time `notes.csv` is re-read, since nothing persists a row-to-id mapping
+  // between calls. So `deletedNoteIds` alone catches a delete only until the
+  // next re-ingest mints a DIFFERENT id for the same unsaved row, at which
+  // point it reads as a note nobody has ever deleted and comes back. This is
+  // the mirror image of the bug `mergeSessionNotes`'s fingerprint check
+  // already fixes on the ADD side — same root cause, reached from delete
+  // instead. A fingerprint match is treated as the same note for every
+  // practical purpose here, since it already covers time, text, people,
+  // author, photo, and extra together.
+  const deletedNoteFingerprints = useRef<Set<string>>(new Set());
 
   /**
    * Read a set of files into the app.
@@ -215,8 +237,14 @@ export function App() {
       // Opening a FOLDER starts a new session — a genuinely different event
       // must not carry yesterday's deletions (or notes) across into it. Only
       // "Add files" continues the current one, which is the whole point of
-      // passing `sessionNotes`/`deletedNoteIds` into ingest below.
-      if (mode === 'replace') deletedNoteIds.current = new Set();
+      // passing `sessionNotes`/`deletedNoteIds`/`deletedNoteFingerprints`
+      // into ingest below. Both tombstones are session-scoped for the same
+      // reason: a fingerprint deleted in one session must not suppress a
+      // genuinely new note of the same shape in a LATER one.
+      if (mode === 'replace') {
+        deletedNoteIds.current = new Set();
+        deletedNoteFingerprints.current = new Set();
+      }
 
       setFiles(merged);
       setStage({ name: 'reading', progress: { done: 0, total: all.length, current: '' } });
@@ -237,11 +265,15 @@ export function App() {
           // CRITICAL: without these, re-ingesting replaces the live session's
           // notes and captions with whatever a stale re-read of the folder
           // produces — see the doc comment on `mergeSessionNotes`. Omitted on
-          // 'replace', matching the reset just above (`ingestFolder` treats a
-          // missing `sessionNotes`/`deletedNoteIds` as empty): that mode means
-          // a different folder, not a continuation of this one.
+          // 'replace', matching the reset just above (`ingestFolder` treats
+          // missing tombstones/session notes as empty): that mode means a
+          // different folder, not a continuation of this one.
           ...(mode === 'add'
-            ? { sessionNotes: notesRef.current, deletedNoteIds: deletedNoteIds.current }
+            ? {
+                sessionNotes: notesRef.current,
+                deletedNoteIds: deletedNoteIds.current,
+                deletedNoteFingerprints: deletedNoteFingerprints.current,
+              }
             : {}),
           onProgress: (progress) => setStage({ name: 'reading', progress }),
         });
@@ -389,6 +421,15 @@ export function App() {
     // deliberately removed, rather than re-reading it off disk and treating
     // its reappearance as a brand new note nobody has ever deleted.
     deletedNoteIds.current.add(id);
+    // The id alone is not enough for a blank-id, hand-typed row: the next
+    // parse of notes.csv mints a DIFFERENT id for the identical unsaved row
+    // (see the comment on `deletedNoteFingerprints` above), so record its
+    // content fingerprint too. `notesRef.current` still holds the note here
+    // — this runs before the `setNotes` above has re-rendered.
+    const deleted = notesRef.current.find((n) => n.id === id);
+    if (deleted) {
+      deletedNoteFingerprints.current.add(fingerprintNote(deleted, timezoneRef.current));
+    }
   }, []);
 
   const manifest = stage.name === 'loaded' ? stage.manifest : null;

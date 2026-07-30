@@ -3,7 +3,7 @@ import {
   ingestFolder, legacyNoteToNote, manifestForSave, mergeSessionNotes, migrateLegacyNotes,
 } from '../src/viewer/media/ingest.ts';
 import type { PickedFile } from '../src/viewer/media/folder.ts';
-import type { Note } from '../src/core/notes.ts';
+import { fingerprintNote, type Note } from '../src/core/notes.ts';
 import type { Item, Manifest, Note as LegacyNote, Person } from '../src/core/schema.ts';
 import { SCHEMA_VERSION } from '../src/core/schema.ts';
 import { parseDuration } from '../src/core/time.ts';
@@ -255,6 +255,40 @@ describe('mergeSessionNotes', () => {
     expect(out.map((n) => n.id).sort()).toEqual(['A', 'C']);
     expect(out.map((n) => n.text).sort()).toEqual(['aid station', 'wrong turn']);
   });
+
+  /**
+   * Mirror-image blocker from a further re-review: `deletedIds` alone only
+   * records the id minted for a note AT DELETE TIME. A blank-id row's
+   * underlying `notes.csv` line is still unsaved and blank-id, so the NEXT
+   * parse mints a DIFFERENT id — one `deletedIds` has never seen — and the
+   * deleted note comes back. `deletedFingerprints` closes that the same way
+   * the add-side duplication was closed: by content, not id.
+   */
+  it('a deleted blank-id note does not resurrect under a freshly-minted id', () => {
+    // The id minted for the SAME unsaved row differs between the delete
+    // ('A', deleted from `session`) and this re-ingest ('X', freshly minted)
+    // — `deletedIds` alone would miss this.
+    const deletedAt = note('A', { text: 'deleted note' });
+    const staleRemint = note('X', { text: 'deleted note' });
+    const out = mergeSessionNotes(
+      [], [staleRemint], new Set(['A']), undefined, new Set([fingerprintNote(deletedAt)]),
+    );
+    expect(out).toEqual([]);
+  });
+
+  it('does not suppress a different note that merely shares some fields with a deleted one', () => {
+    // Same text, but a different time — the fingerprint covers both, so this
+    // must NOT read as the note that was deleted. An exact match on time,
+    // text, people, author, photo, AND extra together is the bar; matching
+    // on text alone is not.
+    const deletedAt = note('A', { text: 'aid station', at: '2026-07-25T09:00:00.000Z' });
+    const differentTime = note('B', { text: 'aid station', at: '2026-07-25T10:00:00.000Z' });
+    const out = mergeSessionNotes(
+      [], [differentTime], new Set(), undefined, new Set([fingerprintNote(deletedAt)]),
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0]?.id).toBe('B');
+  });
 });
 
 describe('ingestFolder — notes end to end', () => {
@@ -369,6 +403,56 @@ describe('ingestFolder — notes end to end', () => {
     });
     expect(second.notes).toHaveLength(2);
     expect(second.notes.map((n) => n.text).sort()).toEqual(['first note', 'second note']);
+  });
+
+  it('a deleted, blank-id note stays deleted across "Add files" — the mirror-image blocker', async () => {
+    // Reproduces the exact failure the second re-review traced: write a
+    // blank-id note in notes.csv, open the folder, delete it in the app
+    // (App.tsx's deleteNote records BOTH the id it was minted under and its
+    // content fingerprint), then click "Add files". The unsaved row is still
+    // blank-id, so this re-ingest mints a DIFFERENT id for it — only the
+    // fingerprint tombstone stops it from reappearing.
+    const notesCsv =
+      'id,year,month,day,hour,minute,duration,tz,people,photo,author,text\n' +
+      ',2026,7,25,9,0,,,Priya,,,hand-typed note\n';
+
+    const first = await ingestFolder([textFile('notes.csv', notesCsv)], { title: 'x' });
+    expect(first.notes).toHaveLength(1);
+    const deleted = first.notes[0] as Note;
+
+    // Simulates deleteNote: gone from the session's note list, recorded in
+    // both tombstones (event.timezone is undefined here, matching what
+    // ingestFolder itself computed for `manifest.event.timezone`).
+    const second = await ingestFolder([textFile('notes.csv', notesCsv)], {
+      title: 'x',
+      sessionNotes: [],
+      deletedNoteIds: new Set([deleted.id]),
+      deletedNoteFingerprints: new Set([fingerprintNote(deleted)]),
+    });
+    expect(second.notes).toEqual([]);
+  });
+
+  it('a deletion does not carry into a folder that omits the tombstone — what mode: "replace" does', async () => {
+    // `ingestFolder` itself has no notion of "session" vs "replace" — that
+    // distinction lives entirely in what App.tsx chooses to pass through
+    // `handlePicked`, and it resets both tombstone refs before a 'replace'
+    // ingest so neither is passed at all. This proves the CONTRACT that
+    // reset relies on: an ingest that carries no tombstone forward treats
+    // every note in the file as never having been deleted, which is exactly
+    // what "a genuinely different folder must not inherit yesterday's
+    // deletions" requires.
+    const notesCsv =
+      'id,year,month,day,hour,minute,duration,tz,people,photo,author,text\n' +
+      ',2026,7,25,9,0,,,Priya,,,hand-typed note\n';
+
+    const first = await ingestFolder([textFile('notes.csv', notesCsv)], { title: 'x' });
+    const deletedText = (first.notes[0] as Note).text;
+
+    // Re-opened with no sessionNotes/deletedNoteIds/deletedNoteFingerprints
+    // at all — the tombstone was never carried across.
+    const reopened = await ingestFolder([textFile('notes.csv', notesCsv)], { title: 'x' });
+    expect(reopened.notes).toHaveLength(1);
+    expect(reopened.notes[0]?.text).toBe(deletedText);
   });
 });
 

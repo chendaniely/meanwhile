@@ -81,6 +81,22 @@ export interface IngestOptions {
    * however wide the fresh read's contents are.
    */
   deletedNoteIds?: ReadonlySet<string>;
+  /**
+   * Content fingerprints (`fingerprintNote`) of notes deleted this session,
+   * alongside `deletedNoteIds`.
+   *
+   * `deletedNoteIds` alone is not enough for a blank-`id` row — the
+   * documented way to hand-add a note — because `dedupeNotes` mints a FRESH
+   * random id for one on every parse of `notes*.csv`, since nothing persists
+   * a row-to-id mapping between calls. Deleting such a note removes the id
+   * minted at delete time from `session`, but the underlying row is still
+   * blank-id and unsaved, so the NEXT parse mints a different id that
+   * `deletedNoteIds` has never seen — and the deleted note comes back. A
+   * fingerprint match is treated as the same note for every practical
+   * purpose here, since it already compares time, text, people, author,
+   * photo, and extra together.
+   */
+  deletedNoteFingerprints?: ReadonlySet<string>;
   onProgress?: (progress: IngestProgress) => void;
   signal?: AbortSignal;
 }
@@ -287,6 +303,7 @@ export async function ingestFolder(
     photoResolvedNotes,
     opts.deletedNoteIds ?? new Set(),
     manifest.event.timezone,
+    opts.deletedNoteFingerprints ?? new Set(),
   );
   const noteProblems = [...rosterProblems, ...csvNoteProblems, ...photoProblems];
 
@@ -344,6 +361,18 @@ export async function ingestFolder(
  * edits a hand-typed note: the id would change with the text, and identity
  * (what an edit or delete addresses) would be lost exactly when it matters.
  *
+ * **The same blank-id problem has a mirror image on the DELETE side**, found
+ * by a later review: `deletedIds` records the id minted for a note AT
+ * DELETE TIME, but a blank-id row's underlying `notes.csv` line is still
+ * unsaved and blank-id, so the NEXT parse mints a DIFFERENT id — one
+ * `deletedIds` has never seen — and the deleted note comes back. Fixed the
+ * same way as the add-side duplication: `deletedFingerprints` records the
+ * CONTENT fingerprint of a note at delete time, alongside its id, and a
+ * fresh note matching one is excluded regardless of what id it was minted
+ * under this time. Session-scoped exactly like `deletedIds` — cleared on
+ * a genuinely different folder — so a fingerprint deleted in one session
+ * cannot suppress an unrelated, later note that merely happens to match.
+ *
  * Pure and independent of `ingestFolder`'s file-reading, so it is directly
  * testable with plain `Note[]` — no `File` mocking needed.
  */
@@ -352,17 +381,17 @@ export function mergeSessionNotes(
   fresh: readonly Note[],
   deletedIds: ReadonlySet<string>,
   eventTimezone?: string,
+  deletedFingerprints: ReadonlySet<string> = new Set(),
 ): Note[] {
   const sessionIds = new Set(session.map((n) => n.id));
   const sessionFingerprints = new Set(session.map((n) => fingerprintNote(n, eventTimezone)));
   const notes = [
     ...session,
-    ...fresh.filter(
-      (n) =>
-        !sessionIds.has(n.id) &&
-        !deletedIds.has(n.id) &&
-        !sessionFingerprints.has(fingerprintNote(n, eventTimezone)),
-    ),
+    ...fresh.filter((n) => {
+      if (sessionIds.has(n.id) || deletedIds.has(n.id)) return false;
+      const fingerprint = fingerprintNote(n, eventTimezone);
+      return !sessionFingerprints.has(fingerprint) && !deletedFingerprints.has(fingerprint);
+    }),
   ];
   notes.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   return notes;
