@@ -78,15 +78,20 @@ photos stay wherever you keep them.
 Two ways to use it:
 
 - **On your own machine.** Point it at a folder of photos and it reads them
-  straight off your disk. **No photo, video, note or timestamp is ever
-  uploaded** — the site has nowhere to put them, and reads the files locally
-  even though it is served from the public web.
+  straight off your disk. **Your photos, video and files never leave your
+  computer** — the site has nowhere to put them, and reads them locally even
+  though it is served from the public web.
 
   Being precise about what *does* leave, since "nothing leaves your computer"
-  would be too strong: the published site loads **Google Analytics**, so
-  Google sees that a page was opened and from which IP — never anything about
-  your photos. The course view also fetches **map tiles** from OpenTopoMap,
-  Esri and OpenStreetMap. If you would rather not be measured at all, run it
+  would be too strong: the published site loads **Google Analytics** on every
+  view (Feed, Swimlanes and Course alike), so Google sees that a page was
+  opened and from which IP — never anything about your photos. Once a track
+  (GPX/TCX) is in the folder, **map tiles** load from OpenTopoMap, Esri and
+  OpenStreetMap on every view too, not only the Course tab. And a moment's
+  link (see below) carries a timestamp and the ids of whichever people are
+  shown or hidden right there in its address — never a photo, a video or a
+  note, but not nothing either; we did not verify whether Google Analytics
+  reads that address. If you would rather not be measured at all, run it
   locally with `make dev`, which loads no analytics whatsoever.
 - **Shared with others.** Publish the description file with links to your
   photos, and anyone you send it to can open the timeline on their phone.
@@ -232,7 +237,7 @@ even after you delete it.
 
 ## What works today
 
-Run `make dev`, click **Open a folder**, and:
+Run `make dev`, click **Open folder**, and:
 
 1. **It reads every photo and video** and works out when each was taken —
    JPEG, HEIC, MOV, and MP4.
@@ -302,7 +307,12 @@ There's also a report of how much to trust the times, an expandable list of
 any files that arrived without a timestamp (with who to ask for the
 originals), and `make inspect` for checking a folder from the terminal.
 
-Still missing: the moment grid as its own view, and publishing to the web.
+Still missing: the moment grid as its own view, and a way to publish an
+event's *media* to the web — there's no upload step, so "shared with others"
+still means hosting the photos yourself somewhere with a link (see
+[Two things to know before you start](#two-things-to-know-before-you-start)).
+Publishing the *app itself* already works — see
+[Publishing it](#publishing-it) below.
 
 ## The notes file
 
@@ -560,7 +570,7 @@ distinctive, and failing that by what else was being shot at the same
 moment — which can be wrong when two people are standing together. The
 report tells you how many fell back to that weakest signal.
 
-If you only have a handful of loose files, **Pick files instead** works too.
+If you only have a handful of loose files, **Choose files** works too.
 
 ### Where the GPX goes
 
@@ -572,7 +582,7 @@ it, at any depth — and meanwhile finds it while it reads the folder. A
 If you have several tracks in there, the richest one wins: a TCX carrying
 heart rate beats a bare GPX.
 
-**Pick files instead** also accepts a track, so you can select the photos and
+**Choose files** also accepts a track, so you can select the photos and
 the `.gpx` together, and a track on its own is enough to look at the course
 before any photos exist.
 
@@ -656,6 +666,9 @@ Mac.
 - `CLAUDE.md` — architecture rules, decision record, verified constraints
 - `PROMPTS.md` — verbatim log of the prompts that shaped this project
 - `TODO.md` — deliberately deferred ideas
+- `EVENT.example.md` — copy it to `EVENT.md` (gitignored) to note, on your own
+  machine, which event this copy is pointed at and where its `notes.csv` /
+  `people.csv` / `manifest.json` live
 
 ## License
 

@@ -7,14 +7,14 @@ meanwhile is a renderer: it holds no event of its own. This file is how one
 person's copy remembers which event they are working on and where its written
 record is kept, without any of that leaking into the app everyone else clones.
 
-`README.md` and `CLAUDE.md` both point here. If the file is absent, nothing
-breaks — the app has no idea it exists, and you just open a folder as usual.
+`README.md` points here. If the file is absent, nothing breaks — the app has
+no idea it exists, and you just open a folder as usual.
 
 ---
 
 ## The event
 
-**Name:** <the event, as it appears in the site's title field>
+**Name:** <the event, as it appears in the site's "Event name" field>
 **When:** <dates>
 **Timezone:** <IANA zone, e.g. America/Los_Angeles>
 
@@ -33,7 +33,7 @@ Files it holds:
 |---|---|
 | `notes.csv` | What people wrote down |
 | `people.csv` | Who was there, their roles, clock offsets, aliases |
-| `manifest.json` | What the site derived from the photos |
+| `manifest.json` | The event settings, plus authored work &mdash; the crop, hand-placed times, markers, the course reference &mdash; that a re-ingest of the photos cannot reproduce |
 | `*.gpx` / `*.tcx` | The track, if you keep it under version control |
 
 ## The photographs

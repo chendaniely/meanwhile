@@ -41,7 +41,7 @@ interface Props {
 const SHAKY: Partial<Record<TimeSource, string>> = {
   mvhd: 'Time read from the video header, which Apple writes in local time with no zone. This one could be hours off.',
   filename: 'Time recovered from the filename, because the metadata had been stripped.',
-  gps: 'Time from the GPS fix rather than the shutter, so it may run a little early.',
+  gps: 'Time from the GPS fix, not the shutter — usually tens of seconds early, occasionally by several minutes or more.',
   'exif-naive': 'The camera recorded no timezone; this is placed using the event timezone.',
   'qt-naive': 'The camera recorded no timezone; this is placed using the event timezone.',
   manual: 'Placed by hand.',

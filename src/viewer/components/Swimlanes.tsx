@@ -513,6 +513,9 @@ export function Swimlanes({
               className="lanes__marker"
               style={{ left: `${percentOf(marker.at)}%` }}
               title={marker.label}
+              role="img"
+              aria-label={marker.label}
+              tabIndex={0}
             />
           ))}
 

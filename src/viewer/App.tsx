@@ -1049,9 +1049,10 @@ export function App() {
         <main className="app__empty">
           <p className="app__empty-lead">Nothing loaded yet.</p>
           <p>
-            meanwhile is a renderer, not a locker. It stores no photos and no event data. Point it at
-            a folder and it reads the files straight off your disk &mdash; nothing is uploaded, even
-            though this site is public.
+            meanwhile is a renderer, not a locker. Point it at a folder and it reads your photos and
+            video straight off your disk &mdash; they never leave this machine, even though this site
+            is public. This browser does remember your own name locally, for notes; see the README
+            for exactly what else the published page loads.
           </p>
           <p className="app__hint">
             Put each person&rsquo;s photos in their own subfolder. The folder name becomes their name
@@ -1184,10 +1185,11 @@ export function App() {
             {stage.noteProblems.length > 0 && (
               <p className="callout callout--warn">
                 {stage.noteProblems.length === 1 ? 'A row' : `${stage.noteProblems.length} rows`} in
-                notes.csv or people.csv needed a closer look rather than being guessed
-                at &mdash; some were skipped entirely (an unreadable date, a missing
-                name), others were kept but left with something unresolved (like a
-                photo filename that matches more than one file): {stage.noteProblems.join('; ')}
+                a notes*.csv or people.csv file needed a closer look rather than being
+                guessed at &mdash; some were skipped entirely (an unreadable date, a
+                missing name), others were kept but left with something unresolved
+                (like a photo filename that matches more than one file); which file is
+                named below: {stage.noteProblems.join('; ')}
               </p>
             )}
             {stage.importedFrom && (

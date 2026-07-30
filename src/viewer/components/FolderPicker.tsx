@@ -34,7 +34,9 @@ export function FolderPicker({ onPicked, onError, label = 'Open folder', variant
       const files = await pickFolder();
       if (files === null) return; // cancelled; not an error
       if (files.length === 0) {
-        onError('That folder has no photos or videos in it.');
+        onError(
+          'That folder has no photos, videos, a GPX/TCX track, a manifest.json, or a notes/people CSV in it.',
+        );
         return;
       }
       onPicked(files);
@@ -62,7 +64,10 @@ export function FolderPicker({ onPicked, onError, label = 'Open folder', variant
           hidden
           onChange={(event) => {
             const files = filesFromInput(event.target.value === '' ? null : event.target.files);
-            if (files.length === 0) onError('That folder has no photos or videos in it.');
+            if (files.length === 0)
+              onError(
+                'That folder has no photos, videos, a GPX/TCX track, a manifest.json, or a notes/people CSV in it.',
+              );
             else onPicked(files);
             event.target.value = '';
           }}

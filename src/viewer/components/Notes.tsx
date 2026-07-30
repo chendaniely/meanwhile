@@ -109,6 +109,14 @@ export function NoteComposer({ manifest, cursor, timezone, defaultAuthor, onAdd,
   const whenOk = whenValue === '' || fromLocalInput(whenValue, timezone) !== null;
   const spanOk = span === '' || fromLocalInput(span, timezone) !== null;
 
+  // A span that parses fine but isn't strictly after "When" is silently
+  // dropped at submit (see below) rather than rejected — so this is the one
+  // place that has to say so, or the note saves with no span and no
+  // explanation for where it went.
+  const whenInstant = whenOk && whenValue !== '' ? fromLocalInput(whenValue, timezone) : null;
+  const untilInstant = spanOk && span !== '' ? fromLocalInput(span, timezone) : null;
+  const spanIgnored = whenInstant !== null && untilInstant !== null && untilInstant <= whenInstant;
+
   const submit = () => {
     const body = text.trim();
     if (!body) return;
@@ -208,6 +216,11 @@ export function NoteComposer({ manifest, cursor, timezone, defaultAuthor, onAdd,
         <p className="compose__hint compose__hint--bad">
           Times go in as <span className="mw-mono">YYYY-MM-DD HH:MM</span>, on a
           24-hour clock.
+        </p>
+      ) : spanIgnored ? (
+        <p className="compose__hint compose__hint--bad">
+          Until must be after When, or the note saves as a single moment with no
+          span at all.
         </p>
       ) : cursor !== null && !when ? (
         <p className="compose__hint mw-mono">
