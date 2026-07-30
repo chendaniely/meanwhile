@@ -288,3 +288,19 @@ export function placeNotes(notes: readonly Note[]): PlacedNote[] {
   out.sort((a, b) => a.instant - b.instant);
   return out;
 }
+
+/**
+ * Drop notes that are photo captions (`note.photo` set).
+ *
+ * A caption lives ON its photo: the tile's speech-bubble glyph is how you
+ * discover it, and the lightbox and the Notes panel are where you read it.
+ * Interleaving it into the feed's chronological stream too, or counting it
+ * on the note-dock button, would say the same thing three times over and
+ * make the glyph's "otherwise invisible" justification false — so both call
+ * sites share this one filter rather than each re-deriving it. The Notes
+ * panel does NOT use this: it is the reference list, and a caption belongs
+ * there same as any other note.
+ */
+export function excludingCaptions(notes: readonly PlacedNote[]): PlacedNote[] {
+  return notes.filter((n) => n.note.photo === undefined);
+}

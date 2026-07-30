@@ -25,6 +25,7 @@
 
 import { formatDuration, hasZone, parseDuration, parseZonedInstant, zonedToInstant } from './time.ts';
 import { parseCsv } from './csv.ts';
+import type { Item } from './schema.ts';
 
 export interface Note {
   id: string;
@@ -64,6 +65,34 @@ export const NOTE_HEADERS: readonly string[] = [
   'author',
   'text',
 ];
+
+/**
+ * `NOTE_HEADERS` plus whatever `extra` columns the notes actually carry, in
+ * the order first seen.
+ *
+ * `formatCsv` only ever emits the headers it is handed — it has no notion of
+ * `Note` at all — so a caller that writes `formatCsv(NOTE_HEADERS, rows)`
+ * silently drops any column this module doesn't know the meaning of, even
+ * though `rowToNote`/`noteToRow` faithfully carry it through `extra`. That
+ * is the same class of loss as dropping a note outright: the writer's
+ * job is to preserve a column someone typed into, not just the ones this
+ * app happens to use. Worse, a dropped `extra` changes the note's
+ * fingerprint (see `dedupeNotes`), so the saved copy no longer matches the
+ * original and gets re-minted as a second note on the next load.
+ */
+export function noteHeadersFor(notes: readonly Note[]): string[] {
+  const headers = [...NOTE_HEADERS];
+  const seen = new Set(headers);
+  for (const note of notes) {
+    if (!note.extra) continue;
+    for (const key of Object.keys(note.extra)) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      headers.push(key);
+    }
+  }
+  return headers;
+}
 
 /** Legacy column names, tried in order when `year` is absent. */
 const LEGACY_KEYS = ['date', 'time', 'at'];
@@ -360,8 +389,87 @@ function instantPartsInZone(
 }
 
 // ---------------------------------------------------------------------------
-// mergeNotes
+// dedupeNotes / mergeNotes
 // ---------------------------------------------------------------------------
+
+/**
+ * A content fingerprint used to tell "the same row seen twice" from "a
+ * different row wearing the same id".
+ *
+ * Two things a naive `JSON.stringify` of the note would get wrong, both
+ * found by hand-editing a real spreadsheet:
+ *
+ * - **Array order.** `people`/`author` are semantically sets — "Priya;Sam"
+ *   and "Sam;Priya" name the same two people — but reordering names in a
+ *   spreadsheet is a completely ordinary edit, e.g. sorting the column. An
+ *   unsorted fingerprint would treat that as a content change and re-mint a
+ *   second note for what is still the same row.
+ * - **`tz`.** `noteToRow` leaves the column blank when it matches the
+ *   event's own zone (only an explicit disagreement earns the column), but
+ *   `rowToNote` sets `note.tz` from whatever the cell literally says. A row
+ *   that never had a `tz` column (`tz: undefined`) and a row that spelled out
+ *   the event's own zone by hand (`tz: 'America/Denver'` where that IS the
+ *   event zone) are the same note read two different ways, and must
+ *   fingerprint identically or a Save-then-reload duplicates it.
+ * - **`at`'s exact spelling.** `rowToNote` always produces
+ *   `Date.toISOString()`'s canonical form, milliseconds included
+ *   (`"...T09:00:00.000Z"`); `legacyNoteToNote` (see `viewer/media/ingest.ts`)
+ *   passes an imported manifest's `at` straight through unchanged, and a
+ *   hand-written or older one very often has no milliseconds
+ *   (`"...T09:00:00Z"`). Same instant, different string — comparing the raw
+ *   strings is exactly the bug that let a legacy manifest's note and its own
+ *   migrated copy in `notes.csv` collide as two notes instead of deduping to
+ *   one.
+ */
+export function fingerprintNote(note: Note, eventTimezone?: string): string {
+  const tz = note.tz !== undefined && note.tz !== eventTimezone ? note.tz : undefined;
+  return JSON.stringify([
+    Date.parse(note.at),
+    note.duration,
+    tz,
+    [...note.people].sort(),
+    note.photo,
+    [...note.author].sort(),
+    note.text,
+    note.extra,
+  ]);
+}
+
+/**
+ * Concatenate-and-dedupe a flat list of notes, minting an id for any that
+ * lack one and re-minting one side of a genuine collision.
+ *
+ * Shared by `mergeNotes` (several `notes*.csv` files) and by ingest's
+ * combination of a legacy manifest's migrated notes with `notes*.csv` (see
+ * `viewer/media/ingest.ts`) — a folder can hold BOTH after an old-style
+ * `manifest.json` and a `notes.csv` saved from it both land back in the same
+ * folder, which produces exact id collisions without this.
+ */
+export function dedupeNotes(notes: readonly Note[], eventTimezone?: string): Note[] {
+  const out: Note[] = [];
+  const seen = new Map<string, string>(); // id -> a fingerprint of its content
+
+  for (const note of notes) {
+    const next = { ...note };
+    const fingerprint = fingerprintNote(next, eventTimezone);
+    if (!next.id) {
+      let candidate = mintNoteId();
+      while (seen.has(candidate)) candidate = mintNoteId();
+      next.id = candidate;
+    } else if (seen.has(next.id)) {
+      // The same row seen twice is one note. A different row wearing the
+      // same id is a copy, and gets its own identity.
+      if (seen.get(next.id) === fingerprint) continue;
+      let candidate = mintNoteId();
+      while (seen.has(candidate)) candidate = mintNoteId();
+      next.id = candidate;
+    }
+    seen.set(next.id, fingerprint);
+    out.push(next);
+  }
+
+  return out;
+}
 
 /**
  * Row-bind every notes file into one list.
@@ -376,9 +484,8 @@ export function mergeNotes(
   files: ReadonlyArray<{ name: string; text: string }>,
   eventTimezone?: string,
 ): { notes: Note[]; problems: string[] } {
-  const notes: Note[] = [];
+  const rows: Note[] = [];
   const problems: string[] = [];
-  const seen = new Map<string, string>(); // id -> a fingerprint of its content
 
   for (const file of files) {
     const table = parseCsv(file.text);
@@ -389,25 +496,11 @@ export function mergeNotes(
         problems.push(`${file.name} row ${i + 2}: ${result.error}`);
         return;
       }
-      const note = result;
-      const fingerprint = JSON.stringify([note.at, note.duration, note.tz, note.people, note.photo, note.author, note.text, note.extra]);
-      if (!note.id) {
-        let candidate = mintNoteId();
-        while (seen.has(candidate)) candidate = mintNoteId();
-        note.id = candidate;
-      } else if (seen.has(note.id)) {
-        // The same row in two files is one note. A different row wearing the
-        // same id is a copy, and gets its own identity.
-        if (seen.get(note.id) === fingerprint) return;
-        let candidate = mintNoteId();
-        while (seen.has(candidate)) candidate = mintNoteId();
-        note.id = candidate;
-      }
-      seen.set(note.id, fingerprint);
-      notes.push(note);
+      rows.push(result);
     });
   }
 
+  const notes = dedupeNotes(rows, eventTimezone);
   notes.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   return { notes, problems };
 }
@@ -415,4 +508,79 @@ export function mergeNotes(
 /** Short, opaque and unique enough that two people never collide. */
 export function mintNoteId(): string {
   return `n_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Save-time and load-time reconciliation
+// ---------------------------------------------------------------------------
+
+/**
+ * Stamp every note with a blank `author` as written by `author`, asked once
+ * at save time rather than once per note.
+ *
+ * A note written before the "you are" setting is touched — or one authored
+ * by someone who never set it — is saved with `author: []`, per the rule
+ * that a note must never be blocked on it. This is the one place that offers
+ * to fix that in bulk. It must never run unprompted: a laptop passed around
+ * a crew could otherwise attribute someone else's note to whoever is signed
+ * in when Save happens to be clicked. `author.length === 0` is a no-op,
+ * consistent with "must never block a save" — there is nobody to stamp with.
+ */
+export function stampBlankAuthors(notes: readonly Note[], author: readonly string[]): Note[] {
+  if (author.length === 0) return [...notes];
+  return notes.map((n) => (n.author.length === 0 ? { ...n, author: [...author] } : n));
+}
+
+/**
+ * Resolve each note's `photo` against the manifest's items, falling back to
+ * a filename match when the id doesn't.
+ *
+ * `photo` is meant to hold an item id — the path relative to the folder
+ * root, e.g. `"priya/PXL_20260822_131204.jpg"` when photos sit in
+ * per-person subfolders, which `README.md` instructs. But both the README's
+ * own table and a person editing the spreadsheet by hand call it "the
+ * filename", and a bare filename typed into that column does not match an
+ * id at all — the row silently attaches to nothing.
+ *
+ * The fallback is safe exactly when it is UNAMBIGUOUS: two different phones
+ * can easily produce the same filename (two `PXL_...jpg` from two different
+ * Pixels), and guessing wrong would attach a caption to the wrong person's
+ * photo, which is worse than leaving it unattached. An ambiguous match is
+ * reported as a problem instead of guessed at — the same rule this app
+ * applies to everything else it cannot place with confidence.
+ */
+export function resolveNotePhotos(
+  notes: readonly Note[],
+  items: readonly Item[],
+): { notes: Note[]; problems: string[] } {
+  const ids = new Set(items.map((it) => it.id));
+  const byBasename = new Map<string, string[]>();
+  for (const it of items) {
+    const base = basename(it.id);
+    const list = byBasename.get(base);
+    if (list) list.push(it.id);
+    else byBasename.set(base, [it.id]);
+  }
+
+  const problems: string[] = [];
+  const resolved = notes.map((note) => {
+    if (note.photo === undefined || ids.has(note.photo)) return note;
+    const candidates = byBasename.get(basename(note.photo)) ?? [];
+    if (candidates.length === 1) {
+      return { ...note, photo: candidates[0] as string };
+    }
+    if (candidates.length > 1) {
+      problems.push(
+        `note "${note.id}": photo "${note.photo}" matches ${candidates.length} photos by ` +
+          `filename (${candidates.join(', ')}); use the full path to say which one`,
+      );
+    }
+    return note;
+  });
+
+  return { notes: resolved, problems };
+}
+
+function basename(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1);
 }

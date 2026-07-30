@@ -6,6 +6,7 @@ import {
   clampWindow,
   clusters,
   densestWindow,
+  excludingCaptions,
   fullSpan,
   histogram,
   isWithin,
@@ -376,5 +377,27 @@ describe('placeNotes', () => {
 
   it('is empty when there are no notes at all', () => {
     expect(placeNotes([])).toEqual([]);
+  });
+});
+
+describe('excludingCaptions', () => {
+  // people/author default empty, matching what mergeNotes/rowToNote produce.
+  const note = (over: Partial<Note> & { id: string; at: string; text: string }): Note => ({
+    people: [],
+    author: [],
+    ...over,
+  });
+
+  it('drops a note that carries a photo — captions are discovered on the tile, not the feed', () => {
+    const placed = placeNotes([
+      note({ id: 'caption', at: '2026-07-25T09:00:00Z', text: 'the buckle', photo: 'sam/a.jpg' }),
+      note({ id: 'freestanding', at: '2026-07-25T10:00:00Z', text: 'wrong turn' }),
+    ]);
+    expect(excludingCaptions(placed).map((p) => p.note.id)).toEqual(['freestanding']);
+  });
+
+  it('is a no-op when nothing is a caption', () => {
+    const placed = placeNotes([note({ id: 'a', at: '2026-07-25T09:00:00Z', text: 'x' })]);
+    expect(excludingCaptions(placed)).toEqual(placed);
   });
 });

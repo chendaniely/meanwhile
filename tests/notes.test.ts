@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { mergeNotes, noteToRow, rowToNote, type Note } from '../src/core/notes.ts';
+import { formatCsv, parseCsv } from '../src/core/csv.ts';
+import {
+  dedupeNotes,
+  fingerprintNote,
+  mergeNotes,
+  noteHeadersFor,
+  noteToRow,
+  resolveNotePhotos,
+  rowToNote,
+  stampBlankAuthors,
+  type Note,
+} from '../src/core/notes.ts';
+import type { Item } from '../src/core/schema.ts';
 
 const ZONE = 'America/Denver';
 const row = (over: Record<string, string> = {}) => ({
@@ -166,5 +178,202 @@ describe('mergeNotes', () => {
     ], ZONE);
     expect(notes).toHaveLength(2);
     expect(new Set(notes.map((n) => n.id)).size).toBe(2);
+  });
+
+  it('dedupes the same id and content even when people/author are reordered', () => {
+    // Reordering names in a spreadsheet — e.g. sorting the column — is a
+    // completely ordinary edit and must not be read as a content change.
+    const { notes } = mergeNotes([
+      file('a.csv', 'n_x,2026,7,25,15,0,,,Priya;Sam,,Dan;Ana,same\n'),
+      file('b.csv', 'n_x,2026,7,25,15,0,,,Sam;Priya,,Ana;Dan,same\n'),
+    ], ZONE);
+    expect(notes).toHaveLength(1);
+  });
+
+  it('dedupes a blank tz against an explicit tz that matches the event zone', () => {
+    // `noteToRow` leaves `tz` blank when it agrees with the event; a row
+    // that spells the event's own zone out by hand says the same thing.
+    const { notes } = mergeNotes([
+      file('a.csv', 'n_x,2026,7,25,15,0,,,,,Dan,same\n'),
+      file('b.csv', `n_x,2026,7,25,15,0,,${ZONE},,,Dan,same\n`),
+    ], ZONE);
+    expect(notes).toHaveLength(1);
+  });
+});
+
+describe('dedupeNotes', () => {
+  const note = (over: Partial<Note> = {}): Note => ({
+    id: 'n_a', at: '2026-07-25T21:45:00.000Z', people: [], author: [], text: 'x', ...over,
+  });
+
+  it('drops an exact repeat of the same id and content', () => {
+    expect(dedupeNotes([note(), note()])).toHaveLength(1);
+  });
+
+  it('re-mints one side of a same-id, different-content collision, keeping both', () => {
+    const out = dedupeNotes([note({ text: 'one' }), note({ text: 'two' })]);
+    expect(out).toHaveLength(2);
+    expect(new Set(out.map((n) => n.id)).size).toBe(2);
+  });
+
+  it('mints an id for a note with none', () => {
+    const out = dedupeNotes([note({ id: '' })]);
+    expect(out[0]?.id).toMatch(/^n_/);
+  });
+});
+
+describe('fingerprintNote', () => {
+  it('is order-independent for people and author', () => {
+    const a = fingerprintNote({
+      id: 'x', at: '2026-07-25T21:45:00.000Z', people: ['Priya', 'Sam'],
+      author: ['Dan', 'Ana'], text: 'same',
+    });
+    const b = fingerprintNote({
+      id: 'x', at: '2026-07-25T21:45:00.000Z', people: ['Sam', 'Priya'],
+      author: ['Ana', 'Dan'], text: 'same',
+    });
+    expect(a).toBe(b);
+  });
+
+  it('treats an unset tz and an explicit tz matching the event as the same', () => {
+    const a = fingerprintNote(
+      { id: 'x', at: '2026-07-25T21:45:00.000Z', people: [], author: [], text: 'x' },
+      ZONE,
+    );
+    const b = fingerprintNote(
+      { id: 'x', at: '2026-07-25T21:45:00.000Z', people: [], author: [], text: 'x', tz: ZONE },
+      ZONE,
+    );
+    expect(a).toBe(b);
+  });
+
+  it('treats two spellings of the same instant as identical, milliseconds or not', () => {
+    // `rowToNote` always emits Date#toISOString's canonical, millisecond-
+    // bearing form; a legacy manifest's `at` is carried through unchanged and
+    // very often has none. Same instant, different string — this is exactly
+    // what let a legacy manifest note and its own migrated notes.csv copy
+    // collide as two notes instead of deduping to one.
+    const a = fingerprintNote({
+      id: 'x', at: '2026-07-25T09:00:00Z', people: [], author: [], text: 'x',
+    });
+    const b = fingerprintNote({
+      id: 'x', at: '2026-07-25T09:00:00.000Z', people: [], author: [], text: 'x',
+    });
+    expect(a).toBe(b);
+  });
+
+  it('still distinguishes a tz that genuinely disagrees with the event', () => {
+    const a = fingerprintNote(
+      { id: 'x', at: '2026-07-25T21:45:00.000Z', people: [], author: [], text: 'x' },
+      ZONE,
+    );
+    const b = fingerprintNote(
+      { id: 'x', at: '2026-07-25T21:45:00.000Z', people: [], author: [], text: 'x', tz: 'UTC' },
+      ZONE,
+    );
+    expect(a).not.toBe(b);
+  });
+});
+
+describe('noteHeadersFor', () => {
+  it('is exactly NOTE_HEADERS when nothing carries an extra column', () => {
+    const plain: Note = { id: 'n', at: '2026-07-25T21:45:00.000Z', people: [], author: [], text: 'x' };
+    expect(noteHeadersFor([plain])).toEqual([
+      'id', 'year', 'month', 'day', 'hour', 'minute', 'duration',
+      'tz', 'people', 'photo', 'author', 'text',
+    ]);
+  });
+
+  it('appends unknown columns in the order first seen, without duplicates', () => {
+    const withExtra = (extra: Record<string, string>): Note => ({
+      id: 'n', at: '2026-07-25T21:45:00.000Z', people: [], author: [], text: 'x', extra,
+    });
+    const headers = noteHeadersFor([
+      withExtra({ tags: 'night' }),
+      withExtra({ mood: 'tired', tags: 'night' }),
+    ]);
+    expect(headers.slice(-2)).toEqual(['tags', 'mood']);
+  });
+
+  it('round-trips an unknown column through save, so a reload does not duplicate the note', () => {
+    // This is the failure the finding describes end to end: without
+    // `noteHeadersFor`, writing with the fixed `NOTE_HEADERS` alone drops
+    // `tags`, which changes the fingerprint on reload and re-mints the note
+    // as a SECOND one with the same id instead of the same content.
+    const row = (over: Record<string, string> = {}) => ({
+      id: 'n_1', year: '2026', month: '7', day: '25', hour: '15', minute: '45',
+      duration: '', tz: '', people: '', photo: '', author: '', text: 'wrong turn', ...over,
+    });
+    const original = rowToNote(row({ tags: 'night' }), ZONE) as Note;
+    const csvText = formatCsv(noteHeadersFor([original]), [noteToRow(original, ZONE)]);
+    const { rows } = parseCsv(csvText);
+    const reloaded = rowToNote(rows[0] as Record<string, string>, ZONE) as Note;
+
+    expect(reloaded.extra).toEqual({ tags: 'night' });
+    expect(dedupeNotes([original, reloaded], ZONE)).toHaveLength(1);
+  });
+});
+
+describe('stampBlankAuthors', () => {
+  const blank = (id: string): Note => ({
+    id, at: '2026-07-25T21:45:00.000Z', people: [], author: [], text: 'x',
+  });
+  const authored = (id: string, author: string[]): Note => ({
+    id, at: '2026-07-25T21:45:00.000Z', people: [], author, text: 'x',
+  });
+
+  it('stamps only the notes with no author', () => {
+    const out = stampBlankAuthors([blank('a'), authored('b', ['Priya'])], ['Sam']);
+    expect(out.find((n) => n.id === 'a')?.author).toEqual(['Sam']);
+    expect(out.find((n) => n.id === 'b')?.author).toEqual(['Priya']);
+  });
+
+  it('never blocks a save — an unset "you are" leaves every note untouched', () => {
+    const notes = [blank('a'), authored('b', ['Priya'])];
+    expect(stampBlankAuthors(notes, [])).toEqual(notes);
+  });
+});
+
+describe('resolveNotePhotos', () => {
+  const item = (id: string): Item => ({
+    id, person: 'p', type: 'photo', src: id, timeSource: 'exif-offset', at: '2026-07-25T09:00:00Z',
+  });
+  const note = (photo: string | undefined): Note => ({
+    id: 'n', at: '2026-07-25T09:00:00Z', people: [], author: [], text: 'x',
+    ...(photo !== undefined ? { photo } : {}),
+  });
+
+  it('leaves an exact item-id match alone', () => {
+    const { notes, problems } = resolveNotePhotos([note('priya/a.jpg')], [item('priya/a.jpg')]);
+    expect(notes[0]?.photo).toBe('priya/a.jpg');
+    expect(problems).toEqual([]);
+  });
+
+  it('resolves an unambiguous bare filename to the item id that carries it', () => {
+    // The README calls the `photo` column "the filename", and a person
+    // typing into the spreadsheet does exactly that — it must resolve when
+    // photos sit in a per-person subfolder, not attach to nothing.
+    const { notes, problems } = resolveNotePhotos([note('a.jpg')], [item('priya/a.jpg')]);
+    expect(notes[0]?.photo).toBe('priya/a.jpg');
+    expect(problems).toEqual([]);
+  });
+
+  it('reports, rather than guesses, when the filename is ambiguous', () => {
+    const items = [item('priya/a.jpg'), item('sam/a.jpg')];
+    const { notes, problems } = resolveNotePhotos([note('a.jpg')], items);
+    // Left as typed rather than guessed — guessing wrong attaches a caption
+    // to the wrong person's photo, worse than leaving it unattached.
+    expect(notes[0]?.photo).toBe('a.jpg');
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('priya/a.jpg');
+    expect(problems[0]).toContain('sam/a.jpg');
+  });
+
+  it('leaves a note with no photo, and one matching nothing at all, untouched', () => {
+    const items = [item('priya/a.jpg')];
+    expect(resolveNotePhotos([note(undefined)], items).notes[0]?.photo).toBeUndefined();
+    const { notes, problems } = resolveNotePhotos([note('ghost.jpg')], items);
+    expect(notes[0]?.photo).toBe('ghost.jpg');
+    expect(problems).toEqual([]);
   });
 });

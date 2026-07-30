@@ -26,13 +26,33 @@ describe('parseCsv', () => {
     expect(parseCsv('a\n1\n\n2\n').rows).toEqual([{ a: '1' }, { a: '2' }]);
   });
 
-  it('pads a short row and keeps an over-long one addressable', () => {
+  it('pads a short row with blank cells', () => {
     const table = parseCsv('a,b,c\n1\n');
     expect(table.rows[0]).toEqual({ a: '1', b: '', c: '' });
   });
 
+  // Named for what it actually asserts, unlike its predecessor: an
+  // over-long row's extra fields are dropped, not kept "addressable" as the
+  // old name claimed. Worth pinning as a documented fact now that it can
+  // actually matter — `formatCsv(headers, rows)` only ever emits `headers`,
+  // so a header set that has fallen behind a row's real fields (see
+  // `noteHeadersFor`) silently loses whatever spilled past it.
+  it('drops any field beyond the header count in an over-long row', () => {
+    const table = parseCsv('a,b\n1,2,3\n');
+    expect(table.rows[0]).toEqual({ a: '1', b: '2' });
+  });
+
   it('removes the apostrophe that guards a formula', () => {
     expect(parseCsv("a\n'=1+1\n").rows[0]?.a).toBe('=1+1');
+  });
+
+  it('unguards a header the same way it unguards a cell', () => {
+    // `formatCsv` guards a header exactly like any other cell
+    // (`headers.map(cell)`), so a header must be unguarded symmetrically or
+    // a round-tripped formula-like column name comes back with a leading
+    // apostrophe baked into its name.
+    const out = formatCsv(['=col', 'b'], [{ '=col': 'x', b: 'y' }]);
+    expect(parseCsv(out).headers).toEqual(['=col', 'b']);
   });
 });
 

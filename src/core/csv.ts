@@ -24,7 +24,12 @@ const FORMULA_LEAD = /^['=+\-@]/;
 export function parseCsv(text: string): CsvTable {
   const body = text.startsWith(BOM) ? text.slice(1) : text;
   const records = splitRecords(body);
-  const headers = (records.shift() ?? []).map((h) => h.trim());
+  // Headers go through `unguard` too, the same as any other cell: `formatCsv`
+  // guards a header that starts `=`, `+`, `-` or `@` exactly like it guards a
+  // value (`headers.map(cell)`), so a header must be unguarded symmetrically
+  // or a round-tripped formula-like column name comes back with a leading
+  // apostrophe baked in and never matches the name it was written under.
+  const headers = (records.shift() ?? []).map((h) => unguard(h.trim()));
   const rows: Array<Record<string, string>> = [];
   for (const record of records) {
     // A trailing newline yields one empty record; so does a blank line left
