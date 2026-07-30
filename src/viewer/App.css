@@ -316,6 +316,15 @@
   color: var(--mw-fg);
 }
 
+/* Shown when a typed name is refused (contains ";" — see `hasSemicolon` in
+   core/people-csv.ts) rather than committed. */
+.picker__issue {
+  display: block;
+  font-size: var(--mw-text-xs);
+  color: var(--mw-danger);
+  margin-top: var(--mw-space-1);
+}
+
 /* ---- callouts ---------------------------------------------------------- */
 
 .callout {
@@ -1796,10 +1805,20 @@
 }
 
 /* Renaming a device to a person, in place in the report. The callout below
-   the list tells the author to do this, so it has to be obviously editable. */
-.report__rename {
+   the list tells the author to do this, so it has to be obviously editable.
+   `.report__rename-wrap` carries the `flex: 1` that used to sit directly on
+   the input, now that the input is wrapped alongside its refusal message
+   (`.report__rename-issue`, shown when a rename is refused — see
+   `RenameInput` in IngestReport.tsx). */
+.report__rename-wrap {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.report__rename {
+  width: 100%;
   font: inherit;
   color: var(--mw-fg);
   background: transparent;
@@ -1816,6 +1835,12 @@
   border-color: var(--mw-accent);
   outline: none;
   background: var(--mw-bg);
+}
+
+.report__rename-issue {
+  font-size: var(--mw-text-xs);
+  color: var(--mw-danger);
+  padding: 0 var(--mw-space-1);
 }
 
 /* The runner badge is a toggle, not a label: role carries behaviour. */

@@ -117,4 +117,37 @@ describe('PersonPicker', () => {
     expect(container.querySelector('[role="listbox"]')).toBeNull();
     expect(value()).toEqual([]);
   });
+
+  /**
+   * Item 4 of the 2026-07-30 rename-corruption review: `people`/`author` —
+   * what this picker edits — are `;`-separated lists in `notes*.csv`, the
+   * same convention `also_known_as` uses in `people.csv`. A typed name
+   * containing `;` would silently split into two names the next time the
+   * file round-trips, so it is refused here too, not just in the roster
+   * rename box (`IngestReport.tsx`'s `RenameInput`).
+   */
+  it('refuses a typed name containing ";", leaving the value unchanged', () => {
+    const { input, value } = mount();
+
+    act(() => typeInto(input, 'Jo; Chen'));
+    act(() => pressKey(input, 'Enter'));
+
+    expect(value()).toEqual([]);
+    expect(container.textContent).toContain('can’t contain ";"');
+    // Left as typed, not cleared, so it is one edit away from being fixed.
+    expect(input.value).toBe('Jo; Chen');
+  });
+
+  it('accepts the same name once the ";" is fixed', () => {
+    const { input, value } = mount();
+
+    act(() => typeInto(input, 'Jo; Chen'));
+    act(() => pressKey(input, 'Enter'));
+    expect(value()).toEqual([]);
+
+    act(() => typeInto(input, 'Jo, Chen'));
+    act(() => pressKey(input, 'Enter'));
+
+    expect(value()).toEqual(['Jo, Chen']);
+  });
 });

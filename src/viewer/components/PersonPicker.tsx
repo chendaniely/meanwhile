@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from 'react';
-import { displayName } from '../../core/people-csv.ts';
+import { displayName, hasSemicolon } from '../../core/people-csv.ts';
 import type { Person } from '../../core/schema.ts';
 
 /**
@@ -47,6 +47,16 @@ export function PersonPicker({ people, value, onChange, label }: Props) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
+  /**
+   * A typed name containing `;` is refused rather than committed — see
+   * `hasSemicolon` in `core/people-csv.ts`. `people`/`author` (what this
+   * picker edits) are `;`-separated lists on disk in `notes*.csv`, so a
+   * literal `;` inside one name would silently split into two names the
+   * next time the file round-trips. Found live against real data
+   * (2026-07-30) as the same corruption a roster rename could cause;
+   * refusing it at both entry points is the fix.
+   */
+  const [issue, setIssue] = useState<string | null>(null);
 
   const chosen = new Set(value.map((name) => name.toLowerCase().trim()));
   const q = query.trim().toLowerCase();
@@ -62,12 +72,26 @@ export function PersonPicker({ people, value, onChange, label }: Props) {
 
   function commit(name: string) {
     const trimmed = name.trim();
-    if (trimmed && !chosen.has(trimmed.toLowerCase())) {
+    if (trimmed === '') {
+      setQuery('');
+      setHighlight(0);
+      setOpen(false);
+      return;
+    }
+    if (hasSemicolon(trimmed)) {
+      // Left as typed, not cleared — the same reasoning as `RenameInput` in
+      // `IngestReport.tsx`: a refusal you can fix in place beats one that
+      // silently discards what you wrote.
+      setIssue('Names can’t contain ";" — that character separates names in the saved file.');
+      return;
+    }
+    if (!chosen.has(trimmed.toLowerCase())) {
       onChange([...value, trimmed]);
     }
     setQuery('');
     setHighlight(0);
     setOpen(false);
+    setIssue(null);
   }
 
   function removeAt(name: string) {
@@ -120,10 +144,12 @@ export function PersonPicker({ people, value, onChange, label }: Props) {
         placeholder="Add a name…"
         autoComplete="off"
         spellCheck={false}
+        aria-invalid={issue !== null}
         onChange={(event) => {
           setQuery(event.target.value);
           setOpen(true);
           setHighlight(0);
+          if (issue) setIssue(null);
         }}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
@@ -157,6 +183,11 @@ export function PersonPicker({ people, value, onChange, label }: Props) {
           }
         }}
       />
+      {issue && (
+        <span className="picker__issue" role="alert">
+          {issue}
+        </span>
+      )}
       {open && matches.length > 0 && (
         <ul id={listId} role="listbox" aria-labelledby={labelId} className="picker__list">
           {matches.map((person, i) => (

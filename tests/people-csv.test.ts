@@ -96,6 +96,23 @@ describe('people.csv', () => {
     expect(problems[0]).toContain('Row 4');
   });
 
+  /**
+   * Item 4 of the 2026-07-30 rename-corruption review: a `;` in `name` is
+   * legal in this one CSV cell on its own, but becomes dangerous the moment
+   * this name is later pushed onto `also_known_as` (a rename) or matched
+   * against a note's `people`/`author` column — both `;`-separated lists.
+   * The rename UI refuses one going IN; a hand-edited file that already has
+   * one is repaired and reported, the same as an unrecognised `role`, rather
+   * than let through to corrupt the next save silently.
+   */
+  it('repairs and reports a name cell containing ";"', () => {
+    const { people, problems } = parsePeopleCsv('id,name\npixel8,Jo; Chen\n');
+    expect(people).toEqual([{ id: 'pixel8', name: 'Jo Chen' }]);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('Jo; Chen');
+    expect(problems[0]).toContain(';');
+  });
+
   // --- also_known_as -------------------------------------------------------
 
   it('reads a file with no also_known_as column at all, unchanged', () => {
@@ -125,7 +142,46 @@ describe('people.csv', () => {
       'id,name,also_known_as\ncrew1,,Jo Chen\n',
     );
     expect(problems).toEqual([]);
-    expect(people).toEqual([{ id: 'crew1', name: 'Jo Chen', alsoKnownAs: ['Jo Chen'] }]);
+    // The alias becomes the name (see the "name" fallback above), so it is
+    // now the person's OWN name, not an alias of it — `cleanAliases` drops
+    // it rather than round-tripping a self-alias (item 5 of the 2026-07-30
+    // rename-corruption review: `p,,Priya;PJ` must not parse to
+    // `alsoKnownAs: ['Priya', 'PJ']` with `name: 'Priya'` already redundant
+    // in it). A row with only ONE alias and no name cell therefore ends up
+    // with none at all once that alias is promoted to `name`.
+    expect(people).toEqual([{ id: 'crew1', name: 'Jo Chen' }]);
+  });
+
+  /**
+   * Item 5 of the 2026-07-30 rename-corruption review: `p,,Priya;PJ` parsed
+   * to `{name: 'Priya', alsoKnownAs: ['Priya', 'PJ']}` — the name was also
+   * its own alias. Here the name comes from a `name` CELL (not the
+   * also_known_as fallback covered above), so this pins the general case:
+   * any alias matching the name, case-insensitively, is dropped on parse.
+   */
+  it('drops an alias that case-insensitively equals the name, on parse', () => {
+    const { people } = parsePeopleCsv('id,name,also_known_as\npixel8,Priya,priya;PJ\n');
+    expect(people[0]?.alsoKnownAs).toEqual(['PJ']);
+  });
+
+  /** `Sam;sam` keeps only the first spelling. */
+  it('dedupes also_known_as case-insensitively, keeping the first-seen spelling, on parse', () => {
+    const { people } = parsePeopleCsv('id,name,also_known_as\npixel8,Priya,Sam;sam;SAM\n');
+    expect(people[0]?.alsoKnownAs).toEqual(['Sam']);
+  });
+
+  /**
+   * The write side needs its own coverage: a roster built up in memory (by
+   * `applyRename`, or by several merged `people.csv` files) can carry the
+   * same self-alias or duplicate without ever having gone through
+   * `parsePeopleCsv` — `formatPeopleCsv` is the last chance to keep the
+   * saved file clean.
+   */
+  it('drops a self-alias and dedupes case-insensitively, on write', () => {
+    const dirty: Person[] = [{ id: 'pixel8', name: 'Priya', alsoKnownAs: ['priya', 'Sam', 'sam', 'PJ'] }];
+    const csv = formatPeopleCsv(dirty);
+    expect(csv).toContain('Sam;PJ');
+    expect(parsePeopleCsv(csv).people[0]?.alsoKnownAs).toEqual(['Sam', 'PJ']);
   });
 
   it('still reports missing name when both name and also_known_as are blank', () => {
@@ -271,5 +327,131 @@ describe('applyRename', () => {
     // it meant, so guessing (rewriting it to "Samantha") would silently
     // reattribute a note that may have belonged to pixel8's Sam.
     expect(rewritten[0]).toEqual(notes[0]);
+  });
+
+  // --- 2026-07-30 URGENT rename-corruption review -------------------------
+
+  /**
+   * Item 1 (keystroke safety) is a UI-layer fix in `IngestReport.tsx`
+   * (`RenameInput` commits only on blur/Enter) — covered by
+   * `tests/ingest-report-rename.test.tsx`, which mounts the real component.
+   * The data-layer half pinned here is that `applyRename` itself refuses a
+   * blank name outright, so even a caller that DID call it on every
+   * keystroke could never write `also_known_as` garbage or blank out a
+   * note's `people` entry the way the per-keystroke bug did.
+   */
+  it('refuses a blank or whitespace-only name, leaving people and notes untouched', () => {
+    const notes = [note({ people: ['Priya'] })];
+
+    for (const blank of ['', '   ', '\t']) {
+      const result = applyRename(PEOPLE, notes, 'pixel8', blank);
+      expect(result.refused).toBeDefined();
+      expect(result.people).toEqual(PEOPLE);
+      expect(result.notes).toEqual(notes);
+    }
+  });
+
+  /**
+   * Item 2: the original `applyRename` only ever checked the OLD name for a
+   * collision (see the colliding-rename test above) — nothing stopped the
+   * NEW name from being claimed too. `applyRename([{a,'Alice'},{b,'Bob'}],
+   * ..., 'a', 'Bob')` used to return `collided: false` and produce two
+   * people named "Bob", after which `resolvePersonNames(['Bob'])` resolves
+   * to NEITHER (two claimants — see `resolvePersonNames`'s own "never
+   * guesses" rule) — orphaning every note that ever mentioned either of
+   * them, including ones that never involved the renamed person at all.
+   */
+  it('refuses a new name already claimed by a DIFFERENT person, leaving people and notes untouched', () => {
+    const twoPeople: Person[] = [
+      { id: 'a', name: 'Alice' },
+      { id: 'b', name: 'Bob' },
+    ];
+    const notes = [note({ id: 'n_a', people: ['Alice'] }), note({ id: 'n_b', people: ['Bob'] })];
+
+    const result = applyRename(twoPeople, notes, 'a', 'Bob');
+
+    expect(result.refused).toBeDefined();
+    expect(result.people).toEqual(twoPeople);
+    expect(result.notes).toEqual(notes);
+    // Neither note orphaned: both names still resolve to exactly the right
+    // person, which is the whole point of refusing rather than colliding.
+    expect(resolvePersonNames(['Alice'], result.people).ids).toEqual(['a']);
+    expect(resolvePersonNames(['Bob'], result.people).ids).toEqual(['b']);
+  });
+
+  /** Refusing must also cover a claim through an ALIAS, not just a current name. */
+  it('refuses a new name already claimed by another person\'s also_known_as', () => {
+    const aliased: Person[] = [
+      { id: 'a', name: 'Alice' },
+      { id: 'b', name: 'Bob', alsoKnownAs: ['Bobby'] },
+    ];
+    const result = applyRename(aliased, [], 'a', 'Bobby');
+    expect(result.refused).toBeDefined();
+    expect(result.people).toEqual(aliased);
+  });
+
+  /**
+   * Item 3: the two-step swap `a -> Bob` then `b -> Alice` used to corrupt
+   * both notes irreversibly — the first step rewrote person b's note to
+   * "Bob" (self-heal, since "Bob" wasn't yet claimed), and the SECOND step
+   * then reported `collided: true` (because "Alice" was now also nobody's
+   * problem to detect) and skipped its own self-heal, leaving
+   * `notes: [["Bob"], ["Bob"]]` with "Alice" resolving to nobody. Fixed by
+   * item 2: the swap's first half is refused outright, so the second half
+   * is never reached with corrupted state to build on.
+   */
+  it('refuses a name swap (a -> Bob, b -> Alice) outright rather than corrupting both notes', () => {
+    const swapPeople: Person[] = [
+      { id: 'a', name: 'Alice' },
+      { id: 'b', name: 'Bob' },
+    ];
+    const notes = [note({ id: 'n_a', people: ['Alice'] }), note({ id: 'n_b', people: ['Bob'] })];
+
+    const first = applyRename(swapPeople, notes, 'a', 'Bob');
+    expect(first.refused).toBeDefined();
+    expect(first.people).toEqual(swapPeople);
+    expect(first.notes).toEqual(notes);
+
+    // Even attempting the second half against the ORIGINAL (unchanged)
+    // state — the only state reachable, since the first half never
+    // applied — it is refused too: "Alice" is still a's name.
+    const second = applyRename(swapPeople, notes, 'b', 'Alice');
+    expect(second.refused).toBeDefined();
+    expect(second.people).toEqual(swapPeople);
+
+    // Nothing corrupted: both names still resolve to the right person, and
+    // neither note was rewritten to the other's name.
+    expect(resolvePersonNames(['Alice'], swapPeople).ids).toEqual(['a']);
+    expect(resolvePersonNames(['Bob'], swapPeople).ids).toEqual(['b']);
+    expect(notes[0]?.people).toEqual(['Alice']);
+    expect(notes[1]?.people).toEqual(['Bob']);
+  });
+
+  /**
+   * Item 4: `;` is the list separator `also_known_as` and `notes*.csv`'s
+   * `people`/`author` columns all use. A name containing one would silently
+   * split into two entries the next time either file round-trips, so it is
+   * refused at the point of entry rather than let in and mangled later.
+   */
+  it('refuses a new name containing ";"', () => {
+    const result = applyRename(PEOPLE, [], 'pixel8', 'Jo; Chen');
+    expect(result.refused).toBeDefined();
+    expect(result.people).toEqual(PEOPLE);
+  });
+
+  /**
+   * Item 5: pushing the vacated name onto `alsoKnownAs` must go through the
+   * same self-alias/dedupe cleaning `parsePeopleCsv`/`formatPeopleCsv` apply
+   * — renaming back and forth between the same two names must not pile up
+   * duplicate aliases.
+   */
+  it('does not accumulate a duplicate alias when renaming back to a name already recorded as one', () => {
+    const withAlias: Person[] = [{ id: 'pixel8', name: 'P. Sharma', alsoKnownAs: ['Priya'] }];
+    // Renaming "P. Sharma" -> "Priya" would normally push "P. Sharma" onto
+    // alsoKnownAs, but "Priya" (the destination) is also NOT its own alias —
+    // and nothing here should duplicate the existing "Priya" entry either.
+    const { people } = applyRename(withAlias, [], 'pixel8', 'Priya');
+    const person = people.find((p) => p.id === 'pixel8');
+    expect(person?.alsoKnownAs).toEqual(['P. Sharma']);
   });
 });

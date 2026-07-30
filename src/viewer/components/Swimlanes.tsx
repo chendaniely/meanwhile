@@ -146,15 +146,27 @@ export function Swimlanes({
 
   const resolvedNotes = useMemo(
     () =>
-      laneNotes.map((placedNote) => ({
-        placedNote,
-        people: resolvePersonNames(placedNote.note.people, manifest.people).ids,
-      })),
+      laneNotes.map((placedNote) => {
+        const { ids, unknown } = resolvePersonNames(placedNote.note.people, manifest.people);
+        return { placedNote, people: ids, unknown };
+      }),
     [laneNotes, manifest.people],
   );
 
+  /**
+   * A note lands here when it has no resolvable person at all (the original
+   * rule), OR when it names someone but ALSO carries a name that resolved to
+   * nobody (fixed 2026-07-30: a hand-deleted `also_known_as` alias used to
+   * make that half of the note's people list vanish with zero output
+   * anywhere in the lanes — Feed and the Notes panel still print an unknown
+   * name as plain text, but the lanes had nowhere for it to go, since a note
+   * mark only ever drew in a RESOLVED person's lane. Showing it here too
+   * means a broken join is loud instead of silently dropping half of who a
+   * note names — "a note explains a gap" only holds if the note is visible
+   * at all).
+   */
   const eventNotes = useMemo(
-    () => resolvedNotes.filter((entry) => entry.people.length === 0),
+    () => resolvedNotes.filter((entry) => entry.people.length === 0 || entry.unknown.length > 0),
     [resolvedNotes],
   );
 
@@ -286,8 +298,12 @@ export function Swimlanes({
    * never shrinks away regardless of zoom, and a span note has a CSS floor
    * on its width so a very short span still reads as a bar, not a hairline.
    */
-  function renderNoteMark(entry: { placedNote: PlacedNote }, key: string, color: string) {
-    const { placedNote } = entry;
+  function renderNoteMark(
+    entry: { placedNote: PlacedNote; unknown?: readonly string[] },
+    key: string,
+    color: string,
+  ) {
+    const { placedNote, unknown } = entry;
     const left = percentOf(placedNote.instant);
     const isSpan = placedNote.until !== undefined;
     // `visibleNotes` in App.tsx only requires a note's START to be inside
@@ -296,6 +312,15 @@ export function Swimlanes({
     const width = isSpan
       ? Math.max(0, percentOf(Math.min(placedNote.until as number, range.to)) - left)
       : null;
+    // A note that names someone who no longer resolves (a hand-deleted
+    // alias, a typo) says so right on the mark — the same reason it lands in
+    // the event row at all (see the `eventNotes` comment above): silence
+    // here is indistinguishable from "this note has nothing unusual about
+    // it", which is exactly wrong.
+    const suffix =
+      unknown && unknown.length > 0
+        ? ` (names this app can't match: ${unknown.join(', ')})`
+        : '';
 
     return (
       <button
@@ -307,8 +332,8 @@ export function Swimlanes({
           background: color,
           ...(width !== null ? { width: `${width}%` } : {}),
         }}
-        title={placedNote.note.text}
-        aria-label={`Note at ${formatClock(placedNote.instant, zone)}: ${placedNote.note.text}`}
+        title={`${placedNote.note.text}${suffix}`}
+        aria-label={`Note at ${formatClock(placedNote.instant, zone)}: ${placedNote.note.text}${suffix}`}
         // Stop the click reaching the track underneath. The track's own
         // pointerdown/click already scrubs and toggles the pin from the
         // clicked PIXEL, which is only approximately the note's instant —

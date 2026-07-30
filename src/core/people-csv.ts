@@ -38,6 +38,48 @@ function splitList(raw: string | undefined): string[] {
 }
 
 /**
+ * A name or alias containing a literal `;` would silently split into two
+ * entries the next time this file's `also_known_as` column (or a note's
+ * `people`/`author` column) round-trips through `splitList` — the exact
+ * corruption a 2026-07-30 review found live against real data. There is no
+ * escaping scheme for it (that would change the file format, which is
+ * currently being assessed for permanence elsewhere), so a `;` is refused at
+ * the one place new data enters through a person, rather than allowed in and
+ * silently mangled on the next save. See `applyRename` and
+ * `PersonPicker.tsx`, the two entry points that call this.
+ */
+export function hasSemicolon(raw: string): boolean {
+  return raw.includes(';');
+}
+
+/**
+ * Drop any alias that case-insensitively equals the person's OWN `name` (a
+ * name is not its own alias — `p,,Priya;PJ` must not parse to
+ * `alsoKnownAs: ['Priya', 'PJ']` with `name: 'Priya'` already redundant in
+ * it), and dedupe the rest case-insensitively, preserving the first-seen
+ * spelling (`Sam;sam` keeps only `Sam`).
+ *
+ * Applied on both parse (`parsePeopleCsv`) and write (`formatPeopleCsv`), and
+ * also by `applyRename` when it pushes a vacated name onto `alsoKnownAs` —
+ * three different places an alias list can pick up a redundant or duplicate
+ * entry, and all three must stay clean the same way.
+ */
+function cleanAliases(name: string, aliases: readonly string[]): string[] {
+  const nameKey = name.trim().toLowerCase();
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const alias of aliases) {
+    const trimmed = alias.trim();
+    if (trimmed === '') continue;
+    const key = trimmed.toLowerCase();
+    if (key === nameKey || seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+/**
  * Parse a CSV roster into Person objects.
  *
  * There is deliberately no local interface describing a "person row" —
@@ -65,20 +107,35 @@ export function parsePeopleCsv(text: string): { people: Person[]; problems: stri
     const line = rowLines[i] ?? i + 2;
     const id = row['id']?.trim();
     const nameCell = row['name']?.trim();
-    const alsoKnownAs = splitList(row['also_known_as']);
+    const rawAlsoKnownAs = splitList(row['also_known_as']);
     // A row that lost its `name` cell (a spreadsheet slip, or a row someone
     // hand-added with only an alias) still has something to call the person
     // by if it carries at least one alias — so it is not the same failure as
     // having neither. Row is kept, and `name` starts equal to that alias
     // (the same value `displayName` below would fall back to anyway) rather
     // than dropping a roster row, and the lane it owns, entirely.
-    const name = nameCell || alsoKnownAs[0];
+    let name = nameCell || rawAlsoKnownAs[0];
 
     if (!id || !name) {
       const missing = [!id && 'id', !name && 'name'].filter(Boolean).join(' and ');
       problems.push(`Row ${line}: missing ${missing}`);
       return;
     }
+
+    // A `;` in `name` is legal in this one cell on its own (a plain CSV
+    // value, not a list), but it becomes dangerous the moment this name is
+    // later used as an alias or matched against a note's `people`/`author`
+    // column — both `;`-separated lists. Reported and repaired here, the
+    // same way an unrecognised `role` is: the row survives, the one bad
+    // field is degraded and named.
+    if (hasSemicolon(name)) {
+      const repaired = name.replace(/;/g, ' ').replace(/\s+/g, ' ').trim();
+      problems.push(
+        `Row ${line}: name "${name}" contains ";", which this file uses as a list separator; saved as "${repaired}"`,
+      );
+      name = repaired;
+    }
+
     // A duplicated id is the other way this file corrupts the manifest:
     // `validateManifest` refuses two people sharing an id, so letting a
     // second row with the same id through would take the whole manifest down
@@ -114,6 +171,13 @@ export function parsePeopleCsv(text: string): { people: Person[]; problems: stri
       }
     }
 
+    // Dropped here rather than trusted from `splitList` alone: a hand-edited
+    // row easily ends up with the name ALSO listed as its own alias (the
+    // `name` fallback above does this on purpose when there is no `name`
+    // cell), or the same alias typed twice under different casing. Both are
+    // redundant, not wrong, but "the name is also an alias" is exactly the
+    // self-alias bug a 2026-07-30 review found — see `cleanAliases`.
+    const alsoKnownAs = cleanAliases(name, rawAlsoKnownAs);
     if (alsoKnownAs.length > 0) person.alsoKnownAs = alsoKnownAs;
 
     seenIds.add(id);
@@ -128,7 +192,10 @@ export function parsePeopleCsv(text: string): { people: Person[]; problems: stri
  *
  * Maps `clockOffset` to `clock_offset` column name for CSV spreadsheet use,
  * and `alsoKnownAs` to `also_known_as`, joined the same `;`-separated way
- * `notes*.csv` joins `people`/`author`.
+ * `notes*.csv` joins `people`/`author`. Run through `cleanAliases` on the way
+ * out too, not just on the way in — a roster built up in memory (a rename, a
+ * merge) can accumulate the same self-alias or duplicate a parsed file can,
+ * and the write path is the last chance to keep the saved file clean.
  */
 export function formatPeopleCsv(people: readonly Person[]): string {
   const rows = people.map((p) => ({
@@ -136,7 +203,7 @@ export function formatPeopleCsv(people: readonly Person[]): string {
     name: p.name,
     role: p.role ?? '',
     clock_offset: p.clockOffset ?? '',
-    also_known_as: (p.alsoKnownAs ?? []).join(';'),
+    also_known_as: cleanAliases(p.name, p.alsoKnownAs ?? []).join(';'),
   }));
 
   return formatCsv(PEOPLE_HEADERS, rows);
@@ -238,18 +305,40 @@ export interface RenameResult {
    * above refuses to guess through — and rewriting notes under a name two
    * people share cannot tell which one a given note meant. The rename to
    * the new name always happens regardless; only the self-heal is skipped.
+   *
+   * Distinct from `refused` below: this is about the OLD name colliding,
+   * which still lets the rename itself through. `refused` is about the NEW
+   * name, and blocks everything.
    */
   collided: boolean;
+  /**
+   * Set — and `people`/`notes` returned byte-for-byte UNCHANGED — when the
+   * rename could not be applied at all: a blank name, a name containing
+   * `;` (the list separator `also_known_as` and `notes*.csv`'s
+   * `people`/`author` columns all use), or a name already claimed by a
+   * DIFFERENT person's `name` or `alsoKnownAs`.
+   *
+   * Found live against real race data (2026-07-30): a per-keystroke rename
+   * with no blank-name guard put `also_known_as` through 19 single- and
+   * two-character garbage aliases, and an unchecked new-name collision let
+   * two people end up named "Bob" with `resolvePersonNames` then resolving
+   * "Bob" to NEITHER — orphaning every note on both of them. This is the
+   * fix: the operation is now total. It either applies in full (name, alias,
+   * note rewrite) or does nothing, and says why via this string so the
+   * rename UI (`IngestReport.tsx`) can show it instead of silently no-op'ing.
+   */
+  refused?: string;
 }
 
 /**
  * Rename a person everywhere a rename has to reach, non-destructively:
  *
  * 1. Sets the new `name`.
- * 2. Pushes the PREVIOUS name onto `alsoKnownAs` (no duplicates; skipped if
- *    it equals the new name or the person had no name yet), so
- *    `resolvePersonNames` keeps resolving a `notes.csv` — a crew member's own
- *    copy, or one nobody has re-saved since the rename — that still uses it.
+ * 2. Pushes the PREVIOUS name onto `alsoKnownAs` (cleaned via
+ *    `cleanAliases` — no duplicates, and dropped outright if it equals the
+ *    new name or the person had no name yet), so `resolvePersonNames` keeps
+ *    resolving a `notes.csv` — a crew member's own copy, or one nobody has
+ *    re-saved since the rename — that still uses it.
  * 3. Rewrites that exact name to the new one, case-insensitively, in every
  *    LOADED note's `people` and `author` lists, so `notes.csv` self-heals to
  *    current names on the next Save instead of freezing on the old one
@@ -258,6 +347,14 @@ export interface RenameResult {
  * Both (2) and (3) cover a different failure — a file the app has not
  * loaded yet, versus one already in memory — and neither substitutes for the
  * other; see the module-level rename record in CLAUDE.md.
+ *
+ * Before any of that, three checks can refuse the whole operation outright —
+ * see `RenameResult.refused`. Callers MUST be prepared for a no-op: the
+ * caller in this codebase (`renamePerson` in `App.tsx`) is only ever invoked
+ * on a COMMITTED edit (blur or Enter in `IngestReport.tsx`'s rename box, not
+ * on every keystroke), which is what makes "sometimes refuses and does
+ * nothing" a normal, showable outcome rather than something a user would hit
+ * mid-type.
  *
  * Pure and independent of React, so it is unit-testable with plain
  * `Person[]`/`Note[]` — `App.tsx`'s `renamePerson` is a thin wrapper that
@@ -270,13 +367,37 @@ export function applyRename(
   id: PersonId,
   name: string,
 ): RenameResult {
+  const unchanged = { people: [...people], notes: [...notes], collided: false };
+
   const person = people.find((p) => p.id === id);
-  if (!person) return { people: [...people], notes: [...notes], collided: false };
+  if (!person) return unchanged;
+
+  const nextTrimmed = name.trim();
+
+  if (nextTrimmed === '') {
+    return { ...unchanged, refused: 'A person must always have a name.' };
+  }
+  if (hasSemicolon(nextTrimmed)) {
+    return {
+      ...unchanged,
+      refused:
+        'Names can’t contain ";" — that character separates names in notes.csv and ' +
+        'people.csv, so one in a name would silently corrupt both the next time either is saved.',
+    };
+  }
+  const newKey = nextTrimmed.toLowerCase();
+  const newNameClaimedByOther = people.some(
+    (p) =>
+      p.id !== id &&
+      (p.name.trim().toLowerCase() === newKey || (p.alsoKnownAs ?? []).some((a) => a.trim().toLowerCase() === newKey)),
+  );
+  if (newNameClaimedByOther) {
+    return { ...unchanged, refused: `"${nextTrimmed}" is already someone else's name.` };
+  }
 
   const previousName = person.name.trim();
   const previousKey = previousName.toLowerCase();
-  const nextTrimmed = name.trim();
-  const renamed = previousName !== '' && previousKey !== nextTrimmed.toLowerCase();
+  const renamed = previousName !== '' && previousKey !== newKey;
   const collided =
     renamed &&
     people.some(
@@ -289,11 +410,11 @@ export function applyRename(
 
   const nextPeople = people.map((p) => {
     if (p.id !== id) return p;
-    const next: Person = { ...p, name };
+    const next: Person = { ...p, name: nextTrimmed };
     if (selfHeal) {
-      const akas = p.alsoKnownAs ?? [];
-      const already = akas.some((a) => a.trim().toLowerCase() === previousKey);
-      if (!already) next.alsoKnownAs = [...akas, previousName];
+      const akas = cleanAliases(nextTrimmed, [...(p.alsoKnownAs ?? []), previousName]);
+      if (akas.length > 0) next.alsoKnownAs = akas;
+      else delete next.alsoKnownAs;
     }
     return next;
   });

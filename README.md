@@ -388,6 +388,20 @@ right person the next time it's opened, because meanwhile matches a note's
 `also_known_as`. Rename someone twice and both old names keep working; the
 site never forces anyone to go back and fix old files by hand.
 
+**The rename box only applies your edit once you're done typing** — on click
+away or Enter, not on every keystroke — and Escape puts the old name back
+without applying anything. It also refuses a change that would corrupt the
+files rather than applying it partway: a blank name, a name already used by
+someone else, or a name containing `;` (the character that separates entries
+in `also_known_as` and in `notes.csv`'s `people`/`author` columns — one
+inside a name would silently split it into two the next time the file is
+saved). A refusal shows why, right under the box, and leaves what you typed
+in place so you can fix it. The same `;` check applies to the "People"/"You
+are" fields wherever you type a name directly. Duplicate or redundant
+aliases (a name listed as its own alias, or the same alias twice under
+different capitalization) are cleaned up automatically, whether they came
+from a rename or from hand-editing `people.csv`.
+
 ## Publishing it
 
 The site is a renderer, so publishing it ships **no photographs, no manifest

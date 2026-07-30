@@ -1,7 +1,8 @@
+import { useEffect, useState } from 'react';
 import { summarize, type GroupingInfo, type IngestSummary } from '../../core/assemble.ts';
 import { assignLaneColors, isOvercrowded, MAX_DISTINCT_PEOPLE } from '../../core/palette.ts';
 import { displayName } from '../../core/people-csv.ts';
-import type { Manifest, PersonId, TimeSource } from '../../core/schema.ts';
+import type { Manifest, Person, PersonId, TimeSource } from '../../core/schema.ts';
 import { TIME_SOURCE_RANK } from '../../core/schema.ts';
 import { formatDateTime, formatSpan } from '../../core/time.ts';
 import { isWithin, placeItems, type TimeWindow } from '../../core/window.ts';
@@ -33,8 +34,23 @@ interface Props {
   grouping: GroupingInfo;
   /** Counts describe what is inside this, since that is the working set. */
   range?: TimeWindow;
-  /** Renaming a device to a person. The whole point of the callout below. */
-  onRename?: (person: PersonId, name: string) => void;
+  /**
+   * Renaming a device to a person. The whole point of the callout below.
+   *
+   * Called on a COMMITTED edit only (blur or Enter — see `RenameInput`
+   * below), never per keystroke: a 2026-07-30 review found that renaming
+   * "Google Pixel 8 Pro" to "Priya" one keystroke at a time ran `applyRename`
+   * ~19 times, filling `also_known_as` with single- and two-character
+   * garbage and, while backspacing through empty, rewriting a note's
+   * `people` entry to `""` — which never healed, because `applyRename`
+   * treats a blank "previous name" as nothing to rewrite from.
+   *
+   * Returns a refusal message (blank name, a name containing `;`, or a name
+   * already used by someone else) when `applyRename` (`core/people-csv.ts`)
+   * refuses the rename outright, so `RenameInput` can show it instead of
+   * quietly doing nothing.
+   */
+  onRename?: (person: PersonId, name: string) => string | undefined;
   onRole?: (person: PersonId, role: 'runner' | undefined) => void;
 }
 
@@ -91,12 +107,7 @@ export function IngestReport({ manifest, grouping, range,
                 {/* Editable in place. The callout below tells the author to
                     rename these, and for a long time there was nowhere to do
                     it — an instruction with no control is worse than neither. */}
-                <input
-                  className="report__rename"
-                  value={displayName(person)}
-                  aria-label="Person name"
-                  onChange={(e) => onRename?.(person.id, e.target.value)}
-                />
+                <RenameInput person={person} {...(onRename ? { onRename } : {})} />
                 <button
                   type="button"
                   className={person.role === 'runner' ? 'report__tag report__tag--on' : 'report__tag'}
@@ -178,6 +189,98 @@ export function IngestReport({ manifest, grouping, range,
           "Save", which downloads notes.csv, people.csv, and manifest.json
           together as a zip. */}
     </section>
+  );
+}
+
+/**
+ * A person's name box: local draft state, committed to `onRename` only on
+ * blur or Enter. Fixes the data-corruption bug described on the `onRename`
+ * prop above — every keystroke used to call `applyRename` directly, so
+ * typing "Priya" one letter at a time ran a real rename per letter.
+ *
+ * Escape reverts the draft to the person's current name without committing —
+ * "stop editing, I didn't mean that" needs to be a real option distinct from
+ * blurring, which commits.
+ *
+ * A refusal (blank name, a `;`, or a name already in use — see
+ * `applyRename`) is shown inline and the draft is LEFT AS TYPED, so it is one
+ * edit away from being fixed rather than silently reverted; a successful
+ * rename instead flows back in through the `person` prop once the parent
+ * re-renders, and the effect below picks that up.
+ */
+function RenameInput({
+  person,
+  onRename,
+}: {
+  person: Person;
+  onRename?: (id: PersonId, name: string) => string | undefined;
+}) {
+  const canonical = displayName(person);
+  const [draft, setDraft] = useState(canonical);
+  const [issue, setIssue] = useState<string | null>(null);
+
+  // Picks up a rename that landed successfully (the `person` prop changed)
+  // or a re-ingest that replaced the roster. Does NOT fire on every
+  // keystroke — `canonical` only changes from OUTSIDE this component.
+  useEffect(() => {
+    setDraft(canonical);
+    setIssue(null);
+  }, [canonical]);
+
+  function commit() {
+    const trimmed = draft.trim();
+    if (trimmed === canonical) {
+      // Nothing to rename — e.g. only whitespace was added/removed. Snap
+      // the box back to the canonical spelling rather than leaving stray
+      // whitespace displayed.
+      setDraft(canonical);
+      setIssue(null);
+      return;
+    }
+    const refused = onRename?.(person.id, draft);
+    setIssue(refused ?? null);
+    // On success `canonical` changes on the next render and the effect
+    // above syncs `draft`; on refusal `draft` is deliberately left alone.
+  }
+
+  return (
+    <span className="report__rename-wrap">
+      <input
+        className="report__rename"
+        value={draft}
+        aria-label="Person name"
+        aria-invalid={issue !== null}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          if (issue) setIssue(null);
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+          } else if (e.key === 'Escape') {
+            // Revert only — deliberately does NOT also call `.blur()`. That
+            // would fire `onBlur` (`commit`) synchronously, in the SAME
+            // event-handling pass, before this `setDraft` has been applied —
+            // React batches the state update, so `commit` would still read
+            // the OLD (abandoned) `draft` from this render's closure and
+            // commit exactly the text Escape was meant to discard. Found by
+            // a test that pressed Escape and got the abandoned edit renamed
+            // anyway. Leaving focus in the field after Escape is harmless:
+            // a later blur commits the (already-reverted) canonical value,
+            // which is a no-op.
+            setDraft(canonical);
+            setIssue(null);
+          }
+        }}
+      />
+      {issue && (
+        <span className="report__rename-issue" role="alert">
+          {issue}
+        </span>
+      )}
+    </span>
   );
 }
 

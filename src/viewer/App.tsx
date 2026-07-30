@@ -402,13 +402,21 @@ export function App() {
    * results back. `notesRef` (not `notes`) is read here so this callback
    * does not need `notes` itself in its dependency array, the same reason
    * that ref exists elsewhere in this file.
+   *
+   * Returns the refusal message when `applyRename` refuses outright (a
+   * blank name, a `;`, or a name already claimed by someone else) so
+   * `IngestReport.tsx`'s `RenameInput` can show it — and, on refusal,
+   * deliberately does NOT touch `people`/`notes` at all, matching
+   * `applyRename`'s "return input unchanged" contract.
    */
   const renamePerson = useCallback(
-    (id: PersonId, name: string) => {
-      if (stage.name !== 'loaded') return;
+    (id: PersonId, name: string): string | undefined => {
+      if (stage.name !== 'loaded') return undefined;
       const result = applyRename(stage.manifest.people, notesRef.current, id, name);
+      if (result.refused) return result.refused;
       editManifest((m) => ({ ...m, people: result.people }));
       setNotes(result.notes);
+      return undefined;
     },
     [stage, editManifest],
   );

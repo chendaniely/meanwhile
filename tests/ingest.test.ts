@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ingestFolder, legacyNoteToNote, manifestForSave, mergeSessionNotes, migrateLegacyNotes,
+  reportUnresolvedNoteNames,
 } from '../src/viewer/media/ingest.ts';
 import type { PickedFile } from '../src/viewer/media/folder.ts';
 import { fingerprintNote, type Note } from '../src/core/notes.ts';
@@ -607,6 +608,31 @@ describe('ingestFolder — notes end to end', () => {
     });
     expect(third.notes).toHaveLength(2);
   });
+
+  /**
+   * Item 7 of the 2026-07-30 rename-corruption review, at the WIRING level
+   * rather than the standalone `reportUnresolvedNoteNames`/`resolveNotePhotos`
+   * functions (covered directly above and in `tests/notes.test.ts`): a
+   * `people.csv` roster and a `notes.csv` referencing a name outside it —
+   * the real shape of "someone deleted an alias by hand" — must surface in
+   * `ingestFolder`'s own `noteProblems`, not just be reportable in isolation.
+   */
+  it('reports an unresolved note name AND a missing photo together in noteProblems', async () => {
+    const peopleCsv = 'id,name\np,Priya\n';
+    const notesCsv =
+      'id,year,month,day,hour,minute,duration,tz,people,photo,author,text\n' +
+      'n1,2026,7,25,9,0,,,Ghost,,,seen at the aid station\n' +
+      'n2,2026,7,25,9,5,,,Priya,missing.jpg,,wrong turn\n';
+
+    const { notes, noteProblems } = await ingestFolder(
+      [textFile('people.csv', peopleCsv), textFile('notes.csv', notesCsv)],
+      { title: 'x' },
+    );
+
+    expect(notes).toHaveLength(2);
+    expect(noteProblems.some((p) => p.includes('n1') && p.includes('Ghost'))).toBe(true);
+    expect(noteProblems.some((p) => p.includes('n2') && p.includes('missing.jpg'))).toBe(true);
+  });
 });
 
 describe('manifestForSave', () => {
@@ -708,5 +734,66 @@ describe('manifestForSave', () => {
     expect(manifest.notes).toHaveLength(1);
     expect(Object.hasOwn(manifest.items[0] as object, 'note')).toBe(true);
     expect((manifest.items[0] as Item).note).toBe('the buckle');
+  });
+});
+
+/**
+ * Item 7 of the 2026-07-30 rename-corruption review: a note naming someone
+ * who does not resolve — a hand-deleted `also_known_as` alias, a typo, a
+ * bystander nobody grouped media for — used to leave zero trace anywhere in
+ * `noteProblems`. `resolvePersonNames` already tells "unknown" apart from
+ * "known" (kept, not dropped — see its own doc comment); this is what makes
+ * that visible at ingest, alongside `resolveNotePhotos`'s report for a
+ * missing `photo` (covered directly in `tests/notes.test.ts`, since that
+ * function lives in `core/notes.ts`).
+ */
+describe('reportUnresolvedNoteNames', () => {
+  const PEOPLE: Person[] = [{ id: 'p', name: 'Priya' }];
+  const note = (overrides: Partial<Note> & { id: string }): Note => ({
+    at: '2026-07-25T09:00:00Z',
+    people: [],
+    author: [],
+    text: 'x',
+    ...overrides,
+  });
+
+  it('reports nothing when every name resolves', () => {
+    const notes = [note({ id: 'n1', people: ['Priya'], author: ['Priya'] })];
+    expect(reportUnresolvedNoteNames(notes, PEOPLE)).toEqual([]);
+  });
+
+  it('reports a note whose people name resolves to nobody', () => {
+    const notes = [note({ id: 'n1', people: ['Ghost'] })];
+    const problems = reportUnresolvedNoteNames(notes, PEOPLE);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('n1');
+    expect(problems[0]).toContain('Ghost');
+  });
+
+  it('reports a note whose author name resolves to nobody, distinctly from people', () => {
+    const notes = [note({ id: 'n1', author: ['Ghost Writer'] })];
+    const problems = reportUnresolvedNoteNames(notes, PEOPLE);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('Ghost Writer');
+  });
+
+  it('reports a partially-resolved note (one known name, one unknown) once, naming only the unknown one', () => {
+    const notes = [note({ id: 'n1', people: ['Priya', 'Ghost'] })];
+    const problems = reportUnresolvedNoteNames(notes, PEOPLE);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('Ghost');
+    expect(problems[0]).not.toContain('"Priya"');
+  });
+
+  it('reports each affected note separately, and skips notes with nothing wrong', () => {
+    const notes = [
+      note({ id: 'n1', people: ['Ghost'] }),
+      note({ id: 'n2', people: ['Priya'] }),
+      note({ id: 'n3', author: ['Also Ghost'] }),
+    ];
+    const problems = reportUnresolvedNoteNames(notes, PEOPLE);
+    expect(problems).toHaveLength(2);
+    expect(problems.some((p) => p.includes('n1'))).toBe(true);
+    expect(problems.some((p) => p.includes('n3'))).toBe(true);
   });
 });

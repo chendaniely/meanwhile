@@ -18,7 +18,7 @@ import { isManifestFile, isNotesFile, isPeopleFile, isTrackFile } from '../../co
 import {
   dedupeNotes, fingerprintNote, mergeNotes, resolveNotePhotos, type Note, type NoteRowIdentity,
 } from '../../core/notes.ts';
-import { displayName, parsePeopleCsv } from '../../core/people-csv.ts';
+import { displayName, parsePeopleCsv, resolvePersonNames } from '../../core/people-csv.ts';
 import {
   validateManifest,
   type Item,
@@ -343,7 +343,12 @@ export async function ingestFolder(
     manifest.event.timezone,
     opts.deletedNoteFingerprints ?? new Set(),
   );
-  const noteProblems = [...rosterProblems, ...csvNoteProblems, ...photoProblems];
+  const noteProblems = [
+    ...rosterProblems,
+    ...csvNoteProblems,
+    ...photoProblems,
+    ...reportUnresolvedNoteNames(notes, manifest.people),
+  ];
 
   return {
     manifest,
@@ -549,6 +554,40 @@ export function migrateLegacyNotes(manifest: Manifest): Note[] {
   }
 
   return out;
+}
+
+/**
+ * Report every note whose `people` or `author` names a string that resolves
+ * to nobody on the roster — a hand-deleted `also_known_as` entry, a typo, or
+ * simply a bystander nobody grouped media for. `resolvePersonNames` (the
+ * same join `Swimlanes.tsx` uses to place a note in a lane, and the join
+ * `PersonPicker` matches against) already tells "unknown" apart from
+ * "known"; before this fix nothing surfaced that at ingest, so an alias
+ * quietly deleted from `people.csv` orphaned a note with zero visible sign
+ * anywhere in the report.
+ *
+ * Not an error — an unrecognised name is deliberately KEPT rather than
+ * dropped (see `resolvePersonNames`'s own doc comment) — so this reports
+ * every occurrence, the same "always loud, never blocking" rule
+ * `resolveNotePhotos` already follows for an unmatched `photo`.
+ *
+ * Exported for direct testing with plain `Note[]`/`Person[]`, no `File` or
+ * folder needed.
+ */
+export function reportUnresolvedNoteNames(notes: readonly Note[], people: readonly Person[]): string[] {
+  const problems: string[] = [];
+  for (const note of notes) {
+    const { unknown: unknownPeople } = resolvePersonNames(note.people, people);
+    const { unknown: unknownAuthors } = resolvePersonNames(note.author, people);
+    const unknown = [...new Set([...unknownPeople, ...unknownAuthors])];
+    if (unknown.length === 0) continue;
+    problems.push(
+      `note "${note.id}": ${unknown.length === 1 ? 'name' : 'names'} ` +
+        `${unknown.map((n) => `"${n}"`).join(', ')} ${unknown.length === 1 ? "doesn't" : "don't"} match ` +
+        `anyone in people.csv — kept as plain text, but won't sit in that person's lane`,
+    );
+  }
+  return problems;
 }
 
 /** How many optional series a track carries, for choosing between files. */

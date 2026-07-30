@@ -448,11 +448,28 @@ describe('resolveNotePhotos', () => {
     expect(problems[0]).toContain('sam/a.jpg');
   });
 
-  it('leaves a note with no photo, and one matching nothing at all, untouched', () => {
+  it('leaves a note with no photo untouched, and reports no problem for it', () => {
     const items = [item('priya/a.jpg')];
-    expect(resolveNotePhotos([note(undefined)], items).notes[0]?.photo).toBeUndefined();
+    const { notes, problems } = resolveNotePhotos([note(undefined)], items);
+    expect(notes[0]?.photo).toBeUndefined();
+    expect(problems).toEqual([]);
+  });
+
+  /**
+   * IMPORTANT 7 from the URGENT rename-corruption review (2026-07-30): a
+   * `photo` matching NOTHING at all — distinct from matching more than one
+   * candidate, above — used to be silently left as typed with no problem
+   * reported, the same as a genuinely absent `photo`. A hand-typed filename
+   * with a typo, or a photo renamed/deleted after the note was written, is a
+   * broken join and must be loud, the same rule `resolveNotePhotos` already
+   * applies to an ambiguous match.
+   */
+  it('reports, rather than silently leaving unlinked, a photo matching nothing at all', () => {
+    const items = [item('priya/a.jpg')];
     const { notes, problems } = resolveNotePhotos([note('ghost.jpg')], items);
     expect(notes[0]?.photo).toBe('ghost.jpg');
-    expect(problems).toEqual([]);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('ghost.jpg');
+    expect(problems[0]).toContain('note "n"');
   });
 });

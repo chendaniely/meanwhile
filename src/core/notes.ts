@@ -632,6 +632,17 @@ export function resolveNotePhotos(
         `note "${note.id}": photo "${note.photo}" matches ${candidates.length} photos by ` +
           `filename (${candidates.join(', ')}); use the full path to say which one`,
       );
+    } else {
+      // Distinct from the ambiguous case above: nothing matches at all,
+      // typically a hand-typed filename with a typo, or a photo that was
+      // renamed or deleted after the note was written. Silent before this
+      // fix — the note just sat there with a `photo` value naming nothing,
+      // never shown as broken anywhere. An alias table (or a filename join,
+      // which this is) is only safe if a broken join is loud.
+      problems.push(
+        `note "${note.id}": photo "${note.photo}" does not match any file in this folder; ` +
+          'the note is kept but not linked to a photo',
+      );
     }
     return note;
   });
