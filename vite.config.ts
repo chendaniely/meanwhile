@@ -21,6 +21,34 @@ const GA_MEASUREMENT_ID = 'G-45CW80QRH9';
  * fonts are self-hosted specifically to avoid third-party requests, so the
  * "zero external requests" claims elsewhere were corrected in the same commit
  * rather than left to rot.
+ *
+ * THE FRAGMENT MUST NEVER REACH GOOGLE. `src/core/state.ts#toHash` puts a
+ * photo-derived timestamp (`t=`) and the ids of whichever people are shown or
+ * hidden (`who=`) straight in the URL, because that is what makes any moment
+ * a link you can text someone. GA4's default `page_location` is
+ * `location.href`, fragment included, and `useAppState` calls
+ * `history.replaceState` on every cursor change — continuously, while
+ * scrubbing — so the naive `gtag('config', ID)` this used to be would ship
+ * both of those to Google on a schedule closer to "constantly" than "once".
+ *
+ * `send_page_view: false` stops the page view GA4's `config` command would
+ * otherwise send automatically, and the `page_view` sent explicitly below
+ * uses `location.origin + location.pathname` — which cannot contain a
+ * fragment, by construction, regardless of what gtag's own default
+ * fragment-handling turns out to be.
+ *
+ * THIS DOES NOT CLOSE THE WHOLE GAP. GA4's "enhanced measurement" is a
+ * property-level feature, not a `gtag()` parameter, and its
+ * "page changes based on browser history events" listener fires its own
+ * automatic `page_view` on every `pushState`/`replaceState`/`hashchange` —
+ * with `page_location` read fresh from `location.href` at the moment it
+ * fires, independent of `send_page_view` and independent of the
+ * `page_location` passed to `config` here. Verified against Google's own
+ * docs and independent write-ups (no live GA4 property was probed): disabling
+ * that listener is a toggle in the GA4 console — Admin → Data Streams → this
+ * stream → Enhanced measurement (gear icon) → "Page changes based on browser
+ * history events" — off. That is the owner's action, not a `vite.config.ts`
+ * change; see CLAUDE.md's "Verified external constraints" table.
  */
 function googleAnalytics(): Plugin {
   return {
@@ -39,7 +67,8 @@ function googleAnalytics(): Plugin {
             'window.dataLayer = window.dataLayer || [];\n' +
             'function gtag(){dataLayer.push(arguments);}\n' +
             "gtag('js', new Date());\n" +
-            `gtag('config', '${GA_MEASUREMENT_ID}');`,
+            `gtag('config', '${GA_MEASUREMENT_ID}', { send_page_view: false, page_location: location.origin + location.pathname });\n` +
+            "gtag('event', 'page_view', { page_location: location.origin + location.pathname });",
           injectTo: 'head',
         },
       ];

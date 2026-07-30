@@ -4,7 +4,7 @@
 
 As of 2026-07-30 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **643 tests pass** (`make check`).
+the race. **653 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -1470,6 +1470,51 @@ existing ids keep their exact spelling, since a suffix would only ever be
 minted for a NEW colliding device, never retrofitted onto one already in
 use.
 
+### Analytics learns the view, and nothing else *(2026-07-30)*
+
+> "i don't think i need view-usage. maybe the only tab info that is useful is
+> which view are people looking at, but i don't need to track time/people
+> information at all."
+
+`src/core/state.ts#toHash` puts a photo-derived timestamp (`t=`) and the ids
+of whichever people are shown or hidden (`who=`) straight into the URL
+fragment, because that is what makes any moment a shareable link. That
+fragment must never reach Google, and two separate mechanisms would have sent
+it there under the plugin's original naive `gtag('config', ID)`:
+
+1. **The initial `page_view`.** GA4's default `page_location` is
+   `location.href`, fragment included.
+2. **`useAppState` calls `history.replaceState` on every cursor change** —
+   continuously, while scrubbing — and GA4's "enhanced measurement" fires its
+   own automatic `page_view` on `pushState`/`replaceState`/`hashchange`.
+
+`googleAnalytics()` in `vite.config.ts` now sets
+`send_page_view: false` on the `config` call and sends exactly one
+`page_view` itself, with `page_location: location.origin + location.pathname`
+— which cannot contain a fragment, by construction, regardless of what
+gtag's own default fragment-handling does. `src/viewer/analytics.ts#trackView`
+is the only other thing this app tells Google: one custom `view_change` event
+per genuine view change (wired in `App.tsx` as
+`useEffect(() => trackView(view.view), [view.view])`, deliberately depending
+on `view.view` alone and not on the `AppState` object, so a cursor scrub or a
+`who=` toggle — which land on that same object — cannot retrigger it), and
+its payload is `{ view }`, a bare three-value enum, never the `AppState` it
+was read from.
+
+**This does not fully close the gap, and the code cannot close the rest of
+it.** GA4's enhanced measurement is a property-level toggle
+("Page changes based on browser history events"), independent of
+`send_page_view` and independent of the `page_location` passed to `config` —
+verified against Google's own docs and independent write-ups, not against a
+live property. If it is on for this property, it still fires its own
+`page_view` on every `replaceState`, reading `page_location` fresh from
+`location.href` at that moment — fragment included. Turning it off is
+**Admin → Data Streams → this stream → Enhanced measurement (gear icon) →
+"Page changes based on browser history events" → off**, in the GA4 console.
+That is the owner's action; no `vite.config.ts` change can reach it. See the
+"Verified external constraints" table below for the same fact, kept there so
+a future session does not have to re-derive it either.
+
 ---
 
 ## Verified external constraints — DO NOT re-derive or assume around these
@@ -1493,6 +1538,7 @@ a future session will be tempted to assume works. It does not.
 | **Strava embeds** *(v2)* | Embed URL is `.../activities/{ID}/embed/{CODE}`. `{CODE}` comes from Strava's share dialog and **cannot be derived from an activity URL.** The embed is an opaque iframe — it cannot sync to our cursor and yields no position-at-time. |
 | **Apple `mvhd` timestamps** *(v2)* | MP4/MOV `mvhd` creation_time is nominally UTC, but **Apple writes LOCAL time there with no zone.** Trusting it shifts clips by hours with no error. Prefer `com.apple.quicktime.creationdate`, which carries a real UTC offset. |
 | **HEIC** *(v2)* | iPhones shoot it by default and **no browser but Safari can decode it.** Metadata is readable (HEIC is ISOBMFF, same walker as MP4), so the item still gets placed — but the image will not render and needs a placeholder tile. |
+| **GA4 `send_page_view: false`** *(2026-07-30)* | **Does not disable "enhanced measurement"'s automatic history-based `page_view`.** That listener fires its own `page_view` on `pushState`/`replaceState`/`hashchange` regardless of the `config` call's `send_page_view` or `page_location` parameters, reading `location.href` fresh each time. Since `useAppState` calls `replaceState` on every cursor change, this — not anything `vite.config.ts` can set — is what would still leak the URL fragment (`t=`, `who=`) to Google if enhanced measurement is on for this property. Disabling it is a per-stream toggle in the GA4 console ("Page changes based on browser history events"), not a `gtag()` parameter. Verified against Google's documentation and independent write-ups; not probed against a live property. |
 
 **The data-quality rule** — the highest-leverage sentence in the README:
 
@@ -1742,7 +1788,8 @@ no external requests — three things do:
    That split is deliberate: local mode reads somebody's private photographs
    off their own disk, and the README promises nothing leaves the machine.
    The published page does contact `googletagmanager.com`, and Google sees
-   each visitor's IP.
+   each visitor's IP. What it is TOLD is deliberately narrow — see
+   "Analytics learns the view, and nothing else" below.
 3. **The Strava embed** iframe, which is external but click-to-load.
 
 Keep this list honest. A claim that this app phones nobody is the kind of

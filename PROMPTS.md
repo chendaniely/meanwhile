@@ -1219,3 +1219,45 @@ to where an event's data lives):
 > to the git backed repo. this way you have the context of where this current
 > project's git repo is, but it's not fully baked into the context if other
 > people want to use it"
+
+---
+
+## Session: analytics learns the view, and nothing else (2026-07-30)
+
+Context: Google Analytics on the published site was previously wired with a
+plain `gtag('config', ID)`, which by GA4 default sends `location.href` —
+fragment included — as the page's address. The app's URL fragment carries a
+photo-derived cursor timestamp and the ids of whichever people are toggled
+on or off, which must never reach Google.
+
+> "i don't think i need view-usage. maybe the only tab info that is useful is
+> which view are people looking at, but i don't need to track time/people
+> information at all."
+
+### What was decided
+
+`vite.config.ts`'s `googleAnalytics()` now sets `send_page_view: false` on
+the `config` call and sends exactly one `page_view` itself, addressed at
+`location.origin + location.pathname` — never the fragment, regardless of
+what gtag's own default fragment-handling turns out to be. A new module,
+`src/viewer/analytics.ts`, exports `trackView(view)`, which no-ops when
+`window.gtag` is absent (the entire `make dev` experience) and otherwise
+sends one `view_change` event carrying `{ view }` and nothing else. It is
+wired into `App.tsx` as `useEffect(() => trackView(view.view), [view.view])`
+— depending on `view.view` alone, not on the shared `AppState` object, is
+what stops a cursor scrub or a `who=` toggle from retriggering it.
+
+**Verified, not assumed: `send_page_view: false` does not fully close the
+gap.** GA4's "enhanced measurement" independently fires its own automatic
+`page_view` on `pushState`/`replaceState`/`hashchange`, reading the live URL
+at that moment, regardless of the `config` call's parameters. Since
+`useAppState` calls `replaceState` on every cursor change, this remains a
+real leak if enhanced measurement is on for this property — closing it is a
+one-time toggle in the GA4 console ("Page changes based on browser history
+events" → off), not something `vite.config.ts` can reach. Recorded in
+CLAUDE.md's "Verified external constraints" table and as an action item in
+`TODO.md`, rather than claimed as solved.
+
+6 new tests (643 → 649 before the concurrent CourseMap tooltip fix landed on
+top), each verified by breaking the production code and confirming the
+corresponding test failed before restoring it.

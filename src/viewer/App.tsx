@@ -49,6 +49,7 @@ import { UnplacedTray } from './components/UnplacedTray.tsx';
 import { CourseMap } from './map/CourseMap.tsx';
 import { MediaProvider } from './media/MediaContext.tsx';
 import { useMediaStore } from './media/useMediaStore.ts';
+import { trackView } from './analytics.ts';
 import { useAppState } from './hooks/useAppState.ts';
 import { useMeasuredHeight } from './hooks/useMeasuredHeight.ts';
 import type { PickedFile } from './media/folder.ts';
@@ -202,6 +203,16 @@ export function App() {
   // Cursor, view, visible lanes, and the crop — one object, mirrored in the
   // URL so any moment is a link.
   const [view, setView] = useAppState();
+
+  // Report only which view is open, and only when it genuinely changes.
+  // Depending on `view.view` alone — not on `view` — is the whole point:
+  // `cursor`, `range` and `visible` all live on the same object and change
+  // continuously while scrubbing, and none of those may reach Google. See
+  // `analytics.ts` for what actually gets sent.
+  useEffect(() => {
+    trackView(view.view);
+  }, [view.view]);
+
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState('Untitled event');
   const [timezone, setTimezone] = useState(guessTimezone);

@@ -8,6 +8,37 @@ already built, and the reasons are worth keeping.
 
 ## Unreleased
 
+### Analytics learns the view, and nothing else
+
+> "i don't think i need view-usage. maybe the only tab info that is useful is
+> which view are people looking at, but i don't need to track time/people
+> information at all."
+
+The app's URL fragment carries a photo-derived timestamp and the ids of
+whichever people are shown or hidden — the whole point of "any moment is a
+shareable link" — and it must never reach Google. Two mechanisms would have
+sent it there: GA4's default `page_location` is `location.href` (fragment
+included), and `useAppState` calls `history.replaceState` on every cursor
+change, which GA4's "enhanced measurement" listens for.
+
+`googleAnalytics()` in `vite.config.ts` now sets `send_page_view: false` and
+sends exactly one `page_view` itself, addressed at `location.origin +
+location.pathname` — no fragment, by construction. A new
+`src/viewer/analytics.ts#trackView` is the only other thing the app tells
+Google: one `view_change` event, `{ view }` only, fired from `App.tsx` on a
+genuine view change and never on a cursor scrub or a lane toggle.
+
+**This does not fully close the gap.** GA4's enhanced measurement can fire
+its own automatic `page_view` on `replaceState` independent of
+`send_page_view`, reading the live URL — fragment included — at that moment.
+No code change reaches that; it is a per-stream toggle in the GA4 console.
+See CLAUDE.md's "Analytics learns the view, and nothing else" and its
+"Verified external constraints" table, and `TODO.md`'s deploy-and-process
+section for the action item.
+
+6 new tests, each verified by breaking the production code and confirming
+the corresponding test failed before restoring it.
+
 ### The CSV format, hardened before it carries anything irreversible
 
 > "yes we should write the tz, sometimes we can infer it from the gps of the

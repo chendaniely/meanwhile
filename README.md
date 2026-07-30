@@ -84,15 +84,25 @@ Two ways to use it:
 
   Being precise about what *does* leave, since "nothing leaves your computer"
   would be too strong: the published site loads **Google Analytics** on every
-  view (Feed, Swimlanes and Course alike), so Google sees that a page was
-  opened and from which IP — never anything about your photos. Once a track
-  (GPX/TCX) is in the folder, **map tiles** load from OpenTopoMap, Esri and
-  OpenStreetMap on every view too, not only the Course tab. And a moment's
-  link (see below) carries a timestamp and the ids of whichever people are
-  shown or hidden right there in its address — never a photo, a video or a
-  note, but not nothing either; we did not verify whether Google Analytics
-  reads that address. If you would rather not be measured at all, run it
-  locally with `make dev`, which loads no analytics whatsoever.
+  view (Feed, Swimlanes and Course alike). What it is told is exactly one
+  thing — **which of the three views is open**, Feed, Swimlanes or Course —
+  and nothing else: no timestamp, no photo, no video, no note, and none of
+  the people shown or hidden. That matters because a moment's link (see
+  below) carries a timestamp and the ids of whichever people are toggled on
+  or off, right there in its address, and that address is never sent to
+  Google: the page view Google gets on load points at a stripped
+  origin-and-path with no address bar contents at all, and switching views
+  fires a second, separate, minimal signal carrying only the view's name.
+  One gap remains and is not fully closed by this app's code: Google
+  Analytics' own "enhanced measurement" feature can independently notice the
+  browser's address bar changing and log its own page view of whatever is
+  there at that moment, and turning that off is a one-time setting in the
+  Google Analytics console rather than something a website can request for
+  itself — see `CLAUDE.md` if you're the one who'd need to flip it. Once a
+  track (GPX/TCX) is in the folder, **map tiles** load from OpenTopoMap, Esri
+  and OpenStreetMap on every view too, not only the Course tab. If you would
+  rather not be measured at all, run it locally with `make dev`, which loads
+  no analytics whatsoever.
 - **Shared with others.** Publish the description file with links to your
   photos, and anyone you send it to can open the timeline on their phone.
 
