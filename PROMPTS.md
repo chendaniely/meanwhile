@@ -938,14 +938,20 @@ correct" after checking the phrase's context instead of the thing it described.
 **The dominant defect was a claim fixed in one place while copies survived
 elsewhere**, and it recurred in all six passes. "GPS time is authoritative" —
 the single claim this project has spent the most effort disproving — was found
-and fixed four separate times, the last on the `gpsInstant` field itself, which
+and fixed five separate times, the last on the `gpsInstant` field itself, which
 is precisely where a future session would read before touching the ranking.
 "Automatic clock alignment" was corrected in two files, then found in three
 more, then two more after that. The lesson is mechanical: after correcting a
 claim, grep the whole repo for its meaning, not its wording, and check every
-hit — but check each in context, because two of five hits for "a few kilobytes"
-were about a different subject and correcting them would have introduced two
-new errors while fixing three.
+hit. That instinct was right in general and wrong once in particular: "a few
+kilobytes" had seven hits, not five, and two of them — `zip.ts` and CLAUDE.md's
+dependency budget — were waved through as describing a different subject (the
+CSV payload, not the metadata read) on the strength of the surrounding
+sentence rather than the quantity itself. Both were also wrong: the zip's
+third file, `manifest.json`, is pretty-printed and scales with item count
+(~350 bytes/item), dominating the CSV at roughly 80KB for 231 items and 680KB
+for 2,000 — nowhere near "a few kilobytes." A later pass (`faa5e3f`) caught
+both.
 
 **An audit of comments turns up real bugs, because a comment is a claim about
 behaviour.** Five CSS custom properties were used at fourteen sites and defined

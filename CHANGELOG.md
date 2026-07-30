@@ -52,7 +52,7 @@ reason for the rest: several comments still said GPS timestamps are
 authoritative. They are not — GPS records the satellite fix, not the shutter,
 lagging a median 11 seconds and up to 919, unevenly enough to scramble the
 order of photographs taken moments apart. That correction cost 231 real files
-to establish, and four surviving copies of the old claim were sitting where a
+to establish, and five surviving copies of the old claim were sitting where a
 future session would read them first.
 
 ### Notes and the people roster move out of the manifest

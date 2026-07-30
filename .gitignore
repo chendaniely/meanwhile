@@ -64,7 +64,9 @@ meanwhile-*.zip
 *.MTS
 
 # Test fixtures are a deliberate, narrow exception: hand-built byte-level
-# parser inputs, capped at 100KB total. See tests/fixtures/README.md.
+# parser inputs, capped at 100KB total. tests/fixtures/isobmff.ts and jpeg.ts
+# build them programmatically, byte-exact, with the rationale in their own
+# header comments — there is no separate README here.
 !/tests/fixtures/**
 
 # Build + tooling

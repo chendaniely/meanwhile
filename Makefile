@@ -50,7 +50,7 @@ release: ## Tag a release: make release VERSION=0.1.0
 	@grep -q "^## $(VERSION) " CHANGELOG.md \
 		|| { echo "CHANGELOG.md has no '## $(VERSION) ...' entry"; exit 1; }
 	@node -e 'const v=require("./package.json").version; if (v!==process.argv[1]) { console.error(`package.json says ${v}, not ${process.argv[1]}`); process.exit(1); }' $(VERSION)
-	@git diff --quiet && git diff --cached --quiet \
+	@test -z "$$(git status --porcelain)" \
 		|| { echo "working tree is dirty — commit first"; exit 1; }
 	@git rev-parse "v$(VERSION)" >/dev/null 2>&1 \
 		&& { echo "tag v$(VERSION) already exists"; exit 1; } || true

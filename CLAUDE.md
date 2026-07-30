@@ -338,13 +338,22 @@ Folders still win when they exist: the author put them there on purpose.
 Result on the real folder: 1 useless lane → 4 correct ones, with 17 of 231
 files resting on the weakest signal and the report saying so.
 
-### Every object URL in the app comes from MediaStore *(M4)*
+### Long-lived object URLs all come from MediaStore *(M4)*
 
 `URL.createObjectURL` pins its blob until `revokeObjectURL` is called.
 Nothing collects it — not GC, not removing the `<img>`. One per tile while
 scrolling 2,000 files and the tab grows until it dies. So
-`src/viewer/media/store.ts` is the ONLY place that creates or revokes them,
-and `tests/media-store.test.ts` fails if any URL is created and not revoked.
+`src/viewer/media/store.ts` is the only place that hands an object URL to
+anything on screen, and `tests/media-store.test.ts` fails if any URL it
+creates is not revoked.
+
+Two other call sites create one too, but neither is a copy of this risk:
+`decodeVideoPoster` in `src/viewer/media/thumbnails.ts` creates a URL to feed
+a `<video>` element for one frame grab and revokes it in a `finally` block
+before returning, and the Save-button handler in `App.tsx` creates a URL for
+the downloaded zip, clicks the anchor, and revokes it immediately after —
+both create and revoke within the one function call that needs the URL, so
+neither ever hands a live one to a component or holds it past that call.
 
 - **Thumbnails are refcounted and byte-budgeted.** Never evicted while a tile
   shows one (revoking under a live `<img>` blanks it); kept after release
@@ -370,7 +379,11 @@ and `tests/media-store.test.ts` fails if any URL is created and not revoked.
   momentarily too low and declares a perfectly good clip unplayable. This
   broke every video thumbnail once; `tests/video-poster.test.ts` drives a
   fake element through that exact sequence.
-- **Only one video plays at a time**, tracked in `MediaContext`.
+- **Only one video plays at a time, by construction rather than by tracked
+  state.** Playback only happens in the lightbox (`Lightbox.tsx`), and the
+  lightbox shows exactly one item — so two clips playing at once cannot
+  arise, and nothing has to enforce it. `MediaContext` used to track which
+  clip was playing; it no longer needs to, and no longer does.
 
 ### One state object, three projections *(M5, M7)*
 
@@ -653,10 +666,20 @@ that look right and are not:
    empty effect body has nothing to re-observe with. Use React 19's
    ref-callback cleanup instead, so attach and detach cannot drift apart.
    See `src/viewer/hooks/useInView.ts`.
-2. **Create a resource with `useMemo`, dispose it in an effect cleanup.** The
-   cleanup disposes the instance that was just created and is about to be
-   used. Dispose the OUTGOING one when the new one is made instead. See the
-   `MediaStore` construction in `App.tsx`.
+2. **Create a resource with `useMemo`, dispose it somewhere else.** Two
+   shapes were tried here and BOTH broke — this is the bug that made every
+   tile read "this browser cannot display this file":
+   - Create in `useMemo`, dispose in an effect cleanup. StrictMode runs
+     effect cleanups on MOUNT too, so the cleanup disposes the store the
+     `useMemo` had just created, before anything gets to use it.
+   - Create in `useMemo`, and dispose the previous instance inside the same
+     factory. StrictMode double-invokes memo factories, so the second
+     invocation disposes what the first invocation had just made.
+   The fix: create AND dispose in the SAME effect, keyed on the input, so
+   both halves are guaranteed to act on the same instance whatever order
+   React runs them in. See `useMediaStore` in
+   `src/viewer/media/useMediaStore.ts`, not `App.tsx` — it was extracted
+   from `App` precisely so this lifecycle could be tested in isolation.
 
 ### The time window *(built after the owner asked for it)*
 
