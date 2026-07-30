@@ -286,7 +286,7 @@ without touching the website at all.
 | Column | What goes there |
 |---|---|
 | `id` | Leave it blank on a new row — the site fills it in the next time you open the folder. |
-| `year`, `month`, `day`, `hour`, `minute` | When it happened, as plain numbers — `2026,7,25,15,45` for 3:45pm on 25 July 2026. Midnight is `0,0`. |
+| `year`, `month`, `day`, `hour`, `minute` | When it happened, as plain numbers — `2026,7,25,15,45` for 3:45pm on 25 July 2026. Midnight is `hour,minute` = `0,0`, with `year`/`month`/`day` still filled in as usual. |
 | `duration` | How long it lasted, only if it's a span rather than an instant — `PT3H40M` for three hours forty minutes. Leave it blank for something that happened at one moment. |
 | `tz` | Only fill this in if the note happened in a different timezone than the event itself. Leave it blank otherwise. |
 | `people` | Who the note is about. Several names, separated by semicolons — `Priya;Sam`. |

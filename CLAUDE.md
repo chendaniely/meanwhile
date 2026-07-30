@@ -913,7 +913,10 @@ something a stranger typed, not as trusted output from this app:
 - **Newlines in `text`** are legal inside a quoted CSV field but break a diff
   and confuse naive tooling, so the composer replaces them with a space on
   write and the reader normalises any it finds on read. A note is a
-  sentence.
+  sentence. **Reversing this** means a note can carry an embedded line break,
+  which is fine for a spreadsheet program but breaks a line-based diff and
+  any tool that assumes one record per line — precisely the audience a
+  plain-text, hand-editable file exists to serve.
 
 ### Merging `notes*.csv` needs no version control *(notes-as-csv)*
 
