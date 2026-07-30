@@ -4,7 +4,7 @@
 
 As of 2026-07-29 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **520 tests pass** (`make check`).
+the race. **550 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -1159,6 +1159,44 @@ between the manifest and the media's own EXIF; they confirmed the manifest —
 and now, more specifically, the spreadsheet-editable roster file that stands
 in for hand-editing the manifest's JSON. **EXIF write-back is deferred, not
 rejected** — worth re-asking, since it has real archival appeal.
+
+### A rename is TOTAL, and committed — never per-keystroke *(format review)*
+
+The first version of the alias join above wired the rename input's `onChange`
+straight to `applyRename`, so it ran **once per keystroke**. An independent
+format review reproduced the result: renaming "Google Pixel 8 Pro" to "Priya"
+performed about nineteen renames, leaving `also_known_as` holding every
+prefix along the way — `["GOOGLE PIXEL 8 PR", …, "GO", "G", "P", "Pr"]` — so
+that `G` and `P` then resolved to that person.
+
+Worse, backspacing through empty rewrote the note's people entry to `""`, and
+`applyRename`'s own `previousName !== ''` guard then made `renamed` false
+**forever after**, so it never healed. The note's link to that person was
+destroyed and written out blank on the next save. Corrupting a permanent
+record on the most ordinary interaction there is.
+
+Three rules came out of it, and none may be relaxed:
+
+1. **A rename is a committed action** — blur or Enter, never a keystroke.
+   Escape reverts. (Note the trap found while testing this: calling `.blur()`
+   inside the Escape handler fires `onBlur` → commit, which React's batching
+   means reads the STALE draft — so Escape committed the very edit it was
+   meant to abandon. Do not blur on Escape.)
+2. **A rename is total or refused, never half-applied.** It is refused when
+   the new name is blank, contains `;` (the list delimiter — there is no
+   escape), or is already claimed by another person's name or alias. That
+   last one matters more than it looks: without it, renaming Alice to "Bob"
+   produced two people called Bob and `resolvePersonNames` then resolved
+   "Bob" to NEITHER, orphaning both notes — including the one that never
+   involved Alice.
+3. **A broken join is loud.** An alias table is only safe if a join that
+   fails says so. Unresolved note names are reported at ingest and drawn in
+   the event-level row; a `photo` matching nothing is reported, not just an
+   ambiguous one.
+
+`also_known_as` is cleaned on read, on write and on rename: an alias equal to
+the person's own name is dropped, and duplicates are folded
+case-insensitively, so the column cannot grow without bound.
 
 ### Renaming a person is non-destructive: `also_known_as` is the join *(person-aliases)*
 

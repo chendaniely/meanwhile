@@ -8,6 +8,33 @@ already built, and the reasons are worth keeping.
 
 ## Unreleased
 
+### A rename can no longer corrupt the record
+
+> "i need a way (possibly in the site interface itself) to connect the notes
+> and people datasets [...] i am essentially asking for a non destructive way
+> to rename people ids that are displayed."
+
+An independent format review, run before real data went into version control,
+found the rename input firing once per KEYSTROKE. Renaming "Google Pixel 8
+Pro" to "Priya" ran about nineteen renames, filling `also_known_as` with every
+prefix along the way so that `G` and `P` resolved to that person — and
+backspacing through empty wrote `""` into the note's people list, after which
+a guard in the rename itself meant it never healed. The note's link to that
+person was destroyed permanently, on the most ordinary interaction there is.
+
+A rename is now a committed action (blur or Enter, Escape reverts) and is
+total or refused — refused on a blank name, on a `;` (the list delimiter, which
+has no escape), and on a name another person already claims. That last case
+was its own silent corruption: renaming Alice to "Bob" produced two people
+called Bob, and "Bob" then resolved to neither, orphaning both notes including
+the one that never involved Alice.
+
+Broken joins are now loud rather than silent: unresolved note names are
+reported at ingest and drawn in the event-level row, and a `photo` matching no
+file at all is reported, not just an ambiguous one. Aliases are cleaned on
+read, write and rename, so the column cannot grow without bound.
+
+
 ### Renaming a person no longer orphans their notes
 
 > "i need a way (possibly in the site interface itself) to connect the notes
