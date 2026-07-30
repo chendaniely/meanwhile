@@ -42,6 +42,30 @@ import { basemaps, defaultBasemapId, hillshade } from './basemaps.ts';
  * `permanent: true`.
  */
 
+/**
+ * A person's name as a DOM node, never as an HTML string.
+ *
+ * Leaflet's `DivOverlay._updateContent` does `node.innerHTML = content` when
+ * it is handed a string, so `bindTooltip(name)` renders whatever markup the
+ * name contains. Names reach us from `people.csv` and from folder names —
+ * both of which arrive from other people, by design, since the whole
+ * collaboration model is that crew members send their files in.
+ *
+ * That made a name of `<img src=x onerror=…>` execute in a page that holds
+ * File System Access handles and object URLs for somebody's entire photo
+ * folder — the one thing this app promises never leaves the machine. On
+ * GitHub Pages the origin is shared with every other project the owner
+ * publishes, so it reached their storage too.
+ *
+ * Leaflet appends a Node argument directly instead, which is why this is a
+ * span rather than an escape function: there is no string to get wrong.
+ */
+export function nameLabel(name: string): HTMLElement {
+  const span = document.createElement('span');
+  span.textContent = name;
+  return span;
+}
+
 interface Props {
   manifest: Manifest;
   course: Course;
@@ -355,7 +379,11 @@ export function CourseMap({
         // only on hover: no `permanent`, so it shows one name at a time, for
         // whichever dot the pointer is over. Adjacent dots are colour-only
         // otherwise; that gap is open, see TODO.md.
-        .bindTooltip(name, { direction: 'top' })
+        //
+        // A NODE, never a string: Leaflet assigns string content with
+        // `node.innerHTML`, and `name` comes from people.csv or a folder
+        // name — both supplied by other people. See `nameLabel` above.
+        .bindTooltip(nameLabel(name), { direction: 'top' })
         .on('click', () => onCursor(entry.instant))
         .addTo(layer);
 
