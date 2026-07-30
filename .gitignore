@@ -101,7 +101,9 @@ meanwhile-*.zip
 # One person's working notes about WHICH event this copy is pointed at — the
 # data repo's URL, the photo folder, clock offsets worked out by hand. It is
 # per-person and per-event, so it never ships with the app. EVENT.example.md
-# is the committed template; README.md and CLAUDE.md both point at it.
+# is the committed template, meant to be linked from README.md and CLAUDE.md
+# so a newcomer finds it — check those files directly for whether that link
+# exists yet rather than trusting this comment.
 EVENT.md
 
 # Build + tooling

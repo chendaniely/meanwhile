@@ -1177,3 +1177,45 @@ cannot catch a reader and a writer drifting together.
 93 new tests (550 → 643). Every change was verified by breaking the production
 line and confirming the relevant test failed before restoring it — 21
 mutations plus one more, all of which failed as required.
+
+---
+
+## Recovered prompts (2026-07-30, found by a documentation-accuracy audit)
+
+This log is append-only, so these are logged here rather than inserted where
+they were actually said. A documentation-accuracy pass found four owner
+prompts quoted verbatim in `CHANGELOG.md`, `TODO.md`, a design spec, and a
+commit message, with no matching entry anywhere in this file — programmatic
+comparison of every other quoted prompt against its source found no other
+gaps. The citing text is the source for the exact wording below; nothing here
+is reconstructed from memory.
+
+**Cited at `CHANGELOG.md`'s "The site goes live, and is measured"** (pushing
+to GitHub with releases, tags and a changelog):
+
+> "i think we should also be pushing these up to github, with releases, tags,
+> and changelogs updates. i want to be able to test this on github actions +
+> github pages."
+
+**Cited at `TODO.md`'s "Aid stations on the course"** (crew-accessible aid
+stations):
+
+> "for ultra races, i'd like the map to also tag where the aid stations are,
+> and whether those are AS that are crew accessible. i'm not sure how best to
+> get that information into the app, and then save the results (since this is
+> a static site)"
+
+**Cited at `docs/superpowers/specs/2026-07-30-github-metadata-sync-design.md`**
+(the PAT / password credential store, and per-crew-member tokens):
+
+> "let's built it around a PAT i can save it in my password credential store.
+> and gather files from them. if the crew member DOES have a github account, i
+> can add them to the repo and they can use their own PAT?"
+
+**Cited at the commit introducing `EVENT.md`** (`7c7da2e`, a per-copy pointer
+to where an event's data lives):
+
+> "let's create a separate file that the readme and claude reads that points
+> to the git backed repo. this way you have the context of where this current
+> project's git repo is, but it's not fully baked into the context if other
+> people want to use it"

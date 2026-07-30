@@ -103,7 +103,12 @@ stale and GitHub answers **409**.
 whole notes format was designed around:
 
 1. Re-fetch the current remote `notes.csv`.
-2. `mergeNotes([remote, local])` — row-bind, dedupe by `id`, sort by `at`.
+2. `mergeNotes([remote, local], event.timezone)` — row-bind, dedupe by `id`,
+   sort by `at`. **Corrected, doc-audit 2026-07-30:** the real signature is
+   `mergeNotes(files, eventTimezone?, rowIdentity?)` — the timezone argument
+   is not optional in practice here. A row with no `tz` of its own resolves
+   against it, falling back to UTC when it is omitted, which misplaces any
+   such row. Pass the event's timezone through explicitly.
 3. `PUT` the union with the fresh `sha`.
 
 Two people editing the same event from different machines therefore converge

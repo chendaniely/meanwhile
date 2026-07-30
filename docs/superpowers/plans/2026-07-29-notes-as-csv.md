@@ -517,7 +517,7 @@ export function mergeNotes(
         return;
       }
       const note = result;
-      const fingerprint = `${note.at} ${note.text}`;
+      const fingerprint = `${note.at}\u0000${note.text}`;
       if (!note.id) {
         note.id = mintNoteId();
       } else if (seen.has(note.id)) {
@@ -587,7 +587,7 @@ import type { Person } from '../src/core/schema.ts';
 
 const PEOPLE: Person[] = [
   { id: 'pixel8', name: 'Priya', role: 'runner' },
-  { id: 'zflip4', name: 'Sam', clockOffset: 'PT-4S' },
+  { id: 'zflip4', name: 'Sam', clockOffset: '-PT4S' },
 ];
 
 describe('people.csv', () => {

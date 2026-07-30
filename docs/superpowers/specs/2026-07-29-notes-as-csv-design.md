@@ -244,6 +244,12 @@ google-pixel-8-pro,Priya,runner,,Google Pixel 8 Pro
 samsung-sm-f721w,Sam,,-PT4S,
 ```
 
+**Corrected, doc-audit 2026-07-30 — this example is now missing a column.**
+Written before the `schema`-column correction above landed, so it shows five
+headers. `PEOPLE_HEADERS` in `core/people-csv.ts` is six —
+`id,name,role,clock_offset,also_known_as,schema`, `schema` last — matching
+the earlier correction, not this block's own example.
+
 This is the fix for a gap the design above didn't anticipate: `name` is
 mutable (the whole point of "rename each lane to whoever was carrying it"),
 but `notes*.csv` refers to people by NAME, not `id` — deliberately, since an
@@ -340,6 +346,8 @@ only. A store-only (uncompressed) zip is about sixty lines — local file
 headers, a central directory, and CRC-32 — and CSVs are small enough that
 compression is pointless. **No dependency.** Consistent with the project
 hand-rolling EXIF, ISOBMFF and GPX parsing for the same reason.
+**Corrected, doc-audit 2026-07-30:** this was a pre-implementation estimate;
+the shipped `src/viewer/media/zip.ts` is 91 lines, not sixty.
 
 Import stays loose files, so no zip *reader* is needed: you unzip, edit in a
 spreadsheet, and drop the CSVs back in the folder.
@@ -360,7 +368,7 @@ mapping is part of the format, not an implementation detail:
 | Until (optional) | `duration` | Entered as an end time, stored as ISO-8601 elapsed. |
 | Whose | `people` | **Now multi-select.** See below. |
 | Written by | `author` | **New**, also multi-select. See below. |
-| — | `tz` | Written only when it differs from the event's timezone. |
+| — | `tz` | ~~Written only when it differs from the event's timezone.~~ **Corrected, 2026-07-30 — reversed at `:163-171` above: written unconditionally, on every row.** Blank-means-event's-zone looked free and was not — changing `event.timezone` afterwards silently moved every note while the zoned-EXIF photographs stayed put, with nothing on the row to say what was meant. `noteToRow` (`core/notes.ts`) now writes `tz` on every row it emits. |
 | — | `photo` | Filled only when captioning from the lightbox. |
 | — | `id` | Minted at creation. Never shown. |
 
@@ -440,7 +448,13 @@ layout without being asked.
   of metadata to populate"* — is a natural follow-on and gets its own spec. It
   depends on these formats existing. The constraint that will shape it: a
   static site can **read** from a repo but cannot write back, so saving means
-  downloading and committing yourself.
+  downloading and committing yourself. **Corrected, 2026-07-30 — that "own
+  spec" now exists** (`docs/superpowers/specs/2026-07-30-github-metadata-sync-design.md`,
+  approved) **and contradicts the write-back claim above.** A fine-grained PAT
+  scoped to the one repo, entered by the user and never in the manifest, lets
+  the site `PUT` straight to the GitHub Contents API — so saving CAN write
+  back directly, for anyone who has connected an account; the zip download
+  stays as the fallback for anyone who has not.
 - **Telling two people apart when they carry the same phone model.** Parked in
   `TODO.md` with what was researched.
 - **A `km` column.** The course converts time to position, so storing it would

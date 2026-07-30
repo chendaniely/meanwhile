@@ -64,7 +64,8 @@ log and a memoir, and it cannot be reconstructed afterwards.
 Two joins that silently failed now hold: names written in different Unicode
 normalisation forms match (`José` and `José` are visually identical and were
 not equal), and merging a saved copy of `notes.csv` with a pristine one no
-longer grows the note count — measured at 2 → 3 → 4 → 5 → 6 over five rounds.
+longer grows the note count — it used to, measured at 2 → 3 → 4 → 5 → 6 over
+five rounds before this fix; the same merge now holds at 2 every round.
 Minted ids never end in a digit, because a spreadsheet's fill handle
 increments a trailing number when a row is dragged.
 
@@ -72,6 +73,24 @@ Migration is pinned to a frozen copy of both files as they were written
 before any of this, asserted to produce the same instants, ids and text —
 then to repair themselves into the new shape on the first save without losing
 a thing.
+
+### `EVENT.md` — a per-copy pointer to where an event's data lives
+
+> "let's create a separate file that the readme and claude reads that points
+> to the git backed repo. this way you have the context of where this current
+> project's git repo is, but it's not fully baked into the context if other
+> people want to use it"
+
+meanwhile is a renderer and holds no event of its own, but one person's copy
+needs to remember which event they are on and where its written record is
+kept — the data repo's URL, the local photo folder, clock offsets worked out
+by hand. Putting that in `README.md` or `CLAUDE.md` directly would bake one
+owner's private data repo into the app everyone else clones.
+
+`EVENT.md` is gitignored and holds the real answers; `EVENT.example.md` is the
+committed template everyone else starts from. Nothing about the app depends on
+either file — absent, the app has no idea it exists, and you just open a
+folder as usual.
 
 ### A rename can no longer corrupt the record
 
@@ -128,7 +147,7 @@ project's existing rule for an ambiguous photo-caption match.
 
 Everything below shipped between 0.1.0 and this release. The headline is that
 notes and the people roster moved out of `manifest.json` into spreadsheet-
-editable CSV, that the whole codebase went through eight passes of
+editable CSV, that the whole codebase went through six passes of
 documentation and comment auditing, and that the site now deploys to GitHub
 Pages.
 

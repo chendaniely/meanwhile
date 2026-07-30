@@ -161,8 +161,21 @@ they export and re-load. Nothing server-side, consistent with the whole
 architecture.
 
 `Marker { label, at?, atDistance? }` **already exists in `schema.ts` and is
-already validated** — it is just never rendered. So this is mostly wiring,
-plus one schema addition:
+already validated**, and a marker WITH `at` already renders — `Swimlanes.tsx`
+maps `markerLines(manifest, range)` into a `.lanes__marker` vertical line at
+its wall-clock time. What is missing is narrower than "never rendered":
+
+- **`atDistance` markers do nothing.** `markerLines` reads `marker.at` only;
+  a marker placed by distance along the course (the common case for an
+  organiser's mile-number table) has no code path to a time or a lane
+  position at all.
+- **No map or elevation-profile rendering.** The swimlanes are the only view
+  that draws a marker today.
+- **No `crew` or `kind` fields yet** — see the schema addition below.
+- **No create-UI.** Nothing in the app writes a `Marker`; the only way one
+  gets into `manifest.json` today is by hand-editing the JSON.
+
+So this is still mostly wiring, plus one schema addition:
 
 ```ts
 interface Marker {
@@ -202,9 +215,13 @@ captions — they are author work, not metadata read from a file.
 - **Crew-accessible needs a non-colour encoding** — a different marker shape
   or a label — for the same reason map dots carry names. Do not encode it as
   colour alone.
-- **They make the swimlanes legible.** Vertical rules at each aid station
-  turn the lanes from "when people shot" into "who was where, when", which is
-  the closest thing to a headline this app has.
+- **They already make the swimlanes legible for a time-based marker.**
+  `Swimlanes.tsx` draws a vertical rule for any `Marker` with `at` set, which
+  already turns the lanes from "when people shot" into "who was where, when".
+  What is still missing is the same rule for a **distance-based** marker
+  (`atDistance`, the shape most aid-station tables actually arrive in — see
+  above), which needs the course spine to convert distance to time before it
+  can be placed on this axis at all.
 - An aid station visited twice on a lollipop course is two markers at two
   distances with one label. Do not assume labels are unique.
 
