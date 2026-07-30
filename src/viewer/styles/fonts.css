@@ -6,7 +6,7 @@
  * see src/viewer/map/basemaps.ts) are external and load unconditionally, and
  * an optional Strava embed iframe is external too, though only on a click.
  *
- * Latin subset only (~56KB total across four files). */
+ * Latin subset only (52,380 bytes total across four files, measured). */
 
 @font-face {
   font-family: 'Atkinson Hyperlegible';

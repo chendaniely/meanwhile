@@ -186,7 +186,9 @@ export function Feed({ manifest, items, onOpen, onActive, notes = [], captionByI
   if (moments.length === 0) {
     return (
       <p className="callout">
-        Nothing falls inside the current time range. Widen it above, or press Reset.
+        Nothing to show &mdash; either the time window is too narrow or every
+        lane is hidden. Widen the window above, press Reset, or turn lanes
+        back on in Swimlanes.
       </p>
     );
   }

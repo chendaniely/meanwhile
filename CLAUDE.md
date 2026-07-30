@@ -1115,7 +1115,7 @@ types from the plan rather than from context they do not have.
   unknown `schema` values with a legible error rather than a broken render.
 - App state is one serializable object, and the parts that matter are
   reflected in the URL.
-- All D3 usage stays confined to scale/axis math (`d3-scale`, `d3-time`).
+- All D3 usage stays confined to scale/axis math (`d3-scale`).
 - **Media never goes in git.** Four people across a 24-hour race is many GB of
   video, and git history retains every byte forever even after a delete.
 
@@ -1145,9 +1145,9 @@ Installed and why:
 | Package | Why |
 |---|---|
 | `react`, `react-dom` | the viewer |
-| `d3-scale`, `d3-time` | axis tick math only — no D3 selections, no D3 DOM |
+| `d3-scale` | axis tick math only (`scaleTime` in `Swimlanes.tsx`) — no D3 selections, no D3 DOM. `d3-time` was installed alongside it but never imported anywhere in `src/`, `tests/`, or `scripts/`; removed 2026-07-29 rather than left to rot as an unused dependency. |
 | `vite`, `@vitejs/plugin-react`, `typescript`, `vitest` | build and test |
-| `@types/react`, `@types/react-dom`, `@types/d3-*` | types for the above |
+| `@types/react`, `@types/react-dom`, `@types/d3-scale` | types for the above |
 | `jsdom` | **dev-only.** React lifecycle bugs can only be caught by mounting — the store was fine in isolation, its lifecycle was not, and that shipped a screen where every photo read "cannot display this file". See `tests/media-store-lifecycle.test.tsx`. Vitest still defaults to the `node` environment; files opt in with a `// @vitest-environment jsdom` docblock. |
 | `@types/node` | **dev-only, and confined to `tsconfig.node.json`.** The test suite reads files off disk and `vite.config.ts` reads `process.env`. `tsconfig.app.json` sets `"types": []` so it cannot leak into `src/` — that line is load-bearing. |
 | `leaflet`, `@types/leaflet` | **The map.** Chosen over MapLibre: MapLibre renders vector tiles, and every hosted vector-tile source worth using needs an API key, so it would have made the map *fail closed* without one. Leaflet draws raster tiles, and raster terrain sources exist that need no key at all — so the map works the instant you open the page. It is also ~42KB gzipped against MapLibre's ~200KB. **`leaflet` is the only viewer-side runtime dependency that touches the network**, and only for tiles. It stays out of `src/core/` — the purity test enforces that. |
@@ -1243,7 +1243,8 @@ colors fail WCAG AA on the dark ground. Do not "fix" these back:
 Orange `#F26522` passes unchanged at 5.9:1 and is the cursor accent.
 `--mw-fg-faint` is 4.1:1 and is **borders and decoration only, never text**.
 
-Atkinson Hyperlegible is **self-hosted** (`src/viewer/fonts/`, SIL OFL, ~56KB)
+Atkinson Hyperlegible is **self-hosted** (`src/viewer/fonts/`, SIL OFL, 52,380
+bytes across four files, measured)
 so the app shell itself makes zero external requests. That does not describe
 the whole page: the course view's map tiles (OpenTopoMap, Esri/ArcGIS, OSM,
 and optionally Thunderforest — see `src/viewer/map/basemaps.ts`) are external

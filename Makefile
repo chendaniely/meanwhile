@@ -37,7 +37,7 @@ ifndef DIR
 endif
 	node scripts/inspect-media.ts "$(DIR)"
 
-check: typecheck test ## Everything CI would run
+check: typecheck test ## Type-check and test; CI also runs a clean install and build
 
 clean: ## Remove build output and installed packages
 	rm -rf dist node_modules

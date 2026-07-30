@@ -160,7 +160,7 @@ timestamp**, a route rather than an activity. Untimed tracks became a supported
 mode rather than a parse failure, and meanwhile does not invent the missing
 times.
 
-> "sometimes as the runner, you remember moments from the elevation / course.
+> "sometimes as the runner, you rememer moments from the elevation / course.
 > especially if there are no photos in that area"
 
 Clicking the course writes a note there, timed from the track when it has one

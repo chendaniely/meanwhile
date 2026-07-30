@@ -93,20 +93,24 @@ export function FilePicker({
         {label}
       </button>
       {/* The extra extensions in `accept` are load-bearing. With only
-          `image/*,video/*` the file dialog greys out a .gpx or a manifest.json,
-          so the sole route into the course view was opening a whole folder —
-          and anyone handed a bare track file had no way in at all. */}
+          `image/*,video/*` the file dialog greys out a .gpx, a manifest.json,
+          or a notes.csv/people.csv — the very files Save produces — so the
+          sole route into the course view was opening a whole folder, and
+          anyone handed a bare track or CSV had no way in at all. */}
       <input
         ref={inputRef}
         type="file"
         multiple
-        accept="image/*,video/*,.gpx,.tcx,.json"
+        accept="image/*,video/*,.gpx,.tcx,.json,.csv"
         hidden
         data-testid="file-input"
         onChange={(event) => {
           const files = filesFromInput(event.target.files);
-          if (files.length === 0) onError('None of those are photos, videos, a GPX/TCX track, or a manifest.json.');
-          else onPicked(files);
+          if (files.length === 0) {
+            onError(
+              'None of those are photos, videos, a GPX/TCX track, a manifest.json, or a notes/people CSV.',
+            );
+          } else onPicked(files);
           event.target.value = '';
         }}
       />

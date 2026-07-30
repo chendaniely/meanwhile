@@ -1,8 +1,9 @@
 {
   "$comment": [
-    "Tooling code: the test suite and the Vite config. These legitimately run",
-    "on Node, so they get Node types. Nothing under src/ is listed here,",
-    "though TypeScript follows imports into it.",
+    "Tooling code: the test suite, the scripts/ CLI helpers (e.g.",
+    "inspect-media.ts), and the Vite config. These legitimately run on Node,",
+    "so they get Node types. Nothing under src/ is listed here, though",
+    "TypeScript follows imports into it.",
     "",
     "DOM is in `lib`, and `jsx` is set, because tests exercise browser modules",
     "and render React — the media store's lifecycle can only be checked by",

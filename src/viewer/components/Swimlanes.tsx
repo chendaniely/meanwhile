@@ -173,6 +173,25 @@ export function Swimlanes({
     return () => node.removeEventListener('wheel', onWheel);
   }, [range, bounds, onRange]);
 
+  /**
+   * Escape releases the pin, same as the chip in the strip or clicking the
+   * lanes again.
+   *
+   * The track is `role="presentation"` with no `tabIndex`, so it can never
+   * hold focus and a `keydown` handler on the div itself would never fire.
+   * Bound on `document` instead — the same pattern the lightbox uses for its
+   * own Escape-to-close — and only while pinned, so it is not listening for
+   * no reason the rest of the time.
+   */
+  useEffect(() => {
+    if (!locked) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setLocked(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [locked]);
+
   const at = scrub ?? state.cursor;
   const radius = momentRadius(total);
 
@@ -255,11 +274,10 @@ export function Swimlanes({
             setScrub(next);
             onCursor(next);
             // A toggle, not a latch: clicking the lanes again lets go, which
-            // is the same thing the chip in the strip does.
+            // is the same thing the chip in the strip does. Escape also lets
+            // go — see the `useEffect` above; this div cannot hold focus so
+            // it cannot catch that key itself.
             setLocked((was) => !was);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') setLocked(false);
           }}
           role="presentation"
         >

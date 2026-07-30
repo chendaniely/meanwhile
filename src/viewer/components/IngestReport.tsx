@@ -56,7 +56,7 @@ export function IngestReport({ manifest, grouping, range,
   return (
     <section className="report">
       <div className="report__stats">
-        <Stat label={range ? 'files in window' : 'files'} value={summary.total.toLocaleString()} />
+        <Stat label="files" value={summary.total.toLocaleString()} />
         <Stat label="on the timeline" value={summary.placed.toLocaleString()} />
         <Stat
           label="unplaced"

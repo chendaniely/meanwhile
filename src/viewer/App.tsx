@@ -968,7 +968,8 @@ export function App() {
             {stage.progress.current && ` · ${stage.progress.current}`}
           </p>
           <p className="app__hint">
-            Only metadata is read &mdash; a few kilobytes per file, not the whole photo.
+            Only metadata is read &mdash; about 115KB per file on average
+            (measured on a real 2GB folder), not the whole photo.
           </p>
         </main>
       )}
@@ -1010,8 +1011,8 @@ export function App() {
                 time-and-distance data, so there is no elevation profile and no map.
                 Those need a <strong>GPX export</strong> from the
                 activity (the &hellip; menu &rarr; Export GPX), which works the same from
-                Garmin or COROS. Camera clock differences are corrected by hand, above,
-                whichever course option you use.
+                Garmin or COROS. Camera clock differences are corrected by hand, in{' '}
+                <code>people.csv</code>, whichever course option you use.
               </p>
 
               <IngestReport
@@ -1060,9 +1061,11 @@ export function App() {
           {stage.importedFrom && (
             <p className="callout">
               Loaded your saved work from <strong>{stage.importedFrom}</strong> &mdash;
-              names, captions, and hand-placed times came back with it. A
-              hand-placed time stays exactly as you set it; every automatic
-              timestamp is still re-read fresh from the file itself.
+              names and hand-placed times came back with it. Notes and
+              captions live in notes.csv now, and load the same way when
+              it&rsquo;s in the folder alongside it. A hand-placed time stays
+              exactly as you set it; every automatic timestamp is still
+              re-read fresh from the file itself.
             </p>
           )}
 
