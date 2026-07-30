@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { legacyNoteToNote, migrateLegacyNotes } from '../src/viewer/media/ingest.ts';
+import { legacyNoteToNote, manifestForSave, migrateLegacyNotes } from '../src/viewer/media/ingest.ts';
 import type { Item, Manifest, Note as LegacyNote, Person } from '../src/core/schema.ts';
 import { SCHEMA_VERSION } from '../src/core/schema.ts';
 import { parseDuration } from '../src/core/time.ts';
@@ -159,5 +159,107 @@ describe('migrateLegacyNotes', () => {
 
   it('is empty for a manifest with neither notes nor captions', () => {
     expect(migrateLegacyNotes(baseManifest())).toEqual([]);
+  });
+});
+
+describe('manifestForSave', () => {
+  /**
+   * The writer half of the notes-as-CSV migration: `notes[]` and
+   * `items[].note` are legacy fields the VALIDATOR still accepts (so an old
+   * manifest still loads), but this is the one place that has to stop
+   * WRITING them, or a saved file would carry the same prose in two places —
+   * silent duplication on the next load, not a crash, which is exactly the
+   * kind of regression `make check` would otherwise wave through.
+   */
+  const baseManifest = (over: Partial<Manifest> = {}): Manifest => ({
+    schema: SCHEMA_VERSION,
+    event: { title: 'Race', timezone: 'UTC' },
+    people: [{ id: 'p', name: 'Priya' }],
+    items: [],
+    ...over,
+  });
+
+  it('strips manifest.notes entirely — the key itself is gone, not emptied', () => {
+    const manifest = baseManifest({
+      notes: [{ id: 'n', at: '2026-07-25T09:00:00Z', text: 'wrong turn' }],
+    });
+    const saved = manifestForSave(manifest);
+    // Object.hasOwn, not a truthiness check: `notes: []` or `notes: undefined`
+    // would both read falsy but are not the same claim as "no such key".
+    expect(Object.hasOwn(saved, 'notes')).toBe(false);
+  });
+
+  it('strips note from every item that carries one', () => {
+    const manifest = baseManifest({
+      items: [
+        {
+          id: 'a.jpg', person: 'p', type: 'photo', src: 'a.jpg',
+          timeSource: 'exif-offset', at: '2026-07-25T09:00:00Z', note: 'the buckle',
+        } as Item,
+        {
+          id: 'b.jpg', person: 'p', type: 'photo', src: 'b.jpg',
+          timeSource: 'exif-offset', at: '2026-07-25T09:05:00Z', note: 'the aid station',
+        } as Item,
+      ],
+    });
+    const saved = manifestForSave(manifest);
+    expect(saved.items).toHaveLength(2);
+    for (const item of saved.items) {
+      expect(Object.hasOwn(item, 'note')).toBe(false);
+    }
+  });
+
+  it('leaves an item with no note untouched, and does not add the key', () => {
+    const manifest = baseManifest({
+      items: [
+        {
+          id: 'a.jpg', person: 'p', type: 'photo', src: 'a.jpg',
+          timeSource: 'exif-offset', at: '2026-07-25T09:00:00Z',
+        } as Item,
+      ],
+    });
+    const saved = manifestForSave(manifest);
+    expect(Object.hasOwn(saved.items[0] as object, 'note')).toBe(false);
+    expect(saved.items[0]).toEqual(manifest.items[0]);
+  });
+
+  it('carries everything else through unchanged — event, people, course, markers', () => {
+    const manifest = baseManifest({
+      course: { kind: 'gpx', src: 'race.gpx' },
+      markers: [{ label: 'Aid 3', atDistance: 42_000 }],
+      items: [
+        {
+          id: 'a.jpg', person: 'p', type: 'photo', src: 'a.jpg',
+          timeSource: 'exif-offset', at: '2026-07-25T09:00:00Z', note: 'the buckle',
+          width: 4000, height: 3000, gps: [45.5, -111.2],
+        } as Item,
+      ],
+    });
+    const saved = manifestForSave(manifest);
+    expect(saved.schema).toBe(manifest.schema);
+    expect(saved.event).toEqual(manifest.event);
+    expect(saved.people).toEqual(manifest.people);
+    expect(saved.course).toEqual(manifest.course);
+    expect(saved.markers).toEqual(manifest.markers);
+    // Everything on the item besides `note` rides along untouched.
+    const { note: _dropped, ...restOfItem } = manifest.items[0] as Item;
+    expect(saved.items[0]).toEqual(restOfItem);
+  });
+
+  it('does not mutate its input', () => {
+    const manifest = baseManifest({
+      notes: [{ id: 'n', at: '2026-07-25T09:00:00Z', text: 'wrong turn' }],
+      items: [
+        {
+          id: 'a.jpg', person: 'p', type: 'photo', src: 'a.jpg',
+          timeSource: 'exif-offset', at: '2026-07-25T09:00:00Z', note: 'the buckle',
+        } as Item,
+      ],
+    });
+    manifestForSave(manifest);
+    expect(Object.hasOwn(manifest, 'notes')).toBe(true);
+    expect(manifest.notes).toHaveLength(1);
+    expect(Object.hasOwn(manifest.items[0] as object, 'note')).toBe(true);
+    expect((manifest.items[0] as Item).note).toBe('the buckle');
   });
 });

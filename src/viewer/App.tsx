@@ -707,9 +707,9 @@ export function App() {
    * `notes[]` and `items[].note`, which is the writer half of "the validator
    * still reads them, but nothing this app saves carries them again."
    *
-   * Follows `downloadManifest`'s own pattern for the trigger — an anchor
-   * click on an object URL, revoked immediately after — just aimed at a zip
-   * Blob instead of a JSON one.
+   * The trigger is the standard hidden-anchor pattern: an anchor click on an
+   * object URL, revoked immediately after — here aimed at a zip Blob rather
+   * than a JSON one.
    */
   const saveEvent = () => {
     if (stage.name !== 'loaded') return;

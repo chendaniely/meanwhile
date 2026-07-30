@@ -110,6 +110,9 @@ export function MediaTile({ item, color, caption, note, onOpen, fit = 'aspect' }
 
   const aspect = displayAspect(item);
   const label = `${item.type === 'video' ? 'Play' : 'Open'} ${item.src.slice(item.src.lastIndexOf('/') + 1)}`;
+  // Folded into the OPEN button's own name rather than living on a second,
+  // separately-focusable element — see the comment on that button below.
+  const openLabel = note ? `${label} — note: ${note}` : label;
 
   return (
     <figure className="tile" ref={ref}>
@@ -136,22 +139,34 @@ export function MediaTile({ item, color, caption, note, onOpen, fit = 'aspect' }
         {caption && <figcaption className="tile__caption mw-mono">{caption}</figcaption>}
         {color && <span className="tile__lane" style={{ background: color }} aria-hidden="true" />}
 
-        {/* One hit target covering the whole tile, added last so it sits above
-            the caption and badges. Undecodable items open too — the full-size
-            view explains what happened and still shows the metadata. */}
-        {onOpen && (
-          <button type="button" className="tile__open" onClick={onOpen} aria-label={label} />
-        )}
-
-        {/* After the open button in DOM order — on top of it, on purpose —
-            so the glyph itself is what receives the hover and shows the
-            caption via its native title tooltip. A photo with a comment was
-            otherwise invisible until you opened the lightbox; this is the
-            discoverability fix. */}
+        {/* Purely decorative — `pointer-events: none` in CSS keeps it out of
+            hit-testing, so a click here still reaches the open button
+            underneath instead of landing on a dead zone. Its hover text and
+            accessible name live on that button instead (see below), which is
+            what makes this the discoverability fix rather than a second,
+            separately-tabbable control: a keyboard user tabbing to the tile
+            hears the caption without a second tab stop per photo. */}
         {note && (
-          <span className="tile__note-glyph" title={note} aria-label={`Note: ${note}`}>
+          <span className="tile__note-glyph" aria-hidden="true">
             💬
           </span>
+        )}
+
+        {/* One hit target covering the whole tile, added last so it sits above
+            the caption and badges. Undecodable items open too — the full-size
+            view explains what happened and still shows the metadata. When
+            there's a note, this is also the ONE element that carries it —
+            `title` for a mouse hover, and `aria-label` for both a screen
+            reader and the same hover-free discovery a keyboard user gets from
+            everything else on this tile. */}
+        {onOpen && (
+          <button
+            type="button"
+            className="tile__open"
+            onClick={onOpen}
+            aria-label={openLabel}
+            {...(note ? { title: note } : {})}
+          />
         )}
       </div>
     </figure>

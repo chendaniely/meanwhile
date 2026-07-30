@@ -809,7 +809,14 @@
 
 /* The discoverability fix: a caption used to be invisible unless the
    lightbox was open. Top-left, clear of the duration badge and play glyph,
-   which both sit bottom/centre. */
+   which both sit bottom/centre.
+
+   `pointer-events: none` is load-bearing, not decoration: this badge sits on
+   top of `.tile__open`, which covers the whole tile, and without this a
+   click landing on the badge's own 22px circle would do nothing instead of
+   opening the lightbox like everywhere else on the tile. The hover text and
+   accessible name live on `.tile__open` itself now (see MediaTile.tsx), so
+   nothing is lost by making this element inert. */
 .tile__note-glyph {
   position: absolute;
   top: var(--mw-space-2);
@@ -824,7 +831,7 @@
   color: var(--brand-warm-white);
   background: rgb(23 21 18 / 70%);
   border-radius: 50%;
-  cursor: default;
+  pointer-events: none;
 }
 
 /* ---- lightbox ---------------------------------------------------------- */
