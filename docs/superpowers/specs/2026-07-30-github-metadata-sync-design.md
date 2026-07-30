@@ -111,8 +111,14 @@ rather than collide, which is the property the opaque-`id` decision bought.
 Retry once; if it 409s again, report it plainly rather than looping.
 
 `people.csv` and `manifest.json` merge less naturally — the roster is a set
-keyed by `id` (same union-by-id rule), and the manifest is derived data where
-last-write-wins is acceptable because it can be regenerated from the photos.
+keyed by `id` (same union-by-id rule). Last-write-wins on the manifest is
+acceptable only because a save is a full rewrite of a file one person is
+authoring at a time — **not** because it can be regenerated. That was claimed
+in an earlier draft of this document and it is false: a re-ingest does not
+reproduce hand-placed times, the crop, markers, or the course reference. See
+CLAUDE.md, "The manifest is the contract". If two people ever author manifests
+concurrently, last-write-wins silently discards one of them and this needs
+revisiting.
 
 Each save is **one commit per file that changed**, with a message naming the
 event and the count (`meanwhile: 3 notes, 1 person — Cascade Crest 100`).

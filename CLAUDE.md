@@ -1076,6 +1076,32 @@ Hand-editable JSON, versioned (`"schema": 1`), carrying the event, the
 derived items, markers, and the course. It is both the interface between the
 two artifacts and the unit of sharing.
 
+**It is NOT fully regenerable from the photos, and saying otherwise has
+already caused harm.** *(format review, 2026-07-30)* The natural framing —
+"the CSVs are irreplaceable, the manifest is derived, so only the CSVs need
+version control" — is false, and a reviewer verified exactly what a re-ingest
+does not reproduce:
+
+- **every `timeSource: 'manual'` placement** — the only thing anchoring a
+  photo with no usable timestamp, and carried forward solely via the manifest
+  itself;
+- **`event.range`** — the crop, which is authoring intent; absent, ingest
+  recomputes a *different* answer from `densestWindow()`;
+- **`markers[]`** — hand-typed aid stations; nothing regenerates them;
+- **`course`** — including a `strava-embed` URL whose share code cannot be
+  derived from anything;
+- **`event.title` / `event.timezone`**, and `person.color`.
+
+So `manifest.json` belongs under version control **alongside** the CSVs, not
+treated as scratch. It is *partly* derived, which is a different claim from
+derived, and the difference is somebody's crop and every photo they placed by
+hand.
+
+Related and verified in the same review: **a folder reorganisation orphans
+every manual placement**, because carried-forward items are matched by `id`
+and `id` is the relative path. Notes survive a reorg — they join photos by
+basename — which is precisely why pulling them out of the manifest was right.
+
 **Notes and the people roster are no longer what it carries for authorship.**
 *(notes-as-csv)* Authored prose now lives in `notes*.csv`; the roster —
 names, roles, `clockOffset` — lives in `people.csv`. The validator still
