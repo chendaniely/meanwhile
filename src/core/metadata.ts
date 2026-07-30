@@ -82,13 +82,6 @@ export function extensionOf(filename: string): string {
 }
 
 /**
- * A GPS track exported from a watch: the course spine.
- *
- * Not media, so it is deliberately not part of `classify` — but the folder
- * walker must pick it up, because dropping the file in with the photos is far
- * kinder than asking for it separately.
- */
-/**
  * A manifest sitting in the folder alongside the media.
  *
  * Dropping the exported file back in with the photos is how captions, names,
@@ -99,6 +92,13 @@ export function isManifestFile(filename: string): boolean {
   return /(^|\/)manifest\.json$/i.test(filename) || /\.manifest\.json$/i.test(filename);
 }
 
+/**
+ * A GPS track exported from a watch: the course spine.
+ *
+ * Not media, so it is deliberately not part of `classify` — but the folder
+ * walker must pick it up, because dropping the file in with the photos is far
+ * kinder than asking for it separately.
+ */
 export function isTrackFile(filename: string): boolean {
   const ext = extensionOf(filename);
   return ext === 'gpx' || ext === 'tcx';

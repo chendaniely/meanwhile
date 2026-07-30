@@ -35,7 +35,12 @@ export type MediaKind = 'photo' | 'video';
  *      author; neither is affected by a camera's clock being wrong. See
  *      `appliesClockOffset` in ./time.ts.
  *
- * Ordered most to least trustworthy.
+ * The order below is a logical grouping — satellite fix, then shutter time
+ * (zoned, then naive), then filename, then the video-header fallback, then
+ * manual, then none — NOT a trust ranking. In particular `gps` sits first
+ * here but ranks below every shutter source (see its own comment for why).
+ * The actual most-to-least-trustworthy order lives in `TIME_SOURCE_RANK`
+ * below.
  */
 export type TimeSource =
   /**

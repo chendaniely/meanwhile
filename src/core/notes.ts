@@ -18,9 +18,11 @@
  * `year` absent is what selects the legacy path; `date`+`time` is tried
  * before a bare `at`.
  *
- * Pure: only `./time.ts` and ECMAScript/WHATWG globals (`Intl`, `Date`,
- * `Number`). No CSV text is parsed or written here — that is `csv.ts`'s job.
- * This module only knows how to read and write ONE row.
+ * Pure: only `./time.ts`, `./csv.ts`, and ECMAScript/WHATWG globals (`Intl`,
+ * `Date`, `Number`). Row-at-a-time conversion (`rowToNote`, `noteToRow`)
+ * knows nothing about CSV text — that's `csv.ts`'s job. `mergeNotes` is the
+ * exception: it takes whole files and calls `parseCsv` on each before
+ * reducing them to a deduplicated, time-sorted note list.
  */
 
 import { formatDuration, hasZone, parseDuration, parseZonedInstant, zonedToInstant } from './time.ts';

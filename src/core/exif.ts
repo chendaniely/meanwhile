@@ -1,11 +1,12 @@
 /**
  * EXIF: a narrow TIFF/IFD walker.
  *
- * Deliberately not a general EXIF library. It reads six things — when the
+ * Deliberately not a general EXIF library. It reads seven things — when the
  * shutter fired, what UTC offset the camera thought it was in, where on earth
- * it was, what time the satellites said it was, which way is up, and how big
- * the image is — because those are the only fields a timeline needs. That
- * scope is what keeps `src/core/` dependency-free.
+ * it was, what time the satellites said it was, which way is up, how big the
+ * image is, and which device took it (make and model) — because those are
+ * the only fields a timeline needs, plus make/model, which device-based
+ * grouping depends on. That scope is what keeps `src/core/` dependency-free.
  *
  * Everything returns null rather than throwing. A camera that writes
  * malformed EXIF should cost you one item in the unplaced tray, not the

@@ -1,7 +1,7 @@
 /**
  * One serializable state object, and its round trip through a URL.
  *
- * The views are four projections of THIS, not four features. Switching view
+ * The views are three projections of THIS, not three features. Switching view
  * changes `view` and nothing else, which is what makes the cursor survive the
  * switch — scrub to 06:12 in the lanes, flip to the grid, and you are looking
  * at 06:12. That shared cursor is the difference between goggles and four

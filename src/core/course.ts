@@ -345,8 +345,11 @@ function build(raw: RawSample[]): Course {
 /**
  * Index of the last sample at or before `value`, by binary search.
  *
- * Only ever called with `'at'` on a timed course, so the non-null assertions
- * on that key hold — `atTime` refuses an untimed course before reaching here.
+ * Called with `'at'` from `atTime`, which is only reachable on a timed
+ * course (it refuses an untimed one before reaching here), so the non-null
+ * assertions on that key hold there. Also called with `'distance'` from
+ * `atDistance`, which has no such guard — distance is meaningful whether or
+ * not the course is timed.
  */
 function indexBefore(samples: readonly Sample[], value: number, key: 'at' | 'distance'): number {
   const keyOf = (i: number) => (samples[i] as Sample)[key] as number;

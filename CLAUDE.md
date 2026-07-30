@@ -236,9 +236,10 @@ they were run through the dataviz skill's validator against this app's exact
 surface (`#171512`) and pass the lightness band, chroma floor, CVD
 separation, normal-vision floor, and contrast checks.
 
-```
-node scripts/validate_palette.js "<the eight>" --mode dark --surface "#171512"
-```
+That validator is an external tool the dataviz skill provides — there is no
+`scripts/validate_palette.js` in this repository. Re-running the check means
+invoking the skill's validator against the eight hues in `LANE_COLORS`, mode
+dark, surface `#171512`.
 
 Three rules that must not be broken:
 

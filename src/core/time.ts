@@ -202,7 +202,6 @@ export interface ResolvedTime {
   /** Corrected epoch milliseconds, or null if the item cannot be placed. */
   instant: Instant | null;
   source: TimeSource;
-  /** True when the instant came from satellites or from the author. */
   /**
    * True when the timestamp did NOT come from the device's own clock, so no
    * `clockOffset` was applied. Provenance, not accuracy — a GPS time is

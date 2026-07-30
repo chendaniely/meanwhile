@@ -25,8 +25,9 @@
 import type { Person, PersonId } from './schema.ts';
 
 /**
- * Validated for the dark surface #171512 with:
- *   validate_palette.js "<these>" --mode dark --surface "#171512"
+ * Validated against this app's dark surface, #171512, using the dataviz
+ * skill's palette validator — an external tool, not a script that lives in
+ * this repo, so don't go looking for `scripts/validate_palette.js`.
  * Worst adjacent pair: yellow-aqua, ΔE 8.4 protan. All checks PASS.
  */
 export const LANE_COLORS: readonly string[] = [
