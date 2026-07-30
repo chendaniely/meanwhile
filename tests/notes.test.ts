@@ -6,6 +6,7 @@ import {
   mergeNotes,
   mintNoteId,
   noteHeadersFor,
+  noteRowsForSave,
   noteToRow,
   partitionDeleted,
   resolveNotePhotos,
@@ -948,5 +949,173 @@ describe('resolveNotePhotos', () => {
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('ghost.jpg');
     expect(problems[0]).toContain('note "n"');
+  });
+});
+
+/**
+ * A row this build refuses to interpret must still be in the file after a
+ * Save. Reporting a row and deleting it were the same event until this
+ * existed — which made the `schema` column's own advice ("update the site, or
+ * clear the schema cell") describe a repair for data one Save had already
+ * destroyed.
+ */
+describe('rows this build cannot read are kept, not dropped', () => {
+  const HEADER =
+    'id,year,month,day,hour,minute,duration,tz,utc_offset_min,people,photo,author,text,written,deleted,schema';
+
+  it('hands back the raw cells of a row written by a newer build', () => {
+    const text = [
+      HEADER,
+      'n_ok,2026,7,25,10,0,,UTC,0,,,,readable,,,',
+      'n_future,2026,7,25,11,0,,UTC,0,,,,from a newer build,,,2',
+    ].join('\n');
+    const { notes, preserved, problems } = mergeNotes([{ name: 'notes.csv', text }], 'UTC');
+
+    expect(notes.map((n) => n.id)).toEqual(['n_ok']);
+    expect(preserved).toHaveLength(1);
+    expect(preserved[0]?.file).toBe('notes.csv');
+    expect(preserved[0]?.line).toBe(3);
+    expect(preserved[0]?.cells['id']).toBe('n_future');
+    expect(preserved[0]?.cells['schema']).toBe('2');
+    expect(preserved[0]?.cells['text']).toBe('from a newer build');
+    // The message must not read as an assurance while the row is on its way
+    // to being deleted, so it says outright that the row survives.
+    expect(problems[0]).toContain('kept exactly as it is');
+  });
+
+  it('keeps a row refused for an ordinary mistake too, not just a future schema', () => {
+    // Reachable with no version gap at all: a bad day, no text, an
+    // unreadable duration. All of them dropped the row before this.
+    const text = [
+      HEADER,
+      'n_day,2026,7,32,12,0,,UTC,0,,,,bad day,,,',
+      'n_text,2026,7,25,12,0,,UTC,0,,,,,,,',
+      'n_dur,2026,7,25,13,0,not-a-duration,UTC,0,,,,x,,,',
+    ].join('\n');
+    const { notes, preserved } = mergeNotes([{ name: 'notes.csv', text }], 'UTC');
+    expect(notes).toHaveLength(0);
+    expect(preserved.map((p) => p.cells['id'])).toEqual(['n_day', 'n_text', 'n_dur']);
+  });
+
+  it('reports no preserved rows when every row reads cleanly', () => {
+    const text = [HEADER, 'n_ok,2026,7,25,10,0,,UTC,0,,,,readable,,,'].join('\n');
+    expect(mergeNotes([{ name: 'notes.csv', text }], 'UTC').preserved).toEqual([]);
+  });
+});
+
+describe('noteRowsForSave', () => {
+  const note = (over: Partial<Note>): Note => ({
+    id: 'n', at: '2026-07-25T12:00:00.000Z', people: [], author: [], text: 'x', ...over,
+  });
+  const preserved = (cells: Record<string, string>) => ({ file: 'notes.csv', line: 2, cells });
+
+  it('slots a preserved row into its place in time, not at the end', () => {
+    // Sweeping it to the bottom would detach it from the hour of the race it
+    // belongs to, which is how nobody ever connects it back up again.
+    const rows = noteRowsForSave(
+      [note({ id: 'n_early', at: '2026-07-25T09:00:00.000Z' }),
+       note({ id: 'n_late', at: '2026-07-25T23:00:00.000Z' })],
+      [preserved({ id: 'n_mid', year: '2026', month: '7', day: '25', hour: '12', minute: '0' })],
+      'UTC',
+    );
+    expect(rows.map((r) => r['id'])).toEqual(['n_early', 'n_mid', 'n_late']);
+  });
+
+  it('places a preserved row by a rolled-over day rather than giving up on it', () => {
+    // `day` 32 is exactly why the row was refused, so it is not a date — but
+    // it still says "the end of July", which is enough to sort by.
+    const rows = noteRowsForSave(
+      [note({ id: 'n_aug', at: '2026-08-02T00:00:00.000Z' }),
+       note({ id: 'n_jul', at: '2026-07-20T00:00:00.000Z' })],
+      [preserved({ id: 'n_32', year: '2026', month: '7', day: '32', hour: '0', minute: '0' })],
+      'UTC',
+    );
+    expect(rows.map((r) => r['id'])).toEqual(['n_jul', 'n_32', 'n_aug']);
+  });
+
+  it('puts a row with nothing to date it by last, not at 1970', () => {
+    const rows = noteRowsForSave(
+      [note({ id: 'n_a', at: '2026-07-25T09:00:00.000Z' })],
+      [preserved({ id: 'n_undated', text: 'no time columns at all' })],
+      'UTC',
+    );
+    expect(rows.map((r) => r['id'])).toEqual(['n_a', 'n_undated']);
+  });
+
+  it('reads a legacy at cell for the sort key when there are no integers', () => {
+    const rows = noteRowsForSave(
+      [note({ id: 'n_late', at: '2026-07-25T23:00:00.000Z' })],
+      [preserved({ id: 'n_at', at: '2026-07-25T01:00:00Z' })],
+      'UTC',
+    );
+    expect(rows.map((r) => r['id'])).toEqual(['n_at', 'n_late']);
+  });
+
+  it('writes the preserved cells through untouched, schema included', () => {
+    const rows = noteRowsForSave(
+      [],
+      [preserved({ id: 'n_f', year: '2026', month: '7', day: '25', hour: '1', minute: '0', schema: '9' })],
+      'UTC',
+    );
+    expect(rows[0]?.['schema']).toBe('9');
+  });
+});
+
+/**
+ * A zone ABBREVIATION is the obvious thing for a person to type, and it is
+ * not an IANA zone name. The five-integer path has always resolved through
+ * the zone and so refused one; the legacy `at` path carried it straight
+ * through unvalidated, and `noteToRow` then threw a bare `RangeError` out of
+ * the Save button — no file, no message, and the session's writing unsaved.
+ */
+describe('a timezone this build cannot resolve', () => {
+  it('is refused on the legacy at path, in words naming what to write instead', () => {
+    const result = rowToNote({ id: 'n_1', at: '2026-07-25T10:00:00Z', tz: 'MDT', text: 'hello' });
+    expect('error' in result).toBe(true);
+    const { error } = result as { error: string };
+    expect(error).toContain('"MDT"');
+    expect(error).toContain('America/Denver');
+  });
+
+  it('is refused even when the at value carried its own offset', () => {
+    // The instant does not need the zone here — but `noteToRow` writes the
+    // row back THROUGH it, so an unusable `tz` is never a harmless spare cell.
+    const result = rowToNote({ id: 'n_1', at: '2026-07-25T10:00:00-06:00', tz: 'MDT', text: 'x' });
+    expect('error' in result).toBe(true);
+  });
+
+  it('leaves the abbreviations ICU really does know alone', () => {
+    // Not every abbreviation is unusable: `EST`, `MST`, `CST` and `PST` are
+    // real tzdata names (or ICU aliases for them) and resolve perfectly well.
+    // The check has to be "can this be resolved", not "does it look like an
+    // abbreviation" — refusing by shape would reject four working zones.
+    for (const tz of ['EST', 'MST', 'CST', 'PST']) {
+      const result = rowToNote({ id: 'n_1', at: '2026-07-25T10:00:00Z', tz, text: 'x' });
+      expect('error' in result).toBe(false);
+    }
+  });
+
+  it('still accepts a real zone on that path', () => {
+    const result = rowToNote({ id: 'n_1', at: '2026-07-25T10:00:00Z', tz: ZONE, text: 'hello' });
+    expect('error' in result).toBe(false);
+    expect((result as Note).tz).toBe(ZONE);
+  });
+
+  it('makes noteToRow throw a legible Error rather than a bare RangeError', () => {
+    const note: Note = {
+      id: 'n_1', at: '2026-07-25T10:00:00.000Z', tz: 'MDT', people: [], author: [], text: 'x',
+    };
+    expect(() => noteToRow(note, 'UTC')).toThrow(/note "n_1"/);
+    expect(() => noteToRow(note, 'UTC')).toThrow(/"MDT"/);
+    // Not the raw Intl wording, which names no note and tells nobody what to
+    // do about it.
+    expect(() => noteToRow(note, 'UTC')).not.toThrow(/Invalid time zone specified/);
+  });
+
+  it('throws for an unusable EVENT zone too, rather than writing the wrong hour', () => {
+    const note: Note = {
+      id: 'n_2', at: '2026-07-25T10:00:00.000Z', people: [], author: [], text: 'x',
+    };
+    expect(() => noteToRow(note, 'Nowhere/Nothing')).toThrow(/Nowhere\/Nothing/);
   });
 });

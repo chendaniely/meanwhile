@@ -4,7 +4,7 @@
 
 As of 2026-07-30 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **687 tests pass** (`make check`).
+the race. **735 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -1149,6 +1149,44 @@ repairs the shape while saying the same thing. **Do not regenerate it:** a
 test that rebuilds its own input cannot catch a reader and a writer drifting
 together.
 
+### Refusing to READ a row is not permission to DELETE it *(pre-release gate)*
+
+The `schema` column shipped so a row written by a newer build would be
+refused rather than misread. Executed end to end, refusing it also **erased**
+it: the reader dropped the row, the writer only ever wrote the rows that
+parsed, and one Save later the row was off disk. The message it printed —
+*"update the site, or clear the schema cell"* — described a repair for data
+that no longer existed. It was reachable with no future schema at all: an
+unreadable date, a blank text cell or a bad duration did the same, in both
+`notes*.csv` and `people.csv`, where losing a roster row loses that person's
+`clock_offset` and therefore moves every photo they took.
+
+**A row this build cannot interpret now survives the round trip verbatim.**
+`PreservedRow` (`src/core/csv.ts`) carries the raw cells, the file and the
+line; `mergeNotes` and `parsePeopleCsv` collect them; `noteRowsForSave` and
+`formatPeopleCsv` write them back. Three things that are not incidental:
+
+- **A preserved note keeps its place in time**, sorted by a deliberately
+  loose reading of its own cells (`day` 32 rolls into August, which is wrong
+  as a date and right as a sort key). A file is read in order, and a row
+  quarantined at the bottom is one nobody reconnects to the hour it belongs
+  to. A row with nothing to date it by goes last, after everything datable.
+  A preserved ROSTER row goes after the roster instead — a roster has no
+  chronology, and the bottom is where someone repairing the file will look.
+- **It is not a note.** Preserved rows never enter the `Note[]` list, so
+  nothing shows them, places them on a lane, or counts them in the digest.
+- **Its own columns come too.** `preservedHeaders` adds them, because a newer
+  build is exactly the thing likely to have added a column, and dropping it
+  would defeat the preservation. The one thing NOT byte-identical is Unicode
+  normalisation: `formatCsv` writes NFC, as it does for every other cell.
+
+The fallback considered and not taken was refusing to save at all. Preserving
+is strictly better: it needs no decision from the author and cannot strand a
+session's writing behind a broken row. **Save still refuses rather than
+writing something wrong** in one case — a note whose timezone this build
+cannot resolve — and that failure is now a sentence in the error callout
+rather than a dead button (see below).
+
 ### `notes*.csv` and `people.csv` are hostile-input-safe, on purpose *(notes-as-csv)*
 
 These files are meant to be handed between people and opened in whatever
@@ -1175,6 +1213,74 @@ something a stranger typed, not as trusted output from this app:
   which is fine for a spreadsheet program but breaks a line-based diff and
   any tool that assumes one record per line — precisely the audience a
   plain-text, hand-editable file exists to serve.
+
+### A zone ABBREVIATION is not a zone, and a save must never fail in silence *(pre-release gate)*
+
+`MDT` is the obvious thing for a person to type into `notes.csv`'s `tz`
+column, and `Intl` throws on it. The five-integer path always resolved
+through the zone and so refused it; the legacy `at` path did not, so the row
+loaded cleanly and `noteToRow` then threw a bare `RangeError` **inside the
+Save click handler** — no file, no message, and the whole session's writing
+still only in a tab. Both halves are fixed and both are needed: the reader
+refuses such a row (it becomes a preserved row, above), and `saveEvent`
+turns anything that still throws into words in the error callout.
+
+**The check is "can this be resolved", never "does it look like an
+abbreviation".** `EST`, `MST`, `CST` and `PST` are real tzdata names or ICU
+aliases for them and resolve perfectly well; refusing by shape would reject
+four working zones. `MDT` and `PDT` do not resolve. `zoneOffsetMinutes`
+returning null is the whole test.
+
+### "Add files" must not revert what only this session knows *(pre-release gate)*
+
+Notes and timezone inference were already gated on `mode === 'replace'`. The
+**roster was not**, and neither were the crop, the course reference or the
+markers — those three were restored only from an imported `manifest.json`.
+So the documented workflow (open a folder, rename a device to a person, then
+"Add files" to drop in the GPX) reverted the roster to the unsaved
+`people.csv` on disk. Losing the name was the smaller half: the
+`also_known_as` alias went with it, so every note the rename had rewritten to
+the new name then matched **nobody**, and setting a Strava link and adding a
+track discarded the link.
+
+`sessionPeople`, `existingRange`, `existingCourse` and `existingMarkers` are
+passed only on "Add files", exactly like `sessionNotes`. The roster is a
+**merge, not a replacement** (`mergeSessionPeople`): the session wins per id,
+and ids only the file has are still added, so a `people.csv` dropped in
+mid-session still introduces the people it names. When the two disagree the
+report says so — "Save to write them to people.csv" — rather than choosing
+in silence.
+
+### A broken manifest at the top must not hand the folder to a deeper one *(pre-release gate)*
+
+`shallowestFirst` exists so a `manifest.json` that came along inside
+somebody's subfolder cannot replace the folder's own. A **malformed**
+shallowest candidate fell straight through it: the loop reported the parse
+error and carried on, so `{ not json` at the root gave `sub/manifest.json`
+the event name, timezone, crop, course and whole roster — the exact
+substitution the ordering was added to prevent. The only trace was an
+`importError` naming a *different* file from the one in use, which reads as
+"nothing was applied" while something very much was.
+
+Reported, not refused — the deeper manifest is still used, since the author
+may well have meant it. What changed is that the substitution is named:
+which file could not be read, which one stood in for it, and what came from
+it. Nothing is said when the broken manifest was the only one, because
+`importError` is then the whole story.
+
+### A rename can hand the old name to somebody else *(pre-release gate)*
+
+p1 is "Bob"; p2 is "Rob" who also answers to "Bob". While both claim the key,
+`resolvePersonNames` refuses to guess and a note saying "Bob" resolves to
+neither — correct, and visible. Rename p1 to "Robert" and the contest is
+over: "Bob" belongs to p2 alone, so every note that meant p1 silently moves
+into p2's lane, caused by nothing anyone wrote.
+
+**Reported, not refused.** Refusing would trap someone in a name they cannot
+leave because a second row happens to list it as an alias, and the ambiguity
+is not of their making. `RenameResult.reassigned` names both sides and how
+many notes move; `App.tsx` appends it to the same problems callout, which is
+where something the app DID rather than guessed at belongs.
 
 ### Merging `notes*.csv` needs no version control *(notes-as-csv)*
 

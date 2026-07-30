@@ -9,9 +9,9 @@ import {
   type Course,
   type TimeAnchor,
 } from '../core/course.ts';
-import { formatCsv } from '../core/csv.ts';
+import { formatCsv, type PreservedRow } from '../core/csv.ts';
 import {
-  fingerprintNote, mintNoteId, noteHeadersFor, noteToRow, stampBlankAuthors,
+  fingerprintNote, mintNoteId, noteHeadersFor, noteRowsForSave, stampBlankAuthors,
   type Note, type NoteRowIdentity,
 } from '../core/notes.ts';
 import {
@@ -124,25 +124,44 @@ export function filenameForSave(title: string, now: Date = new Date()): string {
  * than in a block at the end: a tombstone is an event on the timeline like
  * any other row, and a deletion that is not written out is one that any
  * older copy of `notes.csv` silently undoes on the next merge.
+ *
+ * So do the rows this build could not READ (`preserved`, see `PreservedRow`
+ * in `core/csv.ts`). A row refused at load used to be reported and then
+ * quietly absent from the file this function produced — which made the
+ * `schema` column's own advice, "update the site, or clear the schema cell",
+ * describe a repair for data that one Save had already destroyed. Refusing to
+ * interpret a row and deleting it are now different things.
+ *
+ * **Throws** rather than writing a file it knows is wrong: a note carrying a
+ * timezone this build cannot resolve stops `noteToRow` (see there). `saveEvent`
+ * catches it and shows the message — an exception escaping the click handler
+ * is what produced no file and no explanation at all.
  */
 export function filesForSave(
   manifest: Manifest,
   notes: readonly Note[],
   tombstones: readonly Note[],
   peopleExtra?: PeopleExtra,
+  preserved?: { notes: readonly PreservedRow[]; people: readonly PreservedRow[] },
 ): Array<{ name: string; text: string }> {
-  const rows = [...notes, ...tombstones].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  const all = [...notes, ...tombstones];
+  const preservedNotes = preserved?.notes ?? [];
   return [
     {
       name: 'notes.csv',
       text: formatCsv(
-        // Headers computed over the tombstones TOO, or an unknown column
-        // that only a deleted row carries would be dropped from the file.
-        noteHeadersFor(rows),
-        rows.map((n) => noteToRow(n, manifest.event.timezone)),
+        // Headers computed over the tombstones and the preserved rows TOO, or
+        // an unknown column carried only by a deleted row — or by a row from
+        // a newer build, which is the likeliest source of one — would be
+        // dropped from the file.
+        noteHeadersFor(all, preservedNotes),
+        noteRowsForSave(all, preservedNotes, manifest.event.timezone),
       ),
     },
-    { name: 'people.csv', text: formatPeopleCsv(manifest.people, peopleExtra) },
+    {
+      name: 'people.csv',
+      text: formatPeopleCsv(manifest.people, peopleExtra, preserved?.people ?? []),
+    },
     { name: 'manifest.json', text: `${JSON.stringify(manifest, null, 2)}\n` },
   ];
 }
@@ -196,6 +215,15 @@ type Stage =
        * exactly like `manifest`.
        */
       peopleExtra: PeopleExtra;
+      /**
+       * Rows of `notes*.csv` and `people.csv` this build could not read, kept
+       * so Save writes them back. On the stage rather than in a ref for the
+       * same reason `peopleExtra` is: they are replaced wholesale by every
+       * ingest, exactly like `manifest`, and a re-read of the same folder
+       * produces the same set — so nothing accumulates.
+       */
+      preservedNoteRows: PreservedRow[];
+      preservedPeopleRows: PreservedRow[];
     };
 
 export function App() {
@@ -362,6 +390,7 @@ export function App() {
         const {
           manifest, grouping, course, courseFile, importedFrom, importError,
           notes: loadedNotes, deletedNotes, peopleExtra, noteProblems,
+          preservedNoteRows, preservedPeopleRows,
         } = await ingestFolder(all, {
           title,
           timezone,
@@ -392,6 +421,21 @@ export function App() {
                 sessionNotes: notesRef.current,
                 deletedNoteIds: deletedNoteIds.current,
                 deletedNoteFingerprints: deletedNoteFingerprints.current,
+                // The same rule, one seam further along. A rename, a role, a
+                // Strava link and the crop are all unsaved authoring work
+                // that only exists in memory until Save, and "Add files" used
+                // to re-read the folder straight over the top of every one of
+                // them. Omitted on 'replace' for the same reason the notes
+                // are: that mode means a different folder, and yesterday's
+                // course must not follow you into it.
+                ...(previous.current ? { sessionPeople: previous.current.people } : {}),
+                ...(previous.current?.event.range
+                  ? { existingRange: previous.current.event.range }
+                  : {}),
+                ...(previous.current?.course ? { existingCourse: previous.current.course } : {}),
+                ...(previous.current?.markers
+                  ? { existingMarkers: previous.current.markers }
+                  : {}),
               }
             : {}),
           onProgress: (progress) => setStage({ name: 'reading', progress }),
@@ -412,6 +456,7 @@ export function App() {
         setStage({
           name: 'loaded', manifest, grouping, course, courseFile,
           importedFrom, importError, noteProblems, peopleExtra,
+          preservedNoteRows, preservedPeopleRows,
         });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Something went wrong reading that folder.');
@@ -499,6 +544,20 @@ export function App() {
       if (result.refused) return result.refused;
       editManifest((m) => ({ ...m, people: result.people }));
       setNotes(result.notes);
+      // A rename that hands the OLD name to somebody else moves notes into
+      // their lane without touching a single note — see `RenameResult
+      // .reassigned`. It is not a refusal (the rename applies) and it is not
+      // a note problem in the row sense, but it belongs in the same "things
+      // that needed a closer look" list: that is the one place on screen for
+      // something the app did rather than guessed at, and it stays put
+      // instead of flashing past.
+      if (result.reassigned) {
+        setStage((current) =>
+          current.name === 'loaded'
+            ? { ...current, noteProblems: [...current.noteProblems, result.reassigned as string] }
+            : current,
+        );
+      }
       return undefined;
     },
     [stage, editManifest],
@@ -973,13 +1032,41 @@ export function App() {
     }
 
     const manifest = manifestForSave(stage.manifest);
-    const files = filesForSave(manifest, notesToSave, tombstones.current, stage.peopleExtra);
-    // `zipBytes` is typed to return a bare `Uint8Array`, whose backing buffer
-    // TypeScript therefore widens to `ArrayBufferLike` — but `BlobPart` wants
-    // one backed by a concrete `ArrayBuffer`. The array really is: it comes
-    // from `new Uint8Array(length)` inside `zipBytes`, which only ever
-    // allocates a real `ArrayBuffer`, never a `SharedArrayBuffer`.
-    const bytes = zipBytes(files) as Uint8Array<ArrayBuffer>;
+    /*
+     * Wrapped, because a throw in here is the worst failure this app has:
+     * the button does nothing, no file appears, nothing is said, and a whole
+     * session of writing stays only in a tab. Found live — one note carrying
+     * a timezone of "MDT" (a zone ABBREVIATION, the obvious thing to type)
+     * threw a bare `RangeError` out of `noteToRow` and killed the save.
+     *
+     * The fix is in two halves and needs both: the reader refuses such a row
+     * now, so it never becomes a note; and anything that still goes wrong at
+     * save time is turned into words in the error callout rather than a
+     * silent no-op. Building the bytes is what can throw, so only that part
+     * is inside the try — a failure there means the download must not start.
+     */
+    let bytes: Uint8Array<ArrayBuffer>;
+    try {
+      const files = filesForSave(manifest, notesToSave, tombstones.current, stage.peopleExtra, {
+        notes: stage.preservedNoteRows,
+        people: stage.preservedPeopleRows,
+      });
+      // `zipBytes` is typed to return a bare `Uint8Array`, whose backing
+      // buffer TypeScript therefore widens to `ArrayBufferLike` — but
+      // `BlobPart` wants one backed by a concrete `ArrayBuffer`. The array
+      // really is: it comes from `new Uint8Array(length)` inside `zipBytes`,
+      // which only ever allocates a real `ArrayBuffer`, never a
+      // `SharedArrayBuffer`.
+      bytes = zipBytes(files) as Uint8Array<ArrayBuffer>;
+    } catch (err) {
+      setError(
+        'Nothing was saved, because one thing could not be written: ' +
+          `${err instanceof Error ? err.message : String(err)} ` +
+          'Fix that and press Save again — everything you have written is still here.',
+      );
+      return;
+    }
+    setError(null);
     const url = URL.createObjectURL(new Blob([bytes], { type: 'application/zip' }));
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -1198,8 +1285,9 @@ export function App() {
                 {stage.noteProblems.length === 1 ? 'One thing' : `${stage.noteProblems.length} things`}{' '}
                 needed a closer look rather than being guessed at &mdash; a row that
                 could not be read, a note another file deleted, a second manifest or
-                people.csv that was ignored, or something wrong with the track. Each
-                one below names its own file and says what happened:{' '}
+                people.csv that was ignored, or something wrong with the track. A row
+                meanwhile could not read is still kept and written back when you save.
+                Each one below names its own file and says what happened:{' '}
                 {stage.noteProblems.join('; ')}
               </p>
             )}

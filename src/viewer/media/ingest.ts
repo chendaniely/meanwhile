@@ -22,10 +22,13 @@ import {
 import {
   displayName, parsePeopleCsv, resolvePersonNames, type PeopleExtra,
 } from '../../core/people-csv.ts';
+import type { PreservedRow } from '../../core/csv.ts';
 import {
   validateManifest,
+  type CourseRef,
   type Item,
   type Manifest,
+  type Marker,
   type Note as LegacyNote,
   type Person,
 } from '../../core/schema.ts';
@@ -63,6 +66,38 @@ export interface IngestOptions {
   inferTimezone?: boolean;
   existingPeople?: readonly Person[];
   existingItems?: readonly Item[];
+  /**
+   * The roster as it stands in this session — names, roles, aliases and clock
+   * offsets the author has changed since the folder was opened, none of which
+   * is on disk until Save.
+   *
+   * Passed ONLY on "Add files", exactly like `sessionNotes`, and it wins over
+   * `people.csv` for any id it already knows. Without it, dropping a GPX into
+   * an open folder re-read the unsaved `people.csv` and reverted every rename
+   * — taking the `also_known_as` alias with it, so notes the rename had
+   * rewritten to the new name then matched nobody at all. Notes and timezone
+   * inference were already protected this way; the roster was not.
+   *
+   * Ids only `people.csv` has are still added, so a roster file dropped in
+   * mid-session still introduces the people it names. What it cannot do is
+   * silently overwrite a person the author has already edited here — the
+   * report says so when the two disagree.
+   */
+  sessionPeople?: readonly Person[];
+  /**
+   * The crop, the course reference and the markers as they stand in this
+   * session.
+   *
+   * Same rule and same reason as `sessionPeople`: these were restored only
+   * from an imported `manifest.json`, so setting a Strava link and then using
+   * "Add files" to drop in a track discarded the link, the time window and
+   * every marker with nothing said. Passed only on "Add files" — on "Open
+   * folder" they belong to the folder being left behind, not the one being
+   * opened.
+   */
+  existingRange?: { from: string; to: string };
+  existingCourse?: CourseRef;
+  existingMarkers?: readonly Marker[];
   /**
    * Notes are pure authorship — they belong to no file — so they are carried
    * across wholesale rather than merged per item. Without this a re-read of
@@ -175,12 +210,27 @@ export interface IngestResult {
    */
   peopleExtra: PeopleExtra;
   /**
+   * Rows of `notes*.csv` and `people.csv` this build could not read, kept
+   * verbatim so the save path writes them back rather than deleting them.
+   *
+   * See `PreservedRow` in `core/csv.ts` for why: reporting a row and then
+   * dropping it from the next saved file are the same loss under two names,
+   * and it defeated the `schema` column outright — a row from a newer build
+   * was reported with advice to "update the site", and one Save later there
+   * was nothing left to read with the updated site.
+   */
+  preservedNoteRows: PreservedRow[];
+  preservedPeopleRows: PreservedRow[];
+  /**
    * A note or roster row with a problem, always reported here rather than
    * failing silently — but not every problem leaves the row in place.
    *
-   * A roster row missing an id/name, or reusing an id already seen, is
-   * DROPPED (`parsePeopleCsv` in ./core/people-csv.ts); same for a notes.csv
+   * A roster row missing an id/name, or reusing an id already seen, is not
+   * USED (`parsePeopleCsv` in ./core/people-csv.ts); same for a notes.csv
    * row with an unreadable date or no text (`rowToNote` in ./core/notes.ts).
+   * Not used is not the same as gone: every one of those rows is kept in
+   * `preservedNoteRows`/`preservedPeopleRows` and written back on the next
+   * Save, so the file still holds what its author typed.
    * Three problems KEEP the row and degrade only the field at fault: an
    * ambiguous `photo` match — a filename fitting more than one item — leaves
    * the note in place with its photo link unresolved (`resolveNotePhotos` in
@@ -248,6 +298,19 @@ export async function ingestFolder(
    * nothing said about it anywhere.
    */
   const ignoredCandidates: string[] = [];
+  /**
+   * Manifests closer to the top that could not be read at all.
+   *
+   * `shallowestFirst` exists to stop a copy from somebody's subfolder standing
+   * in for the folder's own manifest — but a malformed shallowest candidate
+   * fell straight through it: the loop simply carried on and accepted the
+   * deeper one, so `{ not json` at the root handed the whole event (title,
+   * timezone, crop, course, roster) to `sub/manifest.json`. That is the exact
+   * substitution the ordering was added to prevent, and the only trace of it
+   * was an `importError` naming a DIFFERENT file from the one in use, which
+   * reads as "nothing was applied" when in fact something was.
+   */
+  const unreadableAbove: string[] = [];
   for (const found of manifests) {
     // Tested on `importedFrom` rather than on `imported`, though the two are
     // set together: it is the one that gives the message the name of the file
@@ -266,10 +329,25 @@ export async function ingestFolder(
         // Refused with a legible reason rather than half-applied. A manifest
         // that partly loads is how you lose work without noticing.
         importError = `${found.path}: ${result.errors.slice(0, 3).join('; ')}`;
+        unreadableAbove.push(found.path);
       }
     } catch (err) {
       importError = `${found.path}: ${err instanceof Error ? err.message : 'not valid JSON'}`;
+      unreadableAbove.push(found.path);
     }
+  }
+  // Said out loud only when a broken candidate actually let a deeper one
+  // through. With no substitute, `importError` alone is the whole story and
+  // repeating it would just be noise.
+  if (importedFrom !== null && unreadableAbove.length > 0) {
+    ignoredCandidates.push(
+      `Could not read ${unreadableAbove.map((p) => `"${p}"`).join(' or ')}, which ${
+        unreadableAbove.length === 1 ? 'sits' : 'sit'
+      } closer to the top of the folder, so meanwhile used "${importedFrom}" instead — the ` +
+        'event name, timezone, time window, course and people you are looking at came from ' +
+        `that file. Fix or remove ${unreadableAbove.map((p) => `"${p}"`).join(' and ')} if ` +
+        'that is not the manifest you meant.',
+    );
   }
 
   let course: Course | null = null;
@@ -300,12 +378,17 @@ export async function ingestFolder(
   let peopleFromCsv: Person[] | null = null;
   const peopleExtra: PeopleExtra = new Map();
   const rosterProblems: string[] = [];
+  const preservedPeopleRows: PreservedRow[] = [];
   const rosterFile = peopleFiles[0];
   if (rosterFile) {
-    const { people, problems, extra } = parsePeopleCsv(await rosterFile.file.text());
+    const { people, problems, extra, preserved } = parsePeopleCsv(
+      await rosterFile.file.text(),
+      rosterFile.path,
+    );
     if (people.length > 0) peopleFromCsv = people;
     for (const [id, columns] of extra) peopleExtra.set(id, columns);
     for (const p of problems) rosterProblems.push(`${rosterFile.path}: ${p}`);
+    preservedPeopleRows.push(...preserved);
     for (const other of peopleFiles.slice(1)) {
       ignoredCandidates.push(ignoredCandidate('roster', other.path, rosterFile.path));
     }
@@ -350,8 +433,15 @@ export async function ingestFolder(
   const ingested = results.filter((r): r is IngestedFile => r !== null);
   // A people.csv, then a manifest from the folder, then whatever is in
   // memory — each one is the author handing over more recent work on purpose.
-  const existingPeople = peopleFromCsv ?? imported?.people ?? opts.existingPeople;
+  const rosterFromDisk = peopleFromCsv ?? imported?.people ?? opts.existingPeople;
+  // ...and, on "Add files", the live session on top of all of it. See
+  // `sessionPeople` and `mergeSessionPeople`.
+  const existingPeople = mergeSessionPeople(opts.sessionPeople, rosterFromDisk);
   const existingItems = imported?.items ?? opts.existingItems;
+  const rosterProblemsFromSession =
+    opts.sessionPeople === undefined
+      ? []
+      : reportUnsavedRosterEdits(opts.sessionPeople, rosterFromDisk, rosterFile?.path ?? 'people.csv');
 
   const assembleOpts: Parameters<typeof assembleManifest>[1] = {
     title: imported?.event.title ?? opts.title,
@@ -370,10 +460,17 @@ export async function ingestFolder(
   if (existingItems !== undefined) assembleOpts.existingItems = existingItems;
 
   const manifest = assembleManifest(ingested, assembleOpts);
-  // The crop is authoring intent and has to survive the round trip.
-  if (imported?.event.range) manifest.event.range = imported.event.range;
-  if (imported?.course) manifest.course = imported.course;
-  if (imported?.markers) manifest.markers = imported.markers;
+  // The crop is authoring intent and has to survive the round trip — and
+  // "the round trip" includes "Add files", not just export-and-reopen. These
+  // used to be restored from an imported `manifest.json` and from nothing
+  // else, so a Strava link set in the settings panel vanished the moment a
+  // GPX was dropped in, which is the documented way to add one.
+  const range = imported?.event.range ?? opts.existingRange;
+  if (range) manifest.event.range = range;
+  const courseRef = imported?.course ?? opts.existingCourse;
+  if (courseRef) manifest.course = courseRef;
+  const markers = imported?.markers ?? opts.existingMarkers;
+  if (markers) manifest.markers = [...markers];
   const legacyNotes = imported?.notes ?? opts.existingNotes;
   if (legacyNotes?.length) manifest.notes = [...legacyNotes];
 
@@ -396,11 +493,9 @@ export async function ingestFolder(
   const noteFiles = await Promise.all(
     notesFiles.map(async (f) => ({ name: f.path, text: await f.file.text() })),
   );
-  const { notes: csvNotes, problems: csvNoteProblems } = mergeNotes(
-    noteFiles,
-    manifest.event.timezone,
-    opts.noteRowIdentity,
-  );
+  const {
+    notes: csvNotes, problems: csvNoteProblems, preserved: preservedNoteRows,
+  } = mergeNotes(noteFiles, manifest.event.timezone, opts.noteRowIdentity);
   const migratedNotes = migrateLegacyNotes(manifest);
   // A folder can carry BOTH an old-style manifest.json (migratedNotes) and a
   // notes.csv saved from it (csvNotes) — the same notes, under the same
@@ -433,6 +528,7 @@ export async function ingestFolder(
     ...ignoredCandidates,
     ...courseProblems,
     ...rosterProblems,
+    ...rosterProblemsFromSession,
     ...csvNoteProblems,
     // A tombstone in notes*.csv can also cancel a note that came out of a
     // legacy manifest.json in the same folder — the same silent loss, across
@@ -457,8 +553,70 @@ export async function ingestFolder(
     notes,
     deletedNotes,
     peopleExtra,
+    preservedNoteRows,
+    preservedPeopleRows,
     noteProblems,
   };
+}
+
+/**
+ * The live session's roster laid over whatever the folder says, per id.
+ *
+ * Only reached on "Add files" (`sessionPeople` is passed nowhere else), and
+ * the asymmetry is the point: a rename, a role, an alias — none of it is on
+ * disk until Save, so re-reading `people.csv` mid-session reverts work the
+ * author can see on screen. Notes had this protection already; the roster is
+ * the seam it was missing, and the bug it caused was worse than a lost name:
+ * the vanished `also_known_as` alias broke the join from every note that had
+ * been rewritten to the new name, so they resolved to nobody at all.
+ *
+ * Ids only the FILE has are kept, appended after the session's own, so a
+ * `people.csv` dropped in mid-session still introduces the people it names.
+ * What it cannot do is quietly overwrite someone already edited here —
+ * `reportUnsavedRosterEdits` says so when the two disagree.
+ */
+export function mergeSessionPeople(
+  session: readonly Person[] | undefined,
+  fromDisk: readonly Person[] | undefined,
+): readonly Person[] | undefined {
+  if (session === undefined) return fromDisk;
+  if (fromDisk === undefined) return session;
+  const known = new Set(session.map((p) => p.id));
+  return [...session, ...fromDisk.filter((p) => !known.has(p.id))];
+}
+
+/**
+ * Name the people whose roster row on disk disagrees with the session's.
+ *
+ * The session wins (see `mergeSessionPeople`), and a person is entitled to
+ * know that the file in the folder still says something else — usually
+ * because they have renamed someone and not saved yet, occasionally because
+ * they have just dropped in somebody else's `people.csv` and it is being
+ * overruled. One line either way, naming the people rather than the fields.
+ */
+export function reportUnsavedRosterEdits(
+  session: readonly Person[],
+  fromDisk: readonly Person[] | undefined,
+  file: string,
+): string[] {
+  if (!fromDisk) return [];
+  const bySession = new Map(session.map((p) => [p.id, p]));
+  const differing: string[] = [];
+  for (const p of fromDisk) {
+    const mine = bySession.get(p.id);
+    if (!mine) continue;
+    const same =
+      mine.name === p.name &&
+      mine.role === p.role &&
+      mine.clockOffset === p.clockOffset &&
+      (mine.alsoKnownAs ?? []).join(';') === (p.alsoKnownAs ?? []).join(';');
+    if (!same) differing.push(`"${displayName(p)}" is now "${displayName(mine)}"`);
+  }
+  if (differing.length === 0) return [];
+  return [
+    `Kept your unsaved changes to the people list rather than what is in ${file}: ` +
+      `${differing.join(', ')}. Save to write them to ${file}.`,
+  ];
 }
 
 /**

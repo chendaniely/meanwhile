@@ -144,3 +144,112 @@ describe('filesForSave', () => {
     expect(JSON.parse(text)).not.toHaveProperty('notes');
   });
 });
+
+/**
+ * The whole point of the `schema` column, tested at the seam it was failing
+ * at: a row this build refuses must be in the file the next Save writes.
+ *
+ * Before this, "meanwhile could not read this row" and "meanwhile deleted
+ * this row" were one event — so the message advising someone to "update the
+ * site, or clear the schema cell" described a repair for data that a single
+ * Save had already put beyond reach.
+ */
+describe('filesForSave — rows this build could not read', () => {
+  const manifest: Manifest = {
+    schema: SCHEMA_VERSION,
+    event: { title: 'Race', timezone: 'UTC' },
+    people: [{ id: 'p1', name: 'Priya' }],
+    items: [],
+  };
+  const note = (over: Partial<Note>): Note => ({
+    id: 'n_a', at: '2026-07-25T12:00:00.000Z', people: [], author: [], text: 'x', ...over,
+  });
+  const preservedNote = (cells: Record<string, string>) => ({ file: 'notes.csv', line: 3, cells });
+  const notesCsv = (files: Array<{ name: string; text: string }>) =>
+    files.find((f) => f.name === 'notes.csv')?.text ?? '';
+  const peopleCsv = (files: Array<{ name: string; text: string }>) =>
+    files.find((f) => f.name === 'people.csv')?.text ?? '';
+
+  it('writes a refused notes.csv row straight back out, verbatim', () => {
+    const files = filesForSave(manifest, [note({ id: 'n_ok', text: 'readable' })], [], undefined, {
+      notes: [preservedNote({
+        id: 'n_future', year: '2026', month: '7', day: '25', hour: '13', minute: '0',
+        text: 'from a newer build', schema: '2',
+      })],
+      people: [],
+    });
+    const rows = parseCsv(notesCsv(files)).rows;
+    expect(rows.map((r) => r['id'])).toEqual(['n_ok', 'n_future']);
+    // NOT rewritten to this build's schema — doing so would be this build
+    // claiming it had understood the row.
+    expect(rows[1]?.['schema']).toBe('2');
+    expect(rows[1]?.['text']).toBe('from a newer build');
+  });
+
+  it('places a preserved row in time, among the notes rather than after them', () => {
+    const files = filesForSave(
+      manifest,
+      [note({ id: 'n_early', at: '2026-07-25T09:00:00.000Z' }),
+       note({ id: 'n_late', at: '2026-07-25T23:00:00.000Z' })],
+      [],
+      undefined,
+      {
+        notes: [preservedNote({
+          id: 'n_mid', year: '2026', month: '7', day: '25', hour: '12', minute: '0', text: 'x',
+        })],
+        people: [],
+      },
+    );
+    expect(parseCsv(notesCsv(files)).rows.map((r) => r['id']))
+      .toEqual(['n_early', 'n_mid', 'n_late']);
+  });
+
+  it('keeps a column only a preserved row carries', () => {
+    const files = filesForSave(manifest, [note({})], [], undefined, {
+      notes: [preservedNote({ id: 'n_f', text: 'x', schema: '2', weather: 'sleet' })],
+      people: [],
+    });
+    expect(parseCsv(notesCsv(files)).headers).toContain('weather');
+    expect(parseCsv(notesCsv(files)).rows.map((r) => r['weather'])).toContain('sleet');
+  });
+
+  it('writes a refused people.csv row back too', () => {
+    const files = filesForSave(manifest, [], [], undefined, {
+      notes: [],
+      people: [{ file: 'people.csv', line: 3, cells: { id: 'p2', name: 'Sam', schema: '2' } }],
+    });
+    const rows = parseCsv(peopleCsv(files)).rows;
+    expect(rows.map((r) => r['id'])).toEqual(['p1', 'p2']);
+    expect(rows[1]?.['schema']).toBe('2');
+  });
+
+  it('survives being read and saved again — every time, not just the first', () => {
+    // The property that matters over months: the row is refused on every
+    // load, so it must be preserved on every save, or the second save is
+    // simply the first bug delayed.
+    const text = [
+      'id,year,month,day,hour,minute,duration,tz,utc_offset_min,people,photo,author,text,written,deleted,schema',
+      'n_ok,2026,7,25,10,0,,UTC,0,,,,readable,,,',
+      'n_future,2026,7,25,11,0,,UTC,0,,,,from a newer build,,,2',
+    ].join('\n');
+    let round = text;
+    for (let i = 0; i < 3; i++) {
+      const merged = mergeNotes([{ name: 'notes.csv', text: round }], 'UTC');
+      expect(merged.notes.map((n) => n.text)).toEqual(['readable']);
+      expect(merged.preserved).toHaveLength(1);
+      round = notesCsv(
+        filesForSave(manifest, merged.notes, [], undefined, { notes: merged.preserved, people: [] }),
+      );
+    }
+    expect(round).toContain('from a newer build');
+  });
+
+  it('throws a legible message rather than a bare RangeError on an unusable zone', () => {
+    // The other half of the same failure: this used to escape the Save click
+    // handler as `RangeError: Invalid time zone specified: MDT` — no file, no
+    // message, nothing saved. App.tsx now catches it and shows the text.
+    const bad = note({ id: 'n_tz', tz: 'MDT' });
+    expect(() => filesForSave(manifest, [bad], [])).toThrow(/note "n_tz"/);
+    expect(() => filesForSave(manifest, [bad], [])).not.toThrow(/Invalid time zone specified/);
+  });
+});

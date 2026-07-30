@@ -15,7 +15,10 @@
  */
 
 import { displayNameFor } from './assemble.ts';
-import { parseCsv, formatCsv, nfc, schemaCellProblem, CSV_SCHEMA } from './csv.ts';
+import {
+  parseCsv, formatCsv, nfc, preservedHeaders, schemaCellProblem, CSV_SCHEMA,
+  type PreservedRow,
+} from './csv.ts';
 import type { Note } from './notes.ts';
 import { ROLES, type Person, type PersonId, type Role } from './schema.ts';
 import { parseDuration } from './time.ts';
@@ -139,12 +142,30 @@ function cleanAliases(name: string, aliases: readonly string[]): string[] {
  */
 export function parsePeopleCsv(
   text: string,
-): { people: Person[]; problems: string[]; extra: PeopleExtra } {
+  /** Named in `preserved`, so a caller can point at the row a person must fix. */
+  file = 'people.csv',
+): { people: Person[]; problems: string[]; extra: PeopleExtra; preserved: PreservedRow[] } {
   const { rows, rowLines } = parseCsv(text);
   const people: Person[] = [];
   const problems: string[] = [];
   const extra: PeopleExtra = new Map();
+  const preserved: PreservedRow[] = [];
   const seenIds = new Set<string>();
+  /**
+   * A row this build refused, kept verbatim so the next Save writes it back.
+   *
+   * Only the three branches below that DROP a row take this path. The others
+   * — an unrecognised `role`, an unparseable `clock_offset`, a `;` in a name —
+   * keep the person and degrade one field, so the row is already saved through
+   * the ordinary roster and preserving it too would write it twice.
+   */
+  const keep = (row: Record<string, string>, line: number, problem: string): void => {
+    preserved.push({ file, line, cells: row });
+    problems.push(
+      `${problem}. The row is kept exactly as it is and written back when you save, so ` +
+        'nothing in it is lost.',
+    );
+  };
 
   rows.forEach((row, i) => {
     // The row's real file line, not `i + 2`: `parseCsv` drops blank lines
@@ -160,7 +181,7 @@ export function parsePeopleCsv(
     // refusing an unknown manifest `schema` rather than half-applying it.
     const schemaBad = schemaCellProblem(row['schema'], 'people.csv');
     if (schemaBad) {
-      problems.push(`Row ${line}: this row ${schemaBad}`);
+      keep(row, line, `Row ${line}: this row ${schemaBad}`);
       return;
     }
 
@@ -177,7 +198,7 @@ export function parsePeopleCsv(
 
     if (!id || !name) {
       const missing = [!id && 'id', !name && 'name'].filter(Boolean).join(' and ');
-      problems.push(`Row ${line}: missing ${missing}`);
+      keep(row, line, `Row ${line}: missing ${missing}`);
       return;
     }
 
@@ -200,7 +221,7 @@ export function parsePeopleCsv(
     // second row with the same id through would take the whole manifest down
     // with it on the next save. Keep the first row, drop the rest, say so.
     if (seenIds.has(id)) {
-      problems.push(`Row ${line}: id "${id}" is already used by an earlier row; this row was skipped`);
+      keep(row, line, `Row ${line}: id "${id}" is already used by an earlier row; this row was skipped`);
       return;
     }
 
@@ -255,7 +276,7 @@ export function parsePeopleCsv(
     people.push(person);
   });
 
-  return { people, problems, extra };
+  return { people, problems, extra, preserved };
 }
 
 /**
@@ -267,10 +288,19 @@ export function parsePeopleCsv(
  * out too, not just on the way in — a roster built up in memory (a rename, a
  * merge) can accumulate the same self-alias or duplicate a parsed file can,
  * and the write path is the last chance to keep the saved file clean.
+ *
+ * `preserved` holds the rows `parsePeopleCsv` refused (see `PreservedRow`),
+ * written back verbatim so refusing to read a person is not the same as
+ * deleting them. They go AFTER the roster, and that is a considered choice
+ * rather than laziness: a roster has no chronology to slot a row back into,
+ * the order of the file is the order of the people list — which a rename or a
+ * newly-detected device reshuffles anyway — and a quarantined row at the
+ * bottom is where someone repairing the file will look for it.
  */
 export function formatPeopleCsv(
   people: readonly Person[],
   extra?: ReadonlyMap<PersonId, Record<string, string>>,
+  preserved: readonly PreservedRow[] = [],
 ): string {
   // `schema` last, after any columns someone else added, so it is genuinely
   // the last column of the file rather than merely the last one this module
@@ -284,9 +314,10 @@ export function formatPeopleCsv(
       headers.push(key);
     }
   }
+  headers.push(...preservedHeaders(headers.concat('schema'), preserved));
   headers.push('schema');
 
-  const rows = people.map((p) => ({
+  const rows: Array<Record<string, string>> = people.map((p) => ({
     // Spread first so a known column always wins over a stray one wearing
     // the same name.
     ...(extra?.get(p.id) ?? {}),
@@ -297,6 +328,7 @@ export function formatPeopleCsv(
     also_known_as: cleanAliases(p.name, p.alsoKnownAs ?? []).join(';'),
     schema: String(CSV_SCHEMA),
   }));
+  for (const row of preserved) rows.push(row.cells);
 
   return formatCsv(headers, rows);
 }
@@ -421,6 +453,25 @@ export interface RenameResult {
    * rename UI (`IngestReport.tsx`) can show it instead of silently no-op'ing.
    */
   refused?: string;
+  /**
+   * Plain words for a rename that HANDED THE OLD NAME to somebody else, set
+   * whenever `collided` is and at least one loaded note still says it.
+   *
+   * The case, found by execution: p1 is "Bob"; p2 is "Rob" with "Bob" among
+   * their aliases; a note says "Bob". While two people claim that key,
+   * `resolvePersonNames` refuses to guess and the note resolves to neither —
+   * correct, and visible. Rename p1 to "Robert" and the contest is over:
+   * "Bob" now belongs to p2 alone, so every note that said "Bob" and meant p1
+   * silently moves into p2's lane. Nothing was written to make that happen —
+   * it is a side effect of the OTHER person's row — which is exactly why it
+   * has to be said out loud.
+   *
+   * The rename still applies. Refusing it would trap someone in a name they
+   * cannot leave because a second row happens to list it as an alias, and the
+   * ambiguity is not of their making. What changes is that the reassignment
+   * is reported rather than discovered months later in the wrong lane.
+   */
+  reassigned?: string;
 }
 
 /**
@@ -512,7 +563,38 @@ export function applyRename(
     return next;
   });
 
-  if (!selfHeal) return { people: nextPeople, notes: [...notes], collided };
+  if (!selfHeal) {
+    const result: RenameResult = { people: nextPeople, notes: [...notes], collided };
+    if (collided) {
+      // Only the people who KEEP the old name are named, and only when a
+      // loaded note actually says it — a warning about a name nothing refers
+      // to is noise, and this fires on an ordinary rename otherwise.
+      const claimants = people
+        .filter(
+          (p) =>
+            p.id !== id &&
+            (nameKey(p.name) === previousKey ||
+              (p.alsoKnownAs ?? []).some((a) => nameKey(a) === previousKey)),
+        )
+        .map((p) => displayName(p));
+      const affected = notes.filter(
+        (n) =>
+          [...n.people, ...n.author].some((v) => nameKey(v) === previousKey),
+      ).length;
+      if (claimants.length > 0 && affected > 0) {
+        result.reassigned =
+          `"${previousName}" was a name both this person and ` +
+          `${claimants.join(' and ')} answered to, so meanwhile never guessed which of them a ` +
+          `note meant. Now that this person is "${nextTrimmed}", the name "${previousName}" ` +
+          `belongs to ${claimants.join(' and ')} alone — so the ${affected} ` +
+          `${affected === 1 ? 'note that says' : 'notes that say'} "${previousName}" will ` +
+          `from now on sit in ${claimants.length === 1 ? 'their' : 'those'} ` +
+          `${claimants.length === 1 ? 'lane' : 'lanes'}. Edit any of them that meant ` +
+          `"${nextTrimmed}" to say so.`;
+      }
+    }
+    return result;
+  }
 
   const rewrite = (list: readonly string[]): string[] =>
     list.map((v) => (nameKey(v) === previousKey ? nextTrimmed : v));

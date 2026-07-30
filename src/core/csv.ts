@@ -111,6 +111,63 @@ export function schemaCellProblem(raw: string | undefined, file: string): string
 }
 
 /**
+ * A row this build could not interpret, kept exactly as it was read so the
+ * next Save writes it back rather than deleting it.
+ *
+ * **Refusing to read a row and deleting it are not the same thing, and the
+ * code used to treat them as one.** A row from a newer build, or one with a
+ * day of 32, was reported at load and then silently absent from the file the
+ * next Save produced — so the message telling someone to "update the site, or
+ * clear the schema cell" was describing a repair for data that was already
+ * gone. Anything the reader rejects lands here instead, and the writer puts it
+ * back beside the rows that parsed.
+ *
+ * `cells` is the row as `parseCsv` produced it: keyed by the header names the
+ * file itself declared, with the formula guard already removed (`formatCsv`
+ * puts it back on write). One thing is NOT byte-identical across the round
+ * trip: `formatCsv` writes every cell in Unicode NFC, so a decomposed
+ * spelling comes back composed — the same treatment every other cell in the
+ * file gets, and the reason `people-csv.ts` compares names with `nameKey`.
+ * A row carrying MORE fields than the header row declares loses the surplus,
+ * because there is no column name to file them under; a file written by a
+ * newer build declares its own headers, so that case is a malformed file
+ * rather than a version gap.
+ */
+export interface PreservedRow {
+  /** The file it came from, named as a person would look for it. */
+  file: string;
+  /** 1-indexed file line, so someone can open the file and go to the row. */
+  line: number;
+  /** Every cell of the row, exactly as read. */
+  cells: Record<string, string>;
+}
+
+/**
+ * Every column name any preserved row carries that `known` does not already
+ * list, in the order first seen.
+ *
+ * `formatCsv` only writes the headers it is handed, so a preserved row's own
+ * columns — the whole point of a row written by a NEWER build — need adding
+ * to the header list or they are dropped on the way out, which would defeat
+ * the preservation entirely.
+ */
+export function preservedHeaders(
+  known: readonly string[],
+  preserved: readonly PreservedRow[],
+): string[] {
+  const seen = new Set<string>(known);
+  const extra: string[] = [];
+  for (const row of preserved) {
+    for (const key of Object.keys(row.cells)) {
+      if (key === '' || seen.has(key)) continue;
+      seen.add(key);
+      extra.push(key);
+    }
+  }
+  return extra;
+}
+
+/**
  * Unicode Normalization Form C.
  *
  * Exported because normalising on write is only half the fix: every

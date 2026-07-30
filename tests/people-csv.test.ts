@@ -583,3 +583,126 @@ describe('a people.csv written before the schema column existed', () => {
     expect(parsePeopleCsv(written).people).toEqual(people);
   });
 });
+
+/**
+ * A roster row this build refuses is not a roster row it may delete.
+ *
+ * The same failure as `notes.csv`: a `people.csv` row carrying `schema,2` was
+ * reported at load and then absent from the file the next Save wrote — so the
+ * person it named was off disk entirely, clock offset and all, one button
+ * press after being told to "update the site".
+ */
+describe('roster rows this build cannot read are kept, not dropped', () => {
+  const HEADER = 'id,name,role,clock_offset,also_known_as,schema';
+
+  it('keeps a row from a newer build, and writes it back after the roster', () => {
+    const text = [HEADER, 'p1,Priya,,,,', 'p2,Sam,,,,2'].join('\n');
+    const { people, preserved, problems } = parsePeopleCsv(text);
+
+    expect(people.map((p) => p.id)).toEqual(['p1']);
+    expect(preserved).toHaveLength(1);
+    expect(preserved[0]?.file).toBe('people.csv');
+    expect(preserved[0]?.line).toBe(3);
+    expect(preserved[0]?.cells['id']).toBe('p2');
+    expect(preserved[0]?.cells['schema']).toBe('2');
+    expect(problems[0]).toContain('kept exactly as it is');
+
+    const written = formatPeopleCsv(people, undefined, preserved);
+    const rows = parseCsv(written).rows;
+    expect(rows.map((r) => r['id'])).toEqual(['p1', 'p2']);
+    // Verbatim: the schema cell is NOT rewritten to this build's version,
+    // which would be this build claiming it understood the row.
+    expect(rows[1]?.['schema']).toBe('2');
+    expect(rows[1]?.['name']).toBe('Sam');
+  });
+
+  it('keeps a row missing an id or a name, and a duplicated id', () => {
+    const text = [HEADER, 'p1,Priya,,,,', ',Nobody,,,,', 'p1,Twin,,,,'].join('\n');
+    const { people, preserved } = parsePeopleCsv(text);
+    expect(people.map((p) => p.id)).toEqual(['p1']);
+    expect(preserved.map((p) => p.cells['name'])).toEqual(['Nobody', 'Twin']);
+  });
+
+  it('does NOT preserve a row it kept and merely degraded', () => {
+    // An unrecognised role keeps the person, so preserving the raw row too
+    // would write that person into the file twice.
+    const text = [HEADER, 'p1,Priya,sherpa,,,'].join('\n');
+    const { people, preserved } = parsePeopleCsv(text);
+    expect(people).toHaveLength(1);
+    expect(preserved).toEqual([]);
+  });
+
+  it('carries a column only a preserved row has into the header row', () => {
+    const text = ['id,name,role,clock_offset,also_known_as,schema,pace', 'p2,Sam,,,,2,slow'].join('\n');
+    const { people, preserved } = parsePeopleCsv(text);
+    const written = formatPeopleCsv(people, undefined, preserved);
+    expect(parseCsv(written).headers).toContain('pace');
+    expect(parseCsv(written).rows[0]?.['pace']).toBe('slow');
+  });
+
+  it('round-trips: reading what was written preserves it again, unchanged', () => {
+    // The property that matters over months of saving: a row nobody has
+    // repaired must survive every save, not just the first.
+    const text = [HEADER, 'p1,Priya,,,,', 'p2,Sam,,,,2'].join('\n');
+    const first = parsePeopleCsv(text);
+    const once = formatPeopleCsv(first.people, undefined, first.preserved);
+    const second = parsePeopleCsv(once);
+    const twice = formatPeopleCsv(second.people, undefined, second.preserved);
+    expect(twice).toBe(once);
+    // Stable is not enough on its own — dropping the row on the first save is
+    // also perfectly stable. The row has to still be there.
+    expect(twice).toContain('Sam');
+    expect(second.preserved).toHaveLength(1);
+  });
+});
+
+describe('a rename that hands the old name to somebody else', () => {
+  const contested = (): Person[] => [
+    { id: 'p1', name: 'Bob' },
+    { id: 'p2', name: 'Rob', alsoKnownAs: ['Bob'] },
+  ];
+  const note = (people: string[]): Note => ({
+    id: 'n_1', at: '2026-07-25T10:00:00Z', people, author: [], text: 'x',
+  });
+
+  it('reports the reassignment rather than performing it silently', () => {
+    // While both claim "Bob", `resolvePersonNames` refuses to guess and the
+    // note resolves to neither — visible, and correct. Renaming p1 ends the
+    // contest, so the note silently moves into p2's lane without anything
+    // being written to make that happen.
+    expect(resolvePersonNames(['Bob'], contested()).unknown).toEqual(['Bob']);
+
+    const result = applyRename(contested(), [note(['Bob'])], 'p1', 'Robert');
+    expect(result.collided).toBe(true);
+    expect(result.reassigned).toBeDefined();
+    expect(result.reassigned).toContain('Bob');
+    expect(result.reassigned).toContain('Rob');
+    expect(result.reassigned).toContain('Robert');
+
+    // And the reassignment really does happen — which is why it is reported.
+    expect(resolvePersonNames(['Bob'], result.people).ids).toEqual(['p2']);
+  });
+
+  it('says nothing when no loaded note refers to the contested name', () => {
+    const result = applyRename(contested(), [note(['Rob'])], 'p1', 'Robert');
+    expect(result.collided).toBe(true);
+    expect(result.reassigned).toBeUndefined();
+  });
+
+  it('says nothing on an ordinary rename, where nobody else wanted the name', () => {
+    const people: Person[] = [{ id: 'p1', name: 'Bob' }, { id: 'p2', name: 'Rob' }];
+    const result = applyRename(people, [note(['Bob'])], 'p1', 'Robert');
+    expect(result.collided).toBe(false);
+    expect(result.reassigned).toBeUndefined();
+    // The ordinary path still self-heals: alias recorded, note rewritten.
+    expect(result.people[0]?.alsoKnownAs).toEqual(['Bob']);
+    expect(result.notes[0]?.people).toEqual(['Robert']);
+  });
+
+  it('counts an author mention too, not only a people mention', () => {
+    const authored: Note = {
+      id: 'n_2', at: '2026-07-25T10:00:00Z', people: [], author: ['bob'], text: 'x',
+    };
+    expect(applyRename(contested(), [authored], 'p1', 'Robert').reassigned).toBeDefined();
+  });
+});

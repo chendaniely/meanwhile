@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ingestFolder, legacyNoteToNote, manifestForSave, mergeSessionNotes, migrateLegacyNotes,
-  reportUnresolvedNoteNames,
+  ingestFolder, legacyNoteToNote, manifestForSave, mergeSessionNotes, mergeSessionPeople,
+  migrateLegacyNotes, reportUnresolvedNoteNames, reportUnsavedRosterEdits,
 } from '../src/viewer/media/ingest.ts';
+import { applyRename } from '../src/core/people-csv.ts';
 import type { PickedFile } from '../src/viewer/media/folder.ts';
 import { fingerprintNote, type Note } from '../src/core/notes.ts';
 import type { Item, Manifest, Note as LegacyNote, Person } from '../src/core/schema.ts';
@@ -1144,5 +1145,229 @@ describe('ingestFolder — a tombstone that cancels a legacy manifest note', () 
     expect(reported[0]).toContain('notes.csv');
     expect(reported[0]).toContain('the note in the old manifest');
     expect(reported[0]).toContain('manifest.json');
+  });
+});
+
+/**
+ * Four data-loss bugs found by execution on 2026-07-30, all at the seam
+ * between "this session" and "what is on disk". Each one is reproduced here
+ * as it was hit — the roster reverting, the course vanishing, the refused row
+ * disappearing, the deeper manifest standing in for the broken shallow one.
+ */
+describe('ingestFolder — what "Add files" must not throw away', () => {
+  function textFile(path: string, text: string): PickedFile {
+    return { path, file: new File([text], path.slice(path.lastIndexOf('/') + 1)) };
+  }
+
+  const PEOPLE_CSV = ['id,name,role,clock_offset,also_known_as,schema', 'p1,Google Pixel 8 Pro,,,,'].join('\n');
+  const NOTES_CSV = [
+    'id,year,month,day,hour,minute,duration,tz,utc_offset_min,people,photo,author,text,written,deleted,schema',
+    'n_1,2026,7,25,10,0,,UTC,0,Google Pixel 8 Pro,,,at the aid station,,,',
+  ].join('\n');
+
+  it('keeps an in-session rename instead of reverting to the unsaved people.csv', async () => {
+    const first = await ingestFolder(
+      [textFile('people.csv', PEOPLE_CSV), textFile('notes.csv', NOTES_CSV)],
+      { title: 'T', timezone: 'UTC' },
+    );
+    const renamed = applyRename(first.manifest.people, first.notes, 'p1', 'Priya');
+    expect(renamed.people[0]?.name).toBe('Priya');
+    expect(renamed.people[0]?.alsoKnownAs).toEqual(['Google Pixel 8 Pro']);
+    expect(renamed.notes[0]?.people).toEqual(['Priya']);
+
+    // "Add files" to drop in a track — the documented workflow. Nothing has
+    // been saved, so people.csv on disk still says the device name.
+    const second = await ingestFolder(
+      [textFile('people.csv', PEOPLE_CSV), textFile('notes.csv', NOTES_CSV), textFile('r.gpx', '<gpx></gpx>')],
+      {
+        title: 'T', timezone: 'UTC',
+        existingPeople: renamed.people,
+        sessionPeople: renamed.people,
+        sessionNotes: renamed.notes,
+      },
+    );
+
+    expect(second.manifest.people[0]?.name).toBe('Priya');
+    // The alias is the load-bearing half: without it the rewritten note's
+    // name resolves to nobody at all.
+    expect(second.manifest.people[0]?.alsoKnownAs).toEqual(['Google Pixel 8 Pro']);
+    expect(second.noteProblems.some((p) => p.includes("doesn't match anyone"))).toBe(false);
+    // And it says the roster on disk is out of date rather than doing it
+    // silently.
+    expect(second.noteProblems.some((p) => p.includes('Save to write them'))).toBe(true);
+  });
+
+  it('keeps an in-session role too', async () => {
+    const first = await ingestFolder([textFile('people.csv', PEOPLE_CSV)], { title: 'T', timezone: 'UTC' });
+    const withRole = first.manifest.people.map((p) => ({ ...p, role: 'runner' as const }));
+    const second = await ingestFolder(
+      [textFile('people.csv', PEOPLE_CSV), textFile('r.gpx', '<gpx></gpx>')],
+      { title: 'T', timezone: 'UTC', existingPeople: withRole, sessionPeople: withRole },
+    );
+    expect(second.manifest.people[0]?.role).toBe('runner');
+  });
+
+  it('still lets a people.csv dropped in mid-session introduce someone new', async () => {
+    // Session-wins must not mean the file is ignored: an id the session has
+    // never heard of is exactly how a collaborator's roster gets in.
+    const session = [{ id: 'p1', name: 'Priya' }];
+    const roster = ['id,name,role,clock_offset,also_known_as,schema', 'p1,Google Pixel 8 Pro,,,,', 'p9,Sam,,,,'].join('\n');
+    const result = await ingestFolder([textFile('people.csv', roster)], {
+      title: 'T', timezone: 'UTC', existingPeople: session, sessionPeople: session,
+    });
+    expect(result.manifest.people.map((p) => p.name).sort()).toEqual(['Priya', 'Sam']);
+  });
+
+  it('carries the crop, the course link and the markers forward', async () => {
+    // Set a Strava link, then add a track: all three used to be restored only
+    // from an imported manifest.json, so all three vanished.
+    const notes = 'id,year,month,day,hour,minute,text\nn_1,2026,7,25,10,0,hi\n';
+    const result = await ingestFolder([textFile('notes.csv', notes)], {
+      title: 'T', timezone: 'UTC',
+      existingRange: { from: '2026-07-25T00:00:00Z', to: '2026-07-26T00:00:00Z' },
+      existingCourse: { kind: 'strava-link', url: 'https://www.strava.com/activities/1' },
+      existingMarkers: [{ at: '2026-07-25T10:00:00Z', label: 'start' }],
+    });
+    expect(result.manifest.course).toEqual({
+      kind: 'strava-link', url: 'https://www.strava.com/activities/1',
+    });
+    expect(result.manifest.event.range?.from).toBe('2026-07-25T00:00:00Z');
+    expect(result.manifest.markers?.[0]?.label).toBe('start');
+  });
+
+  it('lets a manifest in the folder still outrank what the session carries', async () => {
+    const inFolder = JSON.stringify({
+      schema: SCHEMA_VERSION,
+      event: {
+        title: 'From the folder', timezone: 'UTC',
+        range: { from: '2026-01-01T00:00:00Z', to: '2026-01-02T00:00:00Z' },
+      },
+      course: { kind: 'strava-link', url: 'https://www.strava.com/activities/999' },
+      people: [], items: [],
+    });
+    const result = await ingestFolder([textFile('manifest.json', inFolder)], {
+      title: 'T', timezone: 'UTC',
+      existingRange: { from: '2026-07-25T00:00:00Z', to: '2026-07-26T00:00:00Z' },
+      existingCourse: { kind: 'strava-link', url: 'https://www.strava.com/activities/1' },
+    });
+    expect(result.manifest.event.range?.from).toBe('2026-01-01T00:00:00Z');
+    expect(result.manifest.course).toEqual({
+      kind: 'strava-link', url: 'https://www.strava.com/activities/999',
+    });
+  });
+});
+
+describe('mergeSessionPeople', () => {
+  const disk: Person[] = [{ id: 'p1', name: 'Google Pixel 8 Pro' }, { id: 'p9', name: 'Sam' }];
+
+  it('returns the disk roster untouched when there is no session', () => {
+    expect(mergeSessionPeople(undefined, disk)).toBe(disk);
+  });
+
+  it('lays the session over the disk, per id, keeping disk-only people', () => {
+    const merged = mergeSessionPeople([{ id: 'p1', name: 'Priya' }], disk) ?? [];
+    expect(merged.map((p) => p.name)).toEqual(['Priya', 'Sam']);
+  });
+
+  it('is the session alone when nothing is on disk', () => {
+    const session: Person[] = [{ id: 'p1', name: 'Priya' }];
+    expect(mergeSessionPeople(session, undefined)).toBe(session);
+  });
+});
+
+describe('reportUnsavedRosterEdits', () => {
+  const disk: Person[] = [{ id: 'p1', name: 'Google Pixel 8 Pro' }];
+
+  it('names the person whose row on disk disagrees', () => {
+    const problems = reportUnsavedRosterEdits([{ id: 'p1', name: 'Priya' }], disk, 'people.csv');
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('Google Pixel 8 Pro');
+    expect(problems[0]).toContain('Priya');
+    expect(problems[0]).toContain('people.csv');
+  });
+
+  it('says nothing when the two agree', () => {
+    expect(reportUnsavedRosterEdits([{ id: 'p1', name: 'Google Pixel 8 Pro' }], disk, 'people.csv')).toEqual([]);
+  });
+
+  it('notices a role or a clock offset changing, not just a name', () => {
+    expect(
+      reportUnsavedRosterEdits([{ id: 'p1', name: 'Google Pixel 8 Pro', role: 'runner' }], disk, 'people.csv'),
+    ).toHaveLength(1);
+    expect(
+      reportUnsavedRosterEdits(
+        [{ id: 'p1', name: 'Google Pixel 8 Pro', clockOffset: '-PT4S' }], disk, 'people.csv',
+      ),
+    ).toHaveLength(1);
+  });
+});
+
+describe('ingestFolder — rows it could not read come back out', () => {
+  function textFile(path: string, text: string): PickedFile {
+    return { path, file: new File([text], path.slice(path.lastIndexOf('/') + 1)) };
+  }
+
+  it('hands the raw notes.csv and people.csv rows to the save path', async () => {
+    const notes = [
+      'id,year,month,day,hour,minute,duration,tz,utc_offset_min,people,photo,author,text,written,deleted,schema',
+      'n_ok,2026,7,25,10,0,,UTC,0,,,,readable,,,',
+      'n_future,2026,7,25,11,0,,UTC,0,,,,from a newer build,,,2',
+    ].join('\n');
+    const people = ['id,name,role,clock_offset,also_known_as,schema', 'p1,Priya,,,,', 'p2,Sam,,,,2'].join('\n');
+    const result = await ingestFolder(
+      [textFile('notes.csv', notes), textFile('people.csv', people)],
+      { title: 'T', timezone: 'UTC' },
+    );
+
+    expect(result.notes.map((n) => n.text)).toEqual(['readable']);
+    expect(result.preservedNoteRows.map((r) => r.cells['id'])).toEqual(['n_future']);
+    expect(result.manifest.people.map((p) => p.id)).toEqual(['p1']);
+    expect(result.preservedPeopleRows.map((r) => r.cells['id'])).toEqual(['p2']);
+  });
+
+  it('reports nothing preserved for a folder that reads cleanly', async () => {
+    const notes = 'id,year,month,day,hour,minute,text\nn_1,2026,7,25,10,0,hi\n';
+    const result = await ingestFolder([textFile('notes.csv', notes)], { title: 'T', timezone: 'UTC' });
+    expect(result.preservedNoteRows).toEqual([]);
+    expect(result.preservedPeopleRows).toEqual([]);
+  });
+});
+
+describe('ingestFolder — a broken manifest closest to the top', () => {
+  function textFile(path: string, text: string): PickedFile {
+    return { path, file: new File([text], path.slice(path.lastIndexOf('/') + 1)) };
+  }
+  const good = JSON.stringify({
+    schema: SCHEMA_VERSION,
+    event: { title: 'Deep event', timezone: 'UTC' },
+    people: [{ id: 'p1', name: 'Deep person' }],
+    items: [],
+  });
+
+  it('says so when a deeper manifest stood in for it', async () => {
+    // `shallowestFirst` exists to stop this substitution, and an unreadable
+    // shallowest candidate fell straight through it: the only trace was an
+    // `importError` naming a DIFFERENT file from the one actually in use,
+    // which reads as "nothing was applied".
+    const result = await ingestFolder(
+      [textFile('manifest.json', '{ not json'), textFile('sub/manifest.json', good)],
+      { title: 'T', timezone: 'UTC' },
+    );
+    expect(result.importedFrom).toBe('sub/manifest.json');
+    const said = result.noteProblems.join(' ');
+    expect(said).toContain('manifest.json');
+    expect(said).toContain('sub/manifest.json');
+    expect(said).toContain('closer to the top');
+  });
+
+  it('stays quiet when the broken manifest was the only one', async () => {
+    // With no substitute, `importError` is the whole story and repeating it
+    // in the problems list would just be noise.
+    const result = await ingestFolder([textFile('manifest.json', '{ not json')], {
+      title: 'T', timezone: 'UTC',
+    });
+    expect(result.importedFrom).toBeNull();
+    expect(result.importError).toContain('manifest.json');
+    expect(result.noteProblems).toEqual([]);
   });
 });

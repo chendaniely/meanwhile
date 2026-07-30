@@ -29,7 +29,9 @@
 import {
   formatDuration, hasZone, parseDuration, parseZonedInstant, zoneOffsetMinutes, zonedToInstant,
 } from './time.ts';
-import { CSV_SCHEMA, parseCsv, schemaCellProblem } from './csv.ts';
+import {
+  CSV_SCHEMA, parseCsv, preservedHeaders, schemaCellProblem, type PreservedRow,
+} from './csv.ts';
 import type { Item } from './schema.ts';
 
 export interface Note {
@@ -117,7 +119,17 @@ export const NOTE_HEADERS: readonly string[] = [
  * fingerprint (see `dedupeNotes`), so the saved copy no longer matches the
  * original and gets re-minted as a second note on the next load.
  */
-export function noteHeadersFor(notes: readonly Note[]): string[] {
+export function noteHeadersFor(
+  notes: readonly Note[],
+  /**
+   * Rows this build refused to read, kept verbatim (see `PreservedRow`). Their
+   * columns count exactly as much as a note's `extra` does: a row written by a
+   * NEWER build is the case the `schema` column exists for, and a newer build
+   * is precisely the thing likely to have added a column this one has no name
+   * for.
+   */
+  preserved: readonly PreservedRow[] = [],
+): string[] {
   // `schema` is appended last, AFTER the extras, so it is genuinely the last
   // column of the file rather than merely the last one this module owns.
   const headers = NOTE_HEADERS.filter((h) => h !== 'schema');
@@ -130,8 +142,87 @@ export function noteHeadersFor(notes: readonly Note[]): string[] {
       headers.push(key);
     }
   }
+  headers.push(...preservedHeaders(headers.concat('schema'), preserved));
   headers.push('schema');
   return headers;
+}
+
+/**
+ * A rough instant for a preserved row, used ONLY to decide where it sits in
+ * the saved file.
+ *
+ * A preserved row is one this build refused to interpret, so nothing here may
+ * be treated as a real timestamp — that is the whole reason the row was
+ * refused. `Date.UTC` is used deliberately loosely: a `day` of 32 rolls into
+ * the next month, which is wrong as a date and perfectly good as a sort key,
+ * because the row still lands within a day of where its author meant it.
+ * Nothing reads this value back; the row is written from `cells` untouched.
+ *
+ * Returns `NaN` when there is nothing to go on at all, which sorts the row to
+ * the end rather than to 1970.
+ */
+function preservedRowInstant(cells: Record<string, string>): number {
+  const int = (raw: string | undefined): number =>
+    /^\d+$/.test((raw ?? '').trim()) ? Number(raw) : NaN;
+  const y = int(cells['year']);
+  const mo = int(cells['month']);
+  const d = int(cells['day']);
+  if (!Number.isNaN(y) && !Number.isNaN(mo) && !Number.isNaN(d)) {
+    const h = int(cells['hour']);
+    const mi = int(cells['minute']);
+    return Date.UTC(y, mo - 1, d, Number.isNaN(h) ? 0 : h, Number.isNaN(mi) ? 0 : mi);
+  }
+  const at = (cells['at'] ?? '').trim();
+  return at === '' ? NaN : Date.parse(at);
+}
+
+/**
+ * Every row a Save writes to `notes.csv`: the notes, the tombstones, and the
+ * rows this build could not read — one chronological list.
+ *
+ * **A preserved row keeps its place in time rather than being swept to the
+ * bottom.** A file someone opens in a spreadsheet is read in order, and a row
+ * that has been quarantined at the end of it is one nobody will connect to the
+ * hour of the race it belongs to. Where the row says nothing about when it
+ * happened, it goes last — after everything datable, which is the only honest
+ * place left for it.
+ *
+ * Preserved rows are NOT notes and are counted nowhere: they never enter the
+ * `Note[]` list, so nothing shows them, places them on a lane, or includes
+ * them in the "N notes" digest. They exist between the reader that refused
+ * them and the writer that puts them back.
+ *
+ * Throws — via `noteToRow` — if a note carries a timezone this build cannot
+ * resolve. Callers must be ready to show that rather than dropping it, which
+ * is why `App.tsx`'s Save is wrapped.
+ */
+export function noteRowsForSave(
+  notes: readonly Note[],
+  preserved: readonly PreservedRow[],
+  eventTimezone?: string,
+): Array<Record<string, string>> {
+  const keyed = [
+    ...notes.map((note, i) => ({
+      at: Date.parse(note.at),
+      order: i,
+      row: noteToRow(note, eventTimezone),
+    })),
+    ...preserved.map((row, i) => ({
+      at: preservedRowInstant(row.cells),
+      order: notes.length + i,
+      row: row.cells,
+    })),
+  ];
+  keyed.sort((a, b) => {
+    const aUndated = Number.isNaN(a.at);
+    const bUndated = Number.isNaN(b.at);
+    if (aUndated !== bUndated) return aUndated ? 1 : -1;
+    if (!aUndated && a.at !== b.at) return a.at - b.at;
+    // Ties hold their input order, so two rows at the same minute do not swap
+    // places every time the file is saved and make a pointless diff.
+    return a.order - b.order;
+  });
+  return keyed.map((k) => k.row);
 }
 
 /** Legacy column names, tried in order when `year` is absent. */
@@ -342,6 +433,22 @@ function resolveInstant(
     const instant = hasZone(raw) ? parseZonedInstant(raw) : zonedToInstant(raw, tz ?? eventTimezone ?? 'UTC');
     if (instant === null) {
       return { error: `note "${label}" has an unreadable "at" value "${row.at}"` };
+    }
+    // The zone is checked even when the `at` value carried its own offset and
+    // nothing here needed it. `noteToRow` writes the row back THROUGH `tz`,
+    // so a zone this build cannot resolve is not a harmless spare cell: an
+    // abbreviation like "MDT" — the obvious thing for a person to type — read
+    // in cleanly here and then threw a raw `RangeError` out of the Save
+    // button, producing no file and no message. The five-integer path has
+    // always validated the zone; this one now does too, so the row is
+    // refused, reported, and kept rather than breaking the save later.
+    if (tz !== undefined && zoneOffsetMinutes(instant, tz) === null) {
+      return {
+        error:
+          `note "${label}" has a timezone of "${tz}", which is not a name meanwhile ` +
+          'recognises — write the full zone, like "America/Denver", not an abbreviation ' +
+          'like "MDT"',
+      };
     }
     return { instant, tz };
   }
@@ -559,6 +666,19 @@ function extraFields(row: Record<string, string>): Record<string, string> | unde
 export function noteToRow(note: Note, eventTimezone?: string): Record<string, string> {
   const zone = note.tz ?? eventTimezone ?? 'UTC';
   const instant = new Date(note.at).getTime();
+  // Checked before `Intl` is asked to format anything. `instantPartsInZone`
+  // throws a bare `RangeError: Invalid time zone specified: MDT` otherwise,
+  // which escaped the Save click handler and left no file, no message, and a
+  // whole session's writing unsaved. `rowToNote` refuses such a zone now, so
+  // reaching this is a note built in memory rather than read from a file —
+  // but a save must fail with words a person can act on, never a stack trace.
+  if (zoneOffsetMinutes(instant, zone) === null) {
+    throw new Error(
+      `note "${note.id}" has a timezone of "${zone}", which is not a name meanwhile ` +
+        'recognises, so it cannot be written to notes.csv. Write the full zone, like ' +
+        '"America/Denver", not an abbreviation like "MDT".',
+    );
+  }
   const parts = instantPartsInZone(instant, zone);
   // Read from the INSTANT rather than remembered from the row it was parsed
   // from, which makes it exact across a DST transition without storing
@@ -975,15 +1095,20 @@ export function partitionDeleted(notes: readonly Note[]): { live: Note[]; delete
  * `problems` carries an unreadable row AND — since a security review found it
  * happening in complete silence — every note a `deleted` row in one file
  * cancelled in another. See `reportTombstoneRemovals`.
+ *
+ * `preserved` carries the unreadable rows THEMSELVES, so the writer can put
+ * them back. Reporting a row and then deleting it on the next save is the
+ * same silent loss under a different name — see `PreservedRow` in `csv.ts`.
  */
 export function mergeNotes(
   files: ReadonlyArray<{ name: string; text: string }>,
   eventTimezone?: string,
   /** Forwarded to `dedupeNotes` unchanged — see its doc comment. */
   rowIdentity?: NoteRowIdentity,
-): { notes: Note[]; problems: string[] } {
+): { notes: Note[]; problems: string[]; preserved: PreservedRow[] } {
   const rows: Note[] = [];
   const problems: string[] = [];
+  const preserved: PreservedRow[] = [];
   // Kept per file, and only for this: a tombstone that cancels somebody else's
   // note has to be reported against the file and row it arrived in. See
   // `reportTombstoneRemovals`.
@@ -1004,7 +1129,15 @@ export function mergeNotes(
         // line by however many blank lines sit above it. These numbers exist so
         // someone can open the file and go to the row, which a number that is
         // quietly off by two sends them away from.
-        problems.push(`${file.name} row ${table.rowLines[i] ?? i + 2}: ${result.error}`);
+        const line = table.rowLines[i] ?? i + 2;
+        // KEPT, not just reported. Until this existed, "meanwhile could not
+        // read this row" and "meanwhile deleted this row on the next save"
+        // were the same event — see `PreservedRow`.
+        preserved.push({ file: file.name, line, cells: row });
+        problems.push(
+          `${file.name} row ${line}: ${result.error}. The row is kept exactly as it is and ` +
+            'written back when you save, so nothing in it is lost.',
+        );
         return;
       }
       rows.push(result);
@@ -1019,7 +1152,7 @@ export function mergeNotes(
 
   const notes = dedupeNotes(rows, eventTimezone, rowIdentity);
   notes.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-  return { notes, problems };
+  return { notes, problems, preserved };
 }
 
 /**
