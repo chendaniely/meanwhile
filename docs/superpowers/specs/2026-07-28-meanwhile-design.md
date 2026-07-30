@@ -1,7 +1,9 @@
 # meanwhile — design
 
 **Date:** 2026-07-28
-**Status:** approved; M0-M1 implemented
+**Status:** approved; M0-M11 implemented as of 2026-07-29 (this line read
+"M0-M1 implemented" long after that stopped being true — see CLAUDE.md's
+STATUS section, which is the one to trust)
 **Owner:** Daniel Chen (@chendaniely)
 **Revised:** 2026-07-28 (session 2) — see §12 for what changed and why
 
@@ -118,6 +120,21 @@ fixed in a text editor with no build step.
 }
 ```
 
+**Corrected post-M10 / notes-as-CSV.** Two fields above no longer match what
+the code accepts, so do not copy this example verbatim:
+
+- **`course` is a discriminated union and needs its `kind`.** The shipped
+  shape is `{ "kind": "gpx", "src": "...", "person": "sam" }`, alongside
+  `{ "kind": "strava-embed", "url": ... }` and
+  `{ "kind": "strava-link", "url": ... }`. A `course` without `kind` is
+  rejected. See `CourseRef` in `src/core/schema.ts`.
+- **`items[].note` is legacy and read-only.** Prose now lives in
+  `notes*.csv`; the writer never emits `items[].note` or `manifest.notes`,
+  though both are still *read* so older manifests migrate rather than lose
+  their captions.
+
+`people` and `markers` are unchanged and still correct as shown.
+
 ### 4.1 Schema drift is the main risk
 
 Two codebases must agree on this file or the CLI writes manifests the viewer
@@ -152,6 +169,18 @@ parseGpx(xml) → Course
 course.atTime(t)     → { distance, elevation, lat, lon }
 course.atDistance(d) → { time, elevation, lat, lon }
 ```
+
+**Corrected post-M10:** the shipped API is free functions, not methods, and
+the parser handles TCX as well as GPX, so it is not named for either:
+
+```ts
+parseCourse(xml: string): Course | null
+atTime(course: Course, at: Instant): CoursePoint | null
+atDistance(course: Course, distance: number): CoursePoint | null
+```
+
+Both accessors return `null` rather than throwing, and `atTime` returns
+`null` on an untimed track — see `Course.timed` and `src/core/course.ts`.
 
 A pure kernel module with no dependencies — GPX is just
 `<trkpt lat lon><ele><time>`. Four capabilities fall out of it:

@@ -4,7 +4,7 @@
 
 As of 2026-07-29 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **462 tests pass** (`make check`).
+the race. **463 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -26,9 +26,11 @@ editable by hand in a spreadsheet, and **Save** downloads one zip of
 `notes.csv`, `people.csv`, and `manifest.json` (a store-only ZIP writer,
 `src/viewer/media/zip.ts`, no dependency).
 
-**Not built:** automatic clock alignment (blocked — needs a timed track, see
-below), reading a saved zip back in (only writing one exists — see
-`TODO.md`), aid stations, and everything else in `TODO.md`.
+**Not built:** automatic clock alignment (no longer blocked — the owner
+supplied a real timed activity export on 2026-07-29 and it parses; the
+estimator itself was simply never written, see `TODO.md`), reading a saved
+zip back in (only writing one exists — see `TODO.md`), aid stations, and
+everything else in `TODO.md`.
 
 **Do not describe anything as implemented unless it is in the "Built" list.**
 Check before you cite.
@@ -245,6 +247,12 @@ Three rules that must not be broken:
 
 1. **Color follows the person, never their position.** Hiding a lane must not
    repaint the others, so assignment keys off the manifest's people list.
+   **This is a calling convention, not something the function enforces.**
+   `assignLaneColors()` assigns by slot index over whatever array it is
+   handed, so passing it a *filtered* list silently repaints everyone — pass
+   the full `manifest.people` and filter afterwards. All seven current call
+   sites do. `tests/assemble.test.ts` pins the real behavior, including the
+   case where removing one person does change another's color.
 2. **Never invent a ninth hue.** Person nine gets a neutral gray and the UI
    says so. A generated hue silently breaks every guarantee above.
 3. **Adjacent-pair safety is not all-pairs safety.** Lanes, feed, and grid

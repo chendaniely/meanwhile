@@ -78,9 +78,15 @@ file; see `TODO-completed.md` for why.
 
 - **Automatic clock alignment.** Match a photo's GPS position to the point on
   the track with the same coordinates; the difference between the photo's
-  timestamp and the track's is that device's `clockOffset`. **Needs a timed
-  track**, so it is blocked until an activity export turns up — the route
-  export we have has no timestamps to compare against.
+  timestamp and the track's is that device's `clockOffset`. **No longer
+  blocked.** This waited on a timed track, because the first export we had was
+  a *route* export with no timestamps to compare against; the owner supplied a
+  real activity export on 2026-07-29 (121k points, timestamps present) and it
+  parses. What is missing is the estimator itself. When writing it, note that
+  the right statistic is `min(shutter − gps)` across many photos rather than
+  the mean: a GPS fix always precedes the shutter, so the error is one-sided
+  and the minimum is the freshest fix — see CLAUDE.md's "GPS time is NOT the
+  shutter time".
 - **A pace chart without a timed track.** Grade against distance already works
   and is the useful part of a course profile; pace is genuinely impossible
   without times and is simply not drawn.
