@@ -1,5 +1,5 @@
 /**
- * A CSV codec, RFC 4180, with the three concessions a file that people open
+ * A CSV codec, RFC 4180, with the two concessions a file that people open
  * in a spreadsheet actually needs.
  *
  * BOM: Excel on Windows misreads UTF-8 without one, and notes are exactly

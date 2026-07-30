@@ -24,8 +24,25 @@ export interface ExifData {
   gps?: [number, number];
   /**
    * UTC instant from GPSDateStamp + GPSTimeStamp, as "2026-08-22T13:12:04Z".
-   * This came from satellites, so it is authoritative and immune to the
-   * camera's clock being wrong.
+   *
+   * WARNING, because a future reader will be tempted to trust this the most:
+   * it is NOT the shutter time. It timestamps the GPS FIX, and a fix goes
+   * stale. Measured across 134 real photos from a 100-mile race: median 11s
+   * behind the shutter, p90 76s, worst 919s (15 minutes) — and the lag is
+   * NON-UNIFORM, so photos taken seconds apart can collapse onto one instant
+   * and lose the relative order this app exists to show. See CLAUDE.md's
+   * "GPS time is NOT the shutter time" and `TIME_SOURCE_RANK` in schema.ts,
+   * which ranks `gps` BELOW every shutter-derived source for exactly this
+   * reason. Do not re-promote it.
+   *
+   * Its real jobs: a fallback timestamp when a file has no EXIF date at all,
+   * and raw material for a future clock-offset estimator (`min(shutter -
+   * gps)` across many photos, since fix staleness is one-sided).
+   *
+   * It is still device-INDEPENDENT, though — a satellite fix, not the
+   * camera's clock — so `clockOffset` must never be applied to it (see
+   * `isDeviceClock` in schema.ts). Ranked low for ACCURACY; still not the
+   * device clock for PROVENANCE. Keep those two questions separate.
    */
   gpsInstant?: string;
   /** EXIF orientation, 1-8. */
@@ -80,8 +97,13 @@ export function parseJpegExif(file: Reader): ExifData | null {
   let off = 2;
   while (off + 4 <= file.length) {
     if (file.u8(off) !== 0xff) {
-      // Fill bytes are legal between segments; anything else means we have
-      // lost the thread and should stop rather than guess.
+      // Every marker starts with 0xFF, so landing on anything else means a
+      // previous segment's length was wrong and we've drifted off the
+      // boundary. Advance one byte at a time to resync on the next 0xFF
+      // landmark, rather than trying to guess a segment length from data
+      // that isn't a marker at all. The while condition above bounds this,
+      // so a file that never resyncs just falls out of the loop and returns
+      // null instead of looping forever.
       off++;
       continue;
     }

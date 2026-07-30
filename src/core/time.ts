@@ -210,7 +210,14 @@ export interface ResolvedTime {
   deviceIndependent: boolean;
   /** Milliseconds of clockOffset actually applied. */
   offsetApplied: number;
-  /** Present only when `instant` is null; shown in the unplaced tray. */
+  /**
+   * Present in two cases, not just one: when `instant` is null — the item
+   * cannot be placed at all, and this is shown in the unplaced tray — and
+   * also when `instant` resolved fine but a `clockOffset` on the person could
+   * not be parsed and was silently ignored, in which case `instant` is the
+   * uncorrected recorded time. Check `instant === null` to tell which one
+   * happened; do not assume this field's presence alone means unplaceable.
+   */
   reason?: string;
 }
 

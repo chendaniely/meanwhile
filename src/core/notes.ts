@@ -18,8 +18,9 @@
  * `year` absent is what selects the legacy path; `date`+`time` is tried
  * before a bare `at`.
  *
- * Pure: only `./time.ts`, `./csv.ts`, and ECMAScript/WHATWG globals (`Intl`,
- * `Date`, `Number`). Row-at-a-time conversion (`rowToNote`, `noteToRow`)
+ * Pure: only `./time.ts`, `./csv.ts`, `./schema.ts` (a type-only import, for
+ * `Item`), and ECMAScript/WHATWG globals (`Intl`, `Date`, `Number`).
+ * Row-at-a-time conversion (`rowToNote`, `noteToRow`)
  * knows nothing about CSV text — that's `csv.ts`'s job. `mergeNotes` is the
  * exception: it takes whole files and calls `parseCsv` on each before
  * reducing them to a deduplicated, time-sorted note list.
@@ -398,7 +399,7 @@ function instantPartsInZone(
  * A content fingerprint used to tell "the same row seen twice" from "a
  * different row wearing the same id".
  *
- * Two things a naive `JSON.stringify` of the note would get wrong, both
+ * Three things a naive `JSON.stringify` of the note would get wrong, all
  * found by hand-editing a real spreadsheet:
  *
  * - **Array order.** `people`/`author` are semantically sets — "Priya;Sam"
@@ -438,16 +439,6 @@ export function fingerprintNote(note: Note, eventTimezone?: string): string {
 }
 
 /**
- * Concatenate-and-dedupe a flat list of notes, minting an id for any that
- * lack one and re-minting one side of a genuine collision.
- *
- * Shared by `mergeNotes` (several `notes*.csv` files) and by ingest's
- * combination of a legacy manifest's migrated notes with `notes*.csv` (see
- * `viewer/media/ingest.ts`) — a folder can hold BOTH after an old-style
- * `manifest.json` and a `notes.csv` saved from it both land back in the same
- * folder, which produces exact id collisions without this.
- */
-/**
  * `rowIdentity`'s type on its own: a session-scoped map from a blank-`id`
  * row's content fingerprint (as parsed — see the `rowIdentity` param doc on
  * `dedupeNotes`) to the id minted for it the first time it was seen. Mutated
@@ -457,6 +448,16 @@ export function fingerprintNote(note: Note, eventTimezone?: string): string {
  */
 export type NoteRowIdentity = Map<string, string>;
 
+/**
+ * Concatenate-and-dedupe a flat list of notes, minting an id for any that
+ * lack one and re-minting one side of a genuine collision.
+ *
+ * Shared by `mergeNotes` (several `notes*.csv` files) and by ingest's
+ * combination of a legacy manifest's migrated notes with `notes*.csv` (see
+ * `viewer/media/ingest.ts`) — a folder can hold BOTH after an old-style
+ * `manifest.json` and a `notes.csv` saved from it both land back in the same
+ * folder, which produces exact id collisions without this.
+ */
 export function dedupeNotes(
   notes: readonly Note[],
   eventTimezone?: string,

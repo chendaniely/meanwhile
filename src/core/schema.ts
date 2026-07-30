@@ -129,6 +129,11 @@ export interface EventInfo {
    * IANA zone, e.g. "America/Los_Angeles". Required to resolve naive
    * timestamps (`exif-naive`, `filename`) into real instants. Without it
    * those items cannot be placed.
+   *
+   * This is a convention, not a checked constraint: `validateManifest` only
+   * requires a string here, not that it names a real IANA zone. A bad value
+   * is not rejected at load time — it surfaces later and per-item, as an
+   * unplaceable `reason` from `resolveItemInstant` in `time.ts`.
    */
   timezone?: string;
   /**
@@ -189,6 +194,13 @@ export interface Person {
    * ISO-8601 duration to ADD to this person's device timestamps to reach true
    * time, e.g. "-PT47S" for a camera running 47 seconds fast. Applied only to
    * device-clock time sources.
+   *
+   * `validateManifest` only checks that this is a string, not that it parses
+   * as a duration — `parseDuration` lives in `time.ts`, which already imports
+   * types from this file, so validating it here would be circular. An
+   * unparseable value is caught later, per item, by `resolveItemInstant`,
+   * which ignores it and records why in `ResolvedTime.reason` rather than
+   * rejecting the whole manifest.
    */
   clockOffset?: string;
   /** Optional lane color override. Omit to let the palette assign one. */
@@ -196,9 +208,15 @@ export interface Person {
 }
 
 /**
- * A labelled point on the course. Given either as wall-clock (`at`) or as
- * metres along the course (`atDistance`); the spine converts between them so
- * markers land correctly on both the time and distance axes.
+ * A labelled point on the course, given either as wall-clock (`at`) or as
+ * metres along the course (`atDistance`).
+ *
+ * Only `at` is rendered today: the swimlanes draw a line at that clock time
+ * (`markerLines` in `Swimlanes.tsx`), and a marker with no `at` — i.e. an
+ * `atDistance`-only marker — is silently dropped there, because the app has
+ * no distance axis to place it on. Nothing converts between the two fields;
+ * that conversion is what `atDistance` is FOR, but the spine does not do it
+ * yet. Give a marker an `at` for it to actually appear.
  */
 export interface Marker {
   label: string;
@@ -285,7 +303,13 @@ export interface Item {
   note?: string;
   width?: number;
   height?: number;
-  /** EXIF orientation, 1-8. */
+  /**
+   * EXIF orientation, 1-8. Not checked by `validateManifest` at all — neither
+   * the type nor the range — so a hand-edited manifest can carry anything
+   * here. The one consumer, `MediaTile.tsx`, only tests `>= 5` to decide
+   * whether width/height are swapped for the tile's aspect ratio, so a bad
+   * value degrades a thumbnail rather than crashing anything.
+   */
   orientation?: number;
   /** Bytes. Used to warn before decoding something enormous. */
   bytes?: number;

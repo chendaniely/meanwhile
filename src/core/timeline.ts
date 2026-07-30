@@ -108,7 +108,15 @@ export function nearestItem(
   return best;
 }
 
-/** Everything within a window either side of an instant — the moment grid. */
+/**
+ * Everything within a window either side of an instant.
+ *
+ * Written for the "moment grid" the original design called for (pick a
+ * time, see what everyone captured right then) — that view was never built,
+ * see TODO.md. The feature that shipped in its place, `MomentStrip` under
+ * the swimlanes, reimplements the same filter inline rather than calling
+ * this; nothing in `src/viewer/` currently imports this function.
+ */
 export function itemsAround(
   placed: readonly PlacedItem[],
   instant: Instant,
