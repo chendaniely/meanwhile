@@ -916,3 +916,56 @@ guards were dead code when a counterexample showed they were load-bearing. In a
 project whose rule is that wrong documentation is worse than none, a comment
 inviting a future session to delete a working guard is the more dangerous of
 the two.
+
+
+---
+
+> I want you to take another thorough pass-through all of the comments and the
+> documentation. you now assume the comments and the functions that it is
+> commenting sync up. I want you to review the comments and confirm that the
+> code does what the comment is saying. same with the larger pieces of
+> documentation. I want you to keep looping through this process until you find
+> no more discrepancies in the documentation and comments
+
+Six passes, ~145 discrepancies, 19 commits. The instruction to *loop* rather
+than audit once is what made it work, for a reason worth recording: **every
+pass found errors introduced by the previous pass's fixes.** Never many, never
+zero. A false "the header is 71px" claim where none had existed; a lying test
+name created by the very pass that removed lying test names; and one case where
+this file's author asserted in a commit message that a claim was "genuinely
+correct" after checking the phrase's context instead of the thing it described.
+
+**The dominant defect was a claim fixed in one place while copies survived
+elsewhere**, and it recurred in all six passes. "GPS time is authoritative" —
+the single claim this project has spent the most effort disproving — was found
+and fixed four separate times, the last on the `gpsInstant` field itself, which
+is precisely where a future session would read before touching the ranking.
+"Automatic clock alignment" was corrected in two files, then found in three
+more, then two more after that. The lesson is mechanical: after correcting a
+claim, grep the whole repo for its meaning, not its wording, and check every
+hit — but check each in context, because two of five hits for "a few kilobytes"
+were about a different subject and correcting them would have introduced two
+new errors while fixing three.
+
+**An audit of comments turns up real bugs, because a comment is a claim about
+behaviour.** Five CSS custom properties were used at fourteen sites and defined
+nowhere, silently collapsing `border-radius` to 0. `notes.csv` and `people.csv`
+— the files this branch introduced to hold people's names and prose — were not
+git-ignored, under a `.gitignore` whose first line promises event data is never
+committed. Escape closed the lightbox *and* silently unpinned the moment strip,
+undoing the pin the user had set so the strip would hold still. The feed
+discarded a note whenever no photograph shared its window, which is the "write
+something and watch it vanish" failure this project singles out as the one
+worth spending UI on. None of these would have been found by reading the code
+for correctness; they were found by asking whether a sentence was true.
+
+**The most useful technique was breaking the code to prove a test bites.**
+Several tests named an invariant they never asserted — deleting the production
+guard left them green. The fix is not to rename the test but to add the
+assertion and then verify by removing the guard and watching it fail.
+
+The loop was stopped deliberately rather than at zero. By pass six the claim
+families were converging — fifteen of seventeen fully propagated, none
+reopened — but each pass had also been auditing roughly the surface the
+previous pass named, so a pass that found nothing would have meant the search
+had stopped, not that the repository was clean.

@@ -8,6 +8,53 @@ already built, and the reasons are worth keeping.
 
 ## Unreleased
 
+### A documentation audit, looped six times — and the bugs it turned up
+
+> "I want you to take another thorough pass-through all of the comments and the
+> documentation. you now assume the comments and the functions that it is
+> commenting sync up. I want you to review the comments and confirm that the
+> code does what the comment is saying. same with the larger pieces of
+> documentation. I want you to keep looping through this process until you find
+> no more discrepancies in the documentation and comments"
+
+About 145 inaccuracies fixed across comments, prose, test names and
+user-facing strings. Most were stale claims, but a comment is a claim about
+behaviour, so checking them turned up real defects — these are the ones that
+change what the app does:
+
+- **Escape no longer unpins the moment strip while the lightbox is open.** It
+  closed the lightbox *and* released the pin, undoing the pin you had just set
+  so the strip would hold still while you reached for a photo. Escape had also
+  never worked at all: the handler sat on a `role="presentation"` element that
+  could not receive focus.
+- **The feed no longer hides a note when no photograph shares its window.**
+  Notes were filtered by time but the empty-state check counted only media, so
+  a note alone in the window was discarded — the one failure this project
+  treats as worth spending UI on.
+- **Five CSS custom properties were used in fourteen places and defined
+  nowhere**, silently collapsing `border-radius` to zero and dropping the notes
+  panel's margin entirely.
+- **Six labels moved off the faintest text colour.** At 3.98:1 it fails WCAG AA
+  for body text, and the token's own rule said it was never for text a reader
+  needs — including the "nothing" label in the moment strip and the explanation
+  shown on a photo the browser cannot decode.
+- **The sticky course rail no longer tucks under the header**, which is now
+  measured at runtime rather than assumed.
+- **`notes.csv` and `people.csv` are git-ignored**, along with the zip that
+  Save produces and every media extension ingest accepts. They hold names and
+  prose, and `.gitignore`'s first line promises event data never reaches git.
+  Nothing had been committed; the gap is closed.
+- **`d3-time` is gone** — installed and justified in the dependency budget,
+  imported nowhere.
+
+The most consequential documentation fix has no user-visible effect and is the
+reason for the rest: several comments still said GPS timestamps are
+authoritative. They are not — GPS records the satellite fix, not the shutter,
+lagging a median 11 seconds and up to 919, unevenly enough to scramble the
+order of photographs taken moments apart. That correction cost 231 real files
+to establish, and four surviving copies of the old claim were sitting where a
+future session would read them first.
+
 ### Notes and the people roster move out of the manifest
 
 > "i think it'll be better if notes were in a separate file. it'll be much
