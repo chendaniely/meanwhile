@@ -10,7 +10,7 @@ import {
   type TimeAnchor,
 } from '../core/course.ts';
 import { formatCsv } from '../core/csv.ts';
-import { mintNoteId, noteToRow, NOTE_HEADERS, type Note } from '../core/notes.ts';
+import { mintNoteId, noteHeadersFor, noteToRow, stampBlankAuthors, type Note } from '../core/notes.ts';
 import { formatPeopleCsv } from '../core/people-csv.ts';
 import type { Manifest, PersonId } from '../core/schema.ts';
 import { isVisible, toggleVisible, VIEW_NAMES, type ViewName } from '../core/state.ts';
@@ -19,6 +19,7 @@ import { assignLaneColors } from '../core/palette.ts';
 import {
   clampWindow,
   densestWindow,
+  excludingCaptions,
   fullSpan,
   isWithin,
   placeItems,
@@ -177,6 +178,19 @@ export function App() {
    * imported legacy manifest.
    */
   const [notes, setNotes] = useState<Note[]>([]);
+  // Mirrors `notes` on every render, so `handlePicked` can read the CURRENT
+  // session notes without needing `notes` in its own dependency array — the
+  // same `rangeRef` pattern used below. Read at re-ingest time to merge
+  // session work forward rather than discarding it (see the CRITICAL note on
+  // `mergeSessionNotes`: without this, "Add files" silently dropped every
+  // note and caption written since the folder was opened).
+  const notesRef = useRef<Note[]>([]);
+  notesRef.current = notes;
+  // Ids removed from `notes` this session. A delete only changes in-memory
+  // state — nothing is written until Save — so a re-ingest must be told
+  // which ids were deliberately removed, or it re-reads them straight off
+  // disk and resurrects them.
+  const deletedNoteIds = useRef<Set<string>>(new Set());
 
   /**
    * Read a set of files into the app.
@@ -198,6 +212,12 @@ export function App() {
       for (const f of picked) merged.set(f.path, f.file);
       const all: PickedFile[] = [...merged].map(([path, file]) => ({ path, file }));
 
+      // Opening a FOLDER starts a new session — a genuinely different event
+      // must not carry yesterday's deletions (or notes) across into it. Only
+      // "Add files" continues the current one, which is the whole point of
+      // passing `sessionNotes`/`deletedNoteIds` into ingest below.
+      if (mode === 'replace') deletedNoteIds.current = new Set();
+
       setFiles(merged);
       setStage({ name: 'reading', progress: { done: 0, total: all.length, current: '' } });
       try {
@@ -213,6 +233,15 @@ export function App() {
                 existingItems: previous.current.items,
                 ...(previous.current.notes ? { existingNotes: previous.current.notes } : {}),
               }
+            : {}),
+          // CRITICAL: without these, re-ingesting replaces the live session's
+          // notes and captions with whatever a stale re-read of the folder
+          // produces — see the doc comment on `mergeSessionNotes`. Omitted on
+          // 'replace', matching the reset just above (`ingestFolder` treats a
+          // missing `sessionNotes`/`deletedNoteIds` as empty): that mode means
+          // a different folder, not a continuation of this one.
+          ...(mode === 'add'
+            ? { sessionNotes: notesRef.current, deletedNoteIds: deletedNoteIds.current }
             : {}),
           onProgress: (progress) => setStage({ name: 'reading', progress }),
         });
@@ -356,6 +385,10 @@ export function App() {
 
   const deleteNote = useCallback((id: string) => {
     setNotes((prev) => prev.filter((n) => n.id !== id));
+    // Recorded so a later re-ingest (see `handlePicked`) knows this id was
+    // deliberately removed, rather than re-reading it off disk and treating
+    // its reappearance as a brand new note nobody has ever deleted.
+    deletedNoteIds.current.add(id);
   }, []);
 
   const manifest = stage.name === 'loaded' ? stage.manifest : null;
@@ -670,6 +703,18 @@ export function App() {
     [placedNotes, range],
   );
 
+  /**
+   * Notes for the feed's interleaved stream and the note-dock's count badge.
+   *
+   * A caption lives ON its photo — discovered via the tile's speech-bubble
+   * glyph, read in the lightbox or the Notes panel — so showing it AGAIN in
+   * the feed's chronological stream, and counting it again on the dock
+   * button, says the same thing three times and makes the glyph's whole
+   * "otherwise invisible" justification false. The Notes panel is exempt: it
+   * is the reference list, and a caption belongs there like any other note.
+   */
+  const feedNotes = useMemo(() => excludingCaptions(visibleNotes), [visibleNotes]);
+  const noteCount = useMemo(() => excludingCaptions(placedNotes).length, [placedNotes]);
 
   // The lightbox belongs to the app, not to a view: you can open a photo from
   // the feed or from the lanes, and stepping through it walks the same list.
@@ -707,17 +752,38 @@ export function App() {
    * `notes[]` and `items[].note`, which is the writer half of "the validator
    * still reads them, but nothing this app saves carries them again."
    *
+   * Before any of that: if "you are" is set and some note has no author,
+   * offer ONCE to stamp all of them — never per note, and never blocking the
+   * save either way, whichever button is pressed.
+   *
    * The trigger is the standard hidden-anchor pattern: an anchor click on an
    * object URL, revoked immediately after — here aimed at a zip Blob rather
    * than a JSON one.
    */
   const saveEvent = () => {
     if (stage.name !== 'loaded') return;
+
+    let notesToSave = notes;
+    const blankAuthorCount = notes.filter((n) => n.author.length === 0).length;
+    if (me.length > 0 && blankAuthorCount > 0) {
+      const stamp = window.confirm(
+        `Stamp ${blankAuthorCount} ${blankAuthorCount === 1 ? 'note' : 'notes'} with no ` +
+          `author as written by ${me.join(', ')}?`,
+      );
+      if (stamp) {
+        notesToSave = stampBlankAuthors(notes, me);
+        setNotes(notesToSave);
+      }
+    }
+
     const manifest = manifestForSave(stage.manifest);
     const files = [
       {
         name: 'notes.csv',
-        text: formatCsv(NOTE_HEADERS, notes.map((n) => noteToRow(n, manifest.event.timezone))),
+        text: formatCsv(
+          noteHeadersFor(notesToSave),
+          notesToSave.map((n) => noteToRow(n, manifest.event.timezone)),
+        ),
       },
       { name: 'people.csv', text: formatPeopleCsv(manifest.people) },
       { name: 'manifest.json', text: `${JSON.stringify(manifest, null, 2)}\n` },
@@ -1052,7 +1118,7 @@ export function App() {
                 <Feed
                   manifest={stage.manifest}
                   items={items}
-                  notes={visibleNotes}
+                  notes={feedNotes}
                   captionByItem={captionByItem}
                   onOpen={(entry) => setOpenId(entry.item.id)}
                   onActive={(moment: readonly PlacedItem[]) => {
@@ -1131,7 +1197,7 @@ export function App() {
               cursor={view.cursor}
               author={me}
               onAdd={addNote}
-              count={placedNotes.length}
+              count={noteCount}
               open={noteOpen}
               onOpenChange={setNoteOpen}
               notice={

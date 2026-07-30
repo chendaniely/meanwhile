@@ -15,7 +15,7 @@ import {
 } from '../../core/assemble.ts';
 import { parseCourse, type Course } from '../../core/course.ts';
 import { isManifestFile, isNotesFile, isPeopleFile, isTrackFile } from '../../core/metadata.ts';
-import { mergeNotes, type Note } from '../../core/notes.ts';
+import { dedupeNotes, mergeNotes, resolveNotePhotos, type Note } from '../../core/notes.ts';
 import { parsePeopleCsv } from '../../core/people-csv.ts';
 import {
   validateManifest,
@@ -57,6 +57,30 @@ export interface IngestOptions {
    * alongside whatever `notes*.csv` files are found.
    */
   existingNotes?: readonly LegacyNote[];
+  /**
+   * Notes written or edited THIS SESSION — the live state the composer, the
+   * caption field, and the Notes panel all read from — as opposed to
+   * `existingNotes` above, which is the legacy `manifest.notes` array.
+   *
+   * Without this, re-ingesting (dropping a GPX in with "Add files", say)
+   * would silently discard every note and caption written since the folder
+   * was opened: `notes*.csv` on disk hasn't been saved yet, so re-reading it
+   * produces the PRE-edit set, and the caller used to replace the live state
+   * with that outright. See `mergeSessionNotes` for how these reconcile with
+   * what a fresh read of the folder produces.
+   */
+  sessionNotes?: readonly Note[];
+  /**
+   * Ids deleted from `sessionNotes` since the folder was last read.
+   *
+   * A delete only changes the in-memory list — nothing is written to disk
+   * until Save — so a plain "session wins by id" merge cannot tell "the
+   * session never heard of this id" (a genuinely new note) from "the session
+   * used to have this id and removed it" (a deletion). This is what makes
+   * the distinction: an id in here is never resurrected from a fresh read,
+   * however wide the fresh read's contents are.
+   */
+  deletedNoteIds?: ReadonlySet<string>;
   onProgress?: (progress: IngestProgress) => void;
   signal?: AbortSignal;
 }
@@ -242,8 +266,28 @@ export async function ingestFolder(
     manifest.event.timezone,
   );
   const migratedNotes = migrateLegacyNotes(manifest);
-  const notes = [...migratedNotes, ...csvNotes].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-  const noteProblems = [...rosterProblems, ...csvNoteProblems];
+  // A folder can carry BOTH an old-style manifest.json (migratedNotes) and a
+  // notes.csv saved from it (csvNotes) — the same notes, under the same
+  // ids, from two sources. Without deduping here that is an exact id
+  // collision on every ingest, not just a hypothetical one.
+  const freshNotes = dedupeNotes([...migratedNotes, ...csvNotes], manifest.event.timezone);
+  // `photo` names an item id, but the README calls the column "the
+  // filename" and so does a person typing into the spreadsheet — resolve a
+  // bare, unambiguous filename onto the item it actually names before
+  // anything downstream keys off `photo`.
+  const { notes: photoResolvedNotes, problems: photoProblems } = resolveNotePhotos(
+    freshNotes,
+    manifest.items,
+  );
+  // Reconcile against whatever this session already knows, so a re-ingest
+  // (dropping a GPX in with "Add files", say) cannot revert an edit,
+  // resurrect a delete, or drop a note nothing has been saved to disk yet.
+  const notes = mergeSessionNotes(
+    opts.sessionNotes ?? [],
+    photoResolvedNotes,
+    opts.deletedNoteIds ?? new Set(),
+  );
+  const noteProblems = [...rosterProblems, ...csvNoteProblems, ...photoProblems];
 
   return {
     manifest,
@@ -255,6 +299,47 @@ export async function ingestFolder(
     notes,
     noteProblems,
   };
+}
+
+/**
+ * Reconcile a fresh read of `notes*.csv` (and migrated legacy notes) against
+ * whatever the live session already knows, so re-ingesting a folder — "Add
+ * files" to drop in a GPX, most often — cannot lose a note or a caption
+ * nothing has been saved to disk yet.
+ *
+ * The rule: **the session is authoritative for any id it already knows.**
+ * `fresh` contributes only ids the session has never seen:
+ *
+ *   - A note composed this session, not yet in any file on disk, has no
+ *     match in `fresh` at all — kept because it's in `session`.
+ *   - A note EDITED this session keeps its id; `fresh` re-reads the stale,
+ *     pre-edit copy under that same id, so it is excluded and the session's
+ *     edited copy is what survives.
+ *   - A note DELETED this session is gone from `session`, but `fresh` still
+ *     has it (it's still on disk, unsaved) — `deletedIds` is what stops
+ *     that from resurrecting it; without a record of the deletion, "absent
+ *     from session" would be indistinguishable from "session never heard
+ *     of it", and the second case is exactly how a genuinely new note (a
+ *     collaborator's freshly dropped-in `notes-priya.csv`) has to get in.
+ *   - A note that is new on disk and unknown to the session — that
+ *     collaborator's file — has no id collision with `session` and is not
+ *     in `deletedIds`, so it is added.
+ *
+ * Pure and independent of `ingestFolder`'s file-reading, so it is directly
+ * testable with plain `Note[]` — no `File` mocking needed.
+ */
+export function mergeSessionNotes(
+  session: readonly Note[],
+  fresh: readonly Note[],
+  deletedIds: ReadonlySet<string>,
+): Note[] {
+  const sessionIds = new Set(session.map((n) => n.id));
+  const notes = [
+    ...session,
+    ...fresh.filter((n) => !sessionIds.has(n.id) && !deletedIds.has(n.id)),
+  ];
+  notes.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  return notes;
 }
 
 /**

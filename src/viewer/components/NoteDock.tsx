@@ -25,7 +25,12 @@ interface Props {
   /** The "you are" setting from the top bar — pre-fills the composer's "Written by". */
   author: readonly string[];
   onAdd: (note: Note) => void;
-  /** Notes already written, purely for the count on the button. */
+  /**
+   * Notes already written, purely for the count on the button. Expected to
+   * exclude captions (`excludingCaptions` in `core/window.ts`) — a caption
+   * is discovered via the photo's own speech-bubble glyph, not this count,
+   * so including it here would say the same thing twice.
+   */
   count: number;
   /**
    * Shown when the note just written landed outside the visible window, with

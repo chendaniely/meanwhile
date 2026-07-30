@@ -38,6 +38,12 @@ interface Props {
    * Notes fall in the same chronological stream as the photographs. Keeping
    * them in a separate list would break the one thing the feed is for —
    * reading the event in the order it happened.
+   *
+   * Expected to already be filtered through `excludingCaptions` (see
+   * `core/window.ts`) by the caller: a caption lives on its photo — the
+   * tile's speech-bubble glyph is how it is discovered — so interleaving it
+   * here too would show it a second time and make that glyph's
+   * "otherwise invisible" justification false.
    */
   notes?: readonly PlacedNote[];
   /**

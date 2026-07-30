@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { legacyNoteToNote, manifestForSave, migrateLegacyNotes } from '../src/viewer/media/ingest.ts';
+import {
+  ingestFolder, legacyNoteToNote, manifestForSave, mergeSessionNotes, migrateLegacyNotes,
+} from '../src/viewer/media/ingest.ts';
+import type { PickedFile } from '../src/viewer/media/folder.ts';
+import type { Note } from '../src/core/notes.ts';
 import type { Item, Manifest, Note as LegacyNote, Person } from '../src/core/schema.ts';
 import { SCHEMA_VERSION } from '../src/core/schema.ts';
 import { parseDuration } from '../src/core/time.ts';
@@ -159,6 +163,137 @@ describe('migrateLegacyNotes', () => {
 
   it('is empty for a manifest with neither notes nor captions', () => {
     expect(migrateLegacyNotes(baseManifest())).toEqual([]);
+  });
+});
+
+describe('mergeSessionNotes', () => {
+  /**
+   * CRITICAL 1 from the whole-branch review: `App.tsx` used to call
+   * `setNotes(loadedNotes)` unconditionally after a re-ingest ("Add files"
+   * to drop in a GPX, most often), discarding every note and caption written
+   * since the folder was opened — because the live session state was never
+   * passed into `ingestFolder` at all. This is the reconciliation that
+   * replaced that unconditional overwrite; these tests reproduce each half
+   * of the failure the review described and pin the fix against it.
+   */
+  const note = (id: string, over: Partial<Note> = {}): Note => ({
+    id, at: '2026-07-25T09:00:00.000Z', people: [], author: [], text: id, ...over,
+  });
+
+  it('keeps a note composed this session that is not yet on disk', () => {
+    // "Write five notes, caption three photos, then click Add files" — none
+    // of those eight have been saved, so a fresh read of the folder cannot
+    // know about them at all.
+    const session = [note('a'), note('b')];
+    const out = mergeSessionNotes(session, [], new Set());
+    expect(out.map((n) => n.id).sort()).toEqual(['a', 'b']);
+  });
+
+  it('keeps the SESSION copy of a note edited this session, not the stale re-read', () => {
+    const edited = note('a', { text: 'edited' });
+    const staleFromDisk = note('a', { text: 'original' });
+    const out = mergeSessionNotes([edited], [staleFromDisk], new Set());
+    expect(out).toHaveLength(1);
+    expect(out[0]?.text).toBe('edited');
+  });
+
+  it('does not resurrect a note deleted this session, even though the re-read still has it', () => {
+    // The note is gone from `session` (deleted) but the fresh read still
+    // carries it — it was never saved to disk, so re-reading the folder
+    // finds it exactly as before. `deletedIds` is what tells the two apart
+    // from a note the session has simply never seen.
+    const staleFromDisk = note('a', { text: 'original' });
+    const out = mergeSessionNotes([], [staleFromDisk], new Set(['a']));
+    expect(out).toEqual([]);
+  });
+
+  it('adds a note that is genuinely new on disk and unknown to the session', () => {
+    // A collaborator's notes-priya.csv landing in the folder between one
+    // ingest and the next.
+    const fromCollaborator = note('new-from-priya');
+    const out = mergeSessionNotes([note('a')], [fromCollaborator], new Set());
+    expect(out.map((n) => n.id).sort()).toEqual(['a', 'new-from-priya']);
+  });
+
+  it('reverts nothing: an untouched note surviving both sides is not duplicated', () => {
+    const same = note('a');
+    const out = mergeSessionNotes([same], [note('a', { text: 'a' })], new Set());
+    expect(out).toHaveLength(1);
+  });
+});
+
+describe('ingestFolder — notes end to end', () => {
+  /**
+   * These two run the whole pipeline against real `File` objects (Node's
+   * global `File`, no browser needed) rather than the pure pieces above, to
+   * prove the WIRING and not just the individual functions: `ingestFolder`
+   * really does dedupe a legacy manifest against its own migrated notes.csv,
+   * and really does carry a session forward when called the way `App.tsx`
+   * calls it on "Add files".
+   */
+  function textFile(path: string, text: string): PickedFile {
+    return { path, file: new File([text], path.slice(path.lastIndexOf('/') + 1)) };
+  }
+
+  const legacyManifest = (notes: LegacyNote[]) =>
+    JSON.stringify({
+      schema: SCHEMA_VERSION,
+      event: { title: 'Race', timezone: 'UTC' },
+      people: [{ id: 'p', name: 'Priya' }],
+      items: [],
+      notes,
+    });
+
+  it('dedupes a legacy manifest note against the copy notes.csv already carries', async () => {
+    // The scenario the "also fix" list describes: a folder holding BOTH an
+    // old-style manifest.json (migrated on the fly) and a notes.csv already
+    // saved from it — the same note, same id, from two sources.
+    const manifestJson = legacyManifest([
+      { id: 'legacy1', at: '2026-07-25T09:00:00Z', text: 'first light', person: 'p' },
+    ]);
+    const notesCsv =
+      'id,year,month,day,hour,minute,duration,tz,people,photo,author,text\n' +
+      'legacy1,2026,7,25,9,0,,,Priya,,,first light\n';
+
+    const { notes } = await ingestFolder(
+      [textFile('manifest.json', manifestJson), textFile('notes.csv', notesCsv)],
+      { title: 'x' },
+    );
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.id).toBe('legacy1');
+  });
+
+  it('carries an edit and a delete forward, and keeps a note composed this session, across a re-ingest', async () => {
+    // Reproduces the CRITICAL scenario directly: open a folder, do session
+    // work, then re-ingest (what "Add files" does) — nothing must be lost,
+    // and nothing deleted must come back, even though the files on disk are
+    // untouched because nothing has been saved yet.
+    const twoNotes = legacyManifest([
+      { id: 'legacy1', at: '2026-07-25T09:00:00Z', text: 'first light', person: 'p' },
+      { id: 'legacy2', at: '2026-07-25T10:00:00Z', text: 'aid station', person: 'p' },
+    ]);
+
+    const first = await ingestFolder([textFile('manifest.json', twoNotes)], { title: 'x' });
+    expect(first.notes.map((n) => n.id).sort()).toEqual(['legacy1', 'legacy2']);
+
+    // Session: edit legacy1, delete legacy2, compose a brand new note.
+    const composed: Note = {
+      id: 'new1', at: '2026-07-25T11:00:00Z', people: [], author: [], text: 'composed this session',
+    };
+    const session = [
+      ...first.notes
+        .filter((n) => n.id !== 'legacy2')
+        .map((n) => (n.id === 'legacy1' ? { ...n, text: 'EDITED' } : n)),
+      composed,
+    ];
+
+    const second = await ingestFolder([textFile('manifest.json', twoNotes)], {
+      title: 'x', sessionNotes: session, deletedNoteIds: new Set(['legacy2']),
+    });
+    const byId = new Map(second.notes.map((n) => [n.id, n]));
+    expect(byId.get('legacy1')?.text).toBe('EDITED'); // the edit survives
+    expect(byId.has('legacy2')).toBe(false); // the delete stays deleted
+    expect(byId.has('new1')).toBe(true); // the composed note survives
   });
 });
 
