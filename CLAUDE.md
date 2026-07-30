@@ -119,9 +119,11 @@ sides.
 ### The course spine is built LAST, and that is deliberate *(session 2)*
 
 Everything except the spine works with **zero course data** — swimlanes on a
-time axis, feed, and moment grid need no GPX at all. The GPX later *lights
-up* the elevation backdrop, distance axis, map, and automatic clock alignment
-without reworking anything already built.
+time axis and the feed need no GPX at all. The GPX later *lights up* the
+elevation backdrop and the map without reworking anything already built. (The
+"moment grid" and "automatic clock alignment" that the original design
+expected to fall out of this were never built — see "Three views, one
+cursor" and the STATUS section above.)
 
 So `course` is a union, and missing data hides features rather than breaking
 them:
@@ -140,9 +142,12 @@ to our cursor. Only a GPX yields position-at-time.
 
 ### `timeSource` is recorded per item *(session 2)*
 
-Every item records where its timestamp came from: `gps`, `exif-offset`,
-`qt-offset`, `exif-naive`, `filename`, `mvhd`, `manual`, `none` — ordered
-most to least trustworthy. Two things depend on it:
+Every item records where its timestamp came from: `manual`, `exif-offset`,
+`qt-offset`, `exif-naive`, `qt-naive`, `gps`, `filename`, `mvhd`, `none` —
+ordered most to least trustworthy (`TIME_SOURCE_RANK` in
+`src/core/schema.ts`). Note `gps` sits below every shutter source, not above
+— see "GPS time is NOT the shutter time — verified, do not re-order" below
+before touching this order. Two things depend on it:
 
 1. The UI shows how much to trust a placement. **A timeline that is
    confidently wrong is worse than one with visible gaps.**
@@ -371,7 +376,7 @@ and `tests/media-store.test.ts` fails if any URL is created and not revoked.
 
 `src/core/state.ts` holds `{ view, cursor, range, visible }` and nothing else.
 Switching view changes `view` alone, which is what makes the cursor survive
-the switch — that shared cursor is the difference between goggles and four
+the switch — that shared cursor is the difference between goggles and three
 separate pages.
 
 It is mirrored into the URL hash, so any moment is a link. Two details that
@@ -486,10 +491,10 @@ be positioned behind a region that grows without limit.
 The rule, in priority order by how often a thing is used:
 
 1. **Constant, must never be hunted for** → the sticky top bar. Event name,
-   Open folder, Add files, Save manifest.
+   Open folder, Add files, Save.
 2. **Used while reading** → within reach of the view it belongs to. The note
-   composer sits inline under the lanes, and **floats over the feed**, because
-   the feed has no bottom worth scrolling to.
+   composer is a persistent dock, in the same corner in every view — see "The
+   note dock is app chrome, not a feature of one view" below.
 3. **Reference, read once per folder** → a collapsed `<details>` panel ABOVE
    the views, costing one line with a digest (`231 placed · 1 unplaced · 4
    people`). Settings, ingest report, unplaced tray, the notes list.
@@ -1032,11 +1037,19 @@ feed is the phone view and the one the crew will actually open.
 Optional, and the highest-value idea in the design. A pure, dependency-free
 `src/core/course.ts` mapping between time, distance, elevation, and lat/lon.
 
-It pays for itself four times: a pluggable time/distance axis; the elevation
-profile as the swimlanes' backdrop; a **tile-free SVG map** (which is why the
-map is in v1 rather than deferred); and **automatic clock alignment** —
-match a photo's GPS to the GPS-synced track and the time difference *is* that
-device's clock offset.
+The original design expected it to pay for itself four times: a pluggable
+time/distance axis, the elevation profile as the swimlanes' backdrop, a
+tile-free SVG map, and automatic clock alignment. **Two of those four
+shipped, two did not.** The elevation profile backdrop is built. The map is
+built too, but not tile-free — it is Leaflet with raster terrain basemaps, a
+deliberate reversal of the original "no map library" call (see the
+dependency budget). The pluggable time/distance axis was never added to
+`AppState` (see "Three views, one cursor"). Automatic clock alignment was
+never written either: `anchorItems()` (see "Placing media ON the course"
+above) can now *detect* disagreement
+between a photo's GPS and where the track says the runner was, which is the
+raw material an estimator would use, but no estimator exists — see "Not
+built" above and `TODO.md`.
 
 ### Clock alignment is central, in `people.csv` *(revised, notes-as-csv)*
 
@@ -1237,11 +1250,16 @@ colors fail WCAG AA on the dark ground. Do not "fix" these back:
 
 | Token | Value | Why not the brand value |
 |---|---|---|
-| `--mw-link` | `#4E8FBF` (5.3:1) | brand `#236192` is **2.8:1** on `#171512` — unreadable |
-| `--mw-danger` | `#D98BA3` (7.2:1) | brand `#9A4665` is **3.0:1** |
+| `--mw-link` | `#4E8FBF` (5.21:1) | brand `#236192` is **2.8:1** on `#171512` — unreadable |
+| `--mw-danger` | `#D98BA3` (7.09:1) | brand `#9A4665` is **3.0:1** |
 
-Orange `#F26522` passes unchanged at 5.9:1 and is the cursor accent.
-`--mw-fg-faint` is 4.1:1 and is **borders and decoration only, never text**.
+Orange `#F26522` passes unchanged at 5.78:1 and is the cursor accent (`--mw-accent`).
+`--mw-fg-faint` is **3.98:1** — below the 4.5:1 AA threshold for body text —
+so it is **borders and decoration only, never text**; six text uses that
+depended on it were moved to `--mw-fg-muted` (8.34:1) for exactly this
+reason. `--mw-fg`, the primary text color, is 16.88:1. (Figures recomputed
+against the shipped tokens in `src/viewer/styles/tokens.css`; re-measure
+rather than trust these if the tokens change.)
 
 Atkinson Hyperlegible is **self-hosted** (`src/viewer/fonts/`, SIL OFL, 52,380
 bytes across four files, measured)

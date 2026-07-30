@@ -229,9 +229,11 @@ What to build instead, in order:
 3. **Read `Software`** as an extra grouping signal — cheap, occasionally
    decisive, never harmful.
 
-Folders remain the reliable separator, and the roster lives in the manifest as
-deliberate metadata precisely so notes can reference people by name rather than
-by phone.
+Folders remain the reliable separator, and the roster — names people are
+addressed by, so notes can reference a person rather than a phone — is
+deliberate metadata. Its edit surface is `people.csv`; `manifest.json` still
+carries a redundant copy, and `people.csv` wins when both are present (see
+CLAUDE.md's "The manifest is the contract").
 
 ## An import/export wizard *(raised 2026-07-29, during the notes-as-CSV build)*
 

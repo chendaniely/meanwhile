@@ -200,7 +200,7 @@ Other commands:
 | `make help` | List every command |
 | `make inspect DIR=~/photos` | Report what meanwhile reads from a folder of media |
 | `make test` | Run the test suite |
-| `make check` | Everything the project checks before a commit |
+| `make check` | Type-check and test; CI also runs a clean install and build |
 | `make build` | Produce the publishable site in `dist/` |
 | `make preview` | Serve `dist/` so you can check it before publishing |
 | `make clean` | Delete `dist/` and the installed packages |

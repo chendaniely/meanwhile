@@ -7,6 +7,35 @@ STATUS section, which is the one to trust)
 **Owner:** Daniel Chen (@chendaniely)
 **Revised:** 2026-07-28 (session 2) — see §12 for what changed and why
 
+**How to read this document.** This is the ORIGINAL design, kept as a
+historical record — it is not rewritten to match what shipped. Several
+scattered "Corrected post-M10" notes already patch specific claims below, but
+the following proposals in this document did not ship, or shipped
+differently, and **CLAUDE.md's decision record is authoritative wherever the
+two disagree**:
+
+- **Automatic clock alignment (§5.4, §8, §12.2) was never built.** No
+  estimator exists in `src/`; `clockOffset` is entered by hand in
+  `people.csv`. See CLAUDE.md's "Not built" list and `TODO.md`.
+- **The moment grid and a separate map view (§6, §9, §12.2) were never
+  built as views.** Three views shipped — `feed`, `lanes`, `course` — and
+  the map lives inside `course`. A `MomentStrip` under the swimlanes is a
+  different, smaller thing. See CLAUDE.md's "Three views, one cursor".
+- **The pluggable time/distance axis (§5.4, §6, §9) does not exist.**
+  `AppState` has no `axis` and no `zoom` field.
+- **The map is not tile-free (§5.4, §9).** It is Leaflet with raster
+  terrain basemaps — a deliberate reversal; see the dependency budget in
+  CLAUDE.md.
+- **The `timeSource` order in §12.3 is wrong and incomplete.** `gps` is
+  listed first (most trustworthy); it actually ranks below every shutter
+  source, and `qt-naive` is missing entirely. See CLAUDE.md's "GPS time is
+  NOT the shutter time" and `TIME_SOURCE_RANK` in `src/core/schema.ts`.
+- **The contrast figures in §12.6 are stale.** They were computed against
+  an earlier palette; re-measured values are in CLAUDE.md's aesthetic
+  section and `src/viewer/styles/tokens.css`.
+- **The font-size figure in §12.6 ("~56KB") was an estimate.** The measured
+  size is 52,380 bytes across four files.
+
 ---
 
 ## 1. The problem
@@ -255,7 +284,10 @@ goggles rather than four separate pages.
 
 **Cursor state lives in the URL** (`#t=2026-08-22T13:12Z&view=grid`), so any
 moment is a link you can text to someone. This falls out of the state design
-for free and is likely the feature people use most.
+for free and is likely the feature people use most. **Corrected post-M10:**
+`grid` is not a valid `view` — `parseHash` accepts only `feed`, `lanes`, and
+`course`, so this exact example URL does not work. A working link looks like
+`#t=2026-08-22T13:12Z&view=course`.
 
 ## 7. Ingest: what works and what does not
 
@@ -430,7 +462,12 @@ hides features rather than breaking them.
 
 New required field on every item, ordered most to least trustworthy: `gps`,
 `exif-offset`, `qt-offset`, `exif-naive`, `filename`, `mvhd`, `manual`,
-`none`. Two things depend on it.
+`none`. Two things depend on it. **Corrected post-M10:** this order is wrong
+and incomplete. The shipped order (`TIME_SOURCE_RANK` in
+`src/core/schema.ts`) is `manual`, `exif-offset`, `qt-offset`, `exif-naive`,
+`qt-naive`, `gps`, `filename`, `mvhd`, `none` — `gps` ranks BELOW every
+shutter source, not above them, and `qt-naive` was missing here. See
+CLAUDE.md's "GPS time is NOT the shutter time — verified, do not re-order".
 
 **It marks confidence.** A timeline that is confidently wrong is worse than
 one with visible gaps, and the worst offender is Apple's `mvhd`
@@ -478,12 +515,18 @@ The owner's `_brand.yml` already contains a dark ramp, so "its own identity"
 and "share the brand" were never in tension. No light theme.
 
 Two values are derived rather than taken from the brand, because the brand's
-own colors fail WCAG AA on `#171512`: links use `#4E8FBF` (5.3:1) instead of
+own colors fail WCAG AA on `#171512`: links use `#4E8FBF` instead of
 `#236192` (2.8:1), and danger text uses `#D98BA3` instead of `#9A4665`
-(3.0:1). Orange `#F26522` passes unchanged at 5.9:1 and is the cursor.
+(3.0:1). Orange `#F26522` passes unchanged and is the cursor. **Corrected
+post-M10:** the contrast figures quoted here (5.3:1 for links, 5.9:1 for
+orange) were an earlier measurement. Recomputed against the shipped tokens:
+`--mw-link` 5.21:1, `--mw-danger` 7.09:1, `--mw-accent` (orange) 5.78:1,
+`--mw-fg-faint` 3.98:1 (decoration only, fails AA for text) — see CLAUDE.md's
+aesthetic section and `src/viewer/styles/tokens.css`.
 
-Atkinson Hyperlegible is self-hosted (~56KB) so the app shell itself makes
-zero external requests. **Corrected post-M10:** the course view's map tiles
+Atkinson Hyperlegible is self-hosted (~56KB, an estimate — measured size is
+52,380 bytes across four files) so the app shell itself makes zero external
+requests. **Corrected post-M10:** the course view's map tiles
 (OpenTopoMap, Esri/ArcGIS, OSM, and optionally Thunderforest) are external
 and load unconditionally on every render — see the "no map library" rule's
 reversal in `CLAUDE.md`. The optional Strava embed iframe is external too,

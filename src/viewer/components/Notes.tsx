@@ -29,7 +29,8 @@ import { PersonPicker } from './PersonPicker.tsx';
  *
  * **The composer and the list are separate exports on purpose.** Writing a
  * note is something you do constantly while reading, so it has to sit within
- * reach of whatever view you are in — under the lanes, floating over the feed.
+ * reach of whatever view you are in — as a persistent dock, in the same
+ * corner across every view, not tied to the lanes or the feed alone.
  * Re-reading the whole list is reference, and belongs with the other reference
  * material. Keeping them one component forced both to live in the same place,
  * which is how the composer ended up below two thousand photographs.
