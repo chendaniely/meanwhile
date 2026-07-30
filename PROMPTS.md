@@ -886,3 +886,33 @@ the GitHub PAT trade-offs — a fine-grained, single-repo token is the right
 shape and needs no backend, but it is a bearer token sitting in browser
 storage; the device flow is the safer long-term answer, and saving must work
 with no token at all either way.
+
+
+---
+
+> when you are done with all these tasks. review your work. then do a series of
+> loops and passes to make sure all bugs and issues have been fixed. we want to
+> remove all tech debt before continuing to add new features
+
+Ten tasks were each implemented and reviewed in isolation, then reviewed again
+as a whole branch. **The whole-branch review is where the real bugs were**, and
+the reason is structural: every one of them lived at a seam between two pieces
+that were individually correct. The worst — "Add files" destroying every note
+written in the session — was a regression against behaviour the old code had
+and had commented on, created by a later task removing the mechanism's only
+caller.
+
+A pattern worth recording: three separate bugs traced to one root cause, that a
+hand-typed row with a blank `id` gets a fresh random id on every read. After the
+second patch it was clear the shape was wrong, and the fix became a
+session-scoped row-to-id map so the id is stable — at which point every
+existing id-based mechanism worked unchanged. Patching the third symptom would
+have been the cheaper-looking move and the wrong one.
+
+Two things caught by testing the built app rather than by the suite: notes could
+be invisible on load, because the default time window was computed from photo
+clusters and ignored notes; and a comment left behind by a fix claimed two
+guards were dead code when a counterexample showed they were load-bearing. In a
+project whose rule is that wrong documentation is worse than none, a comment
+inviting a future session to delete a working guard is the more dangerous of
+the two.

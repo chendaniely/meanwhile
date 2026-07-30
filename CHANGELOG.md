@@ -73,6 +73,30 @@ picker in the top bar — kept in the browser's local storage, never the
 manifest, since it describes the laptop rather than the event — pre-fills
 `Written by` on every new note without ever blocking one from being written.
 
+### Fixed before merge
+
+The whole-branch review found that the pieces, each correct alone, leaked data
+where they met. Everything below was caught by review or by end-to-end testing
+rather than by the suite, and each now has a test.
+
+- **"Add files" destroyed every note and caption written in the session.**
+  The composer had been moved off the manifest, which silently disconnected the
+  mechanism that carried notes across a re-ingest. A two-click path, advertised
+  in the README, with nothing on disk yet to recover from.
+- **Unknown CSV columns were dropped on save** — and because the merge
+  fingerprint includes them, the note then *duplicated* on the next load.
+- **A person in `people.csv` who owned no media was silently deleted from it**,
+  which is what adding a crew member to the roster looks like.
+- **An invalid `role` corrupted `manifest.json`** so it failed its own
+  validator, losing the crop, the course reference, markers and every
+  hand-placed time on the next open.
+- **A hand-typed row with a blank `id` had no stable identity across reads**,
+  which produced three separate bugs — a duplicate on "Add files", a deleted
+  note resurrecting, and an edited-then-deleted note resurrecting. Fixed at the
+  cause with a session-scoped row-to-id map rather than a fourth patch.
+- **Notes could be invisible on load**, because the default time window was
+  computed from photo clusters and ignored notes entirely.
+
 ## 0.1.0 — 2026-07-29 — first working viewer
 
 Point the site at a folder of photographs and look at the race. Nothing is
