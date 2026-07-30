@@ -126,7 +126,7 @@ async function main(): Promise<void> {
   const unplaced: string[] = [];
   let withGps = 0;
 
-  console.log(`${pad('file', 34)} ${pad('kind', 5)} ${pad('timeSource', 12)} ${pad('at', 26)} gps`);
+  console.log(`${pad('file', 34)} ${pad('kind', 5)} ${pad('timeSource', 12)} ${pad('at', 26)} gps duration`);
   console.log('-'.repeat(90));
 
   for (const file of files) {

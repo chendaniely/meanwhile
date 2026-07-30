@@ -174,7 +174,8 @@ samsung-sm-f721w,Sam,,PT-4S
 
 `id` is machine-written and matches the grouping key ingest derives from the
 device. `name` is what appears everywhere in the UI and what `notes*.csv`
-refers to. `role` is `runner` or blank. `clock_offset` is an ISO-8601 duration.
+refers to. `role` is one of `runner`, `crew`, `friend`, `other`, or blank
+(`ROLES` in `schema.ts`). `clock_offset` is an ISO-8601 duration.
 
 ## Identity, and why merging needs no version control
 

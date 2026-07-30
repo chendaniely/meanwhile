@@ -1008,9 +1008,10 @@ export function App() {
               <p className="app__hint">
                 A Strava link renders as a link and nothing more &mdash; it carries no
                 time-and-distance data, so there is no elevation profile, no map, and no
-                automatic clock alignment. Those need a <strong>GPX export</strong> from the
+                distance axis. Those need a <strong>GPX export</strong> from the
                 activity (the &hellip; menu &rarr; Export GPX), which works the same from
-                Garmin or COROS.
+                Garmin or COROS. Camera clock differences are corrected by hand, above,
+                whichever course option you use.
               </p>
 
               <IngestReport
@@ -1050,15 +1051,18 @@ export function App() {
           {stage.noteProblems.length > 0 && (
             <p className="callout callout--warn">
               {stage.noteProblems.length === 1 ? 'A row' : `${stage.noteProblems.length} rows`} in
-              notes.csv or people.csv could not be read, so {stage.noteProblems.length === 1 ? 'it was' : 'they were'} skipped
-              rather than guessed at: {stage.noteProblems.join('; ')}
+              notes.csv or people.csv needed a closer look rather than being guessed
+              at &mdash; some were skipped entirely (an unreadable date, a missing
+              name), others were kept but left with something unresolved (like a
+              photo filename that matches more than one file): {stage.noteProblems.join('; ')}
             </p>
           )}
           {stage.importedFrom && (
             <p className="callout">
               Loaded your saved work from <strong>{stage.importedFrom}</strong> &mdash;
-              names, captions, and hand-placed times came back with it. Timestamps
-              are always re-read from the files themselves.
+              names, captions, and hand-placed times came back with it. A
+              hand-placed time stays exactly as you set it; every automatic
+              timestamp is still re-read fresh from the file itself.
             </p>
           )}
 
@@ -1189,7 +1193,7 @@ export function App() {
                     /*
                      * Scrolling the feed moves the SHARED cursor.
                      *
-                     * The premise of this app is one cursor and four
+                     * The premise of this app is one cursor and three
                      * projections of it, and the feed was the one view not
                      * taking part: you could scrub in the lanes and flip to
                      * the feed, but not the other way. It also gives the note

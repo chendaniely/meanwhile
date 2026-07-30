@@ -42,7 +42,9 @@ export function CourseFallback({ course }: Props) {
       <p className="callout">
         This is a <strong>Strava link</strong>, not a track. It cannot say where
         the runner was at 2am, so there is no map, no elevation profile, and no
-        clock alignment &mdash; those need the file itself.
+        distance axis &mdash; those need the file itself. (Camera clock
+        differences are corrected by hand, in <code>people.csv</code>, whether
+        or not there&rsquo;s a track.)
       </p>
 
       <p>

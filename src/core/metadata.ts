@@ -6,10 +6,17 @@
  * so the viewer can show it and so ./time.ts knows whether the person's clock
  * offset applies.
  *
- * The ordering is the whole design. Satellite time beats a device clock that
- * knows its own zone, which beats a device clock that does not, which beats a
- * filename, which beats `mvhd`. Anything left goes to the unplaced tray
- * rather than being guessed at.
+ * The ordering is the whole design, and it is NOT "most authoritative source
+ * wins" — that reads naturally as satellite time first, and that is wrong.
+ * GPS timestamps the FIX, not the shutter, and a fix goes stale: measured
+ * against 134 real race photos, median 11s behind the shutter, worst 919s.
+ * The error is also non-uniform, so it collapses photos taken seconds apart
+ * onto one instant and destroys exactly the relative ordering this app
+ * exists to show. So the real order is: a device clock that knows its own
+ * zone, then one that does not, then GPS, then a filename, then `mvhd`. See
+ * `TIME_SOURCE_RANK` in ./schema.ts for the definitive list — do not
+ * re-derive this ordering from intuition, and do not "fix" GPS back to the
+ * top. Anything left goes to the unplaced tray rather than being guessed at.
  */
 
 import type { ExifData } from './exif.ts';

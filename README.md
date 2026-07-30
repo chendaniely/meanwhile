@@ -83,9 +83,9 @@ Two ways to use it:
 
 If the runner exports their **track file**, the timeline gets much richer: an
 elevation profile behind the photos, a map of the course, the option to lay
-everything out by mile instead of by hour, his heart rate and cadence through
-the race — and automatic correction of the clock differences between
-everyone's cameras.
+everything out by mile instead of by hour, and his heart rate and cadence
+through the race. Camera clocks that drift are still corrected by hand, once
+per person, in `people.csv` — there's no automatic alignment yet.
 
 ### Ask for the TCX, not the GPX — and not the Strava link
 
@@ -134,6 +134,9 @@ What needs times, and so is missing:
 
 - the runner's marker moving with the timeline cursor
 - pace
+
+(Automatic clock alignment isn't built yet regardless of whether the track is
+timed — camera clocks are still corrected by hand, in `people.csv`.)
 - automatic clock alignment
 
 To check before you send it on, open the file in any text editor and search for
@@ -273,8 +276,9 @@ Run `make dev`, click **Open a folder**, and:
 14. **Your work comes back.** Click **Save**, unzip what you get, and drop
    `notes.csv`, `people.csv`, and `manifest.json` into the folder along with
    the photos — names, roles, notes, captions, the crop, and hand-placed times
-   all return. Timestamps are always re-read from the files themselves, so a
-   stale copy can never override what the photo actually says.
+   all return, exactly as you set them. Every other timestamp is still
+   re-read fresh from the file itself, so a stale copy can never override
+   what the photo actually says.
 
 There's also a report of how much to trust the times, an expandable list of
 any files that arrived without a timestamp (with who to ask for the
@@ -329,9 +333,10 @@ containing `notes.csv`, `people.csv` — the list of names, who's the runner,
 and any clock corrections, in the same spreadsheet-editable style — and
 `manifest.json`. Unzip it and drop all three into the folder with your
 photos. Next time you open that folder, every note, caption, name, and
-correction comes right back. Photo and video timestamps are always re-read
-from the files themselves, though, so a stale note file can never make a
-photo lie about when it was taken.
+correction comes right back. A time you placed by hand stays exactly as you
+set it; every other photo and video timestamp is still re-read fresh from
+the file itself, so a stale note file can never make a photo lie about when
+it was taken.
 
 ## Publishing it
 

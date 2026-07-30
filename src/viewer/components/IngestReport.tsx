@@ -160,8 +160,9 @@ export function IngestReport({ manifest, grouping, range,
         <p className="callout callout--warn">
           <strong>{summary.mvhdCount.toLocaleString()} video(s) fell back to the file header.</strong>{' '}
           That field is supposed to be UTC, but Apple writes local time into it with no timezone, so
-          these can land hours off with nothing on screen to warn you. Check one against a photo you
-          know the time of before trusting them.
+          these can land hours off. They're marked here (the bar above is shaded differently) and
+          again when you open one full-size, but check one against a photo you know the time of
+          before trusting them.
         </p>
       )}
 

@@ -3,8 +3,10 @@
  *
  * Given a GPX or TCX export, this maps freely between time, distance,
  * elevation and position — which is what unlocks the elevation backdrop, the
- * distance axis, the map, and automatic clock alignment. It is the highest
- * -value optional thing in the project.
+ * distance axis, and the map. It is the highest-value optional thing in the
+ * project. (Automatic clock alignment would also read off this mapping, but
+ * is not built — see CLAUDE.md's decision record. `clockOffset` today is
+ * entered by hand, in `people.csv`.)
  *
  * TWO FORMATS, ON PURPOSE. A **GPX carries no heart rate and no cadence** —
  * per Strava's own documentation it has GPS, elevation, time, and power only
@@ -50,8 +52,9 @@ export interface Course {
    * **A GPX may have none at all**, and Strava's export is a live example: it
    * writes 120k points of lat/lon/ele and not one `<time>`. That is a course,
    * not a run. Everything spatial still works — the map, the elevation
-   * profile, distance — while position-at-time, pace, and automatic clock
-   * alignment are simply impossible.
+   * profile, distance — while position-at-time and pace are simply
+   * impossible. (Automatic clock alignment would need this too, once it
+   * exists — see the module doc above. It is not built yet either way.)
    *
    * The tempting fix is to spread the field's known start and finish times
    * evenly over the points. Do not: a hundred-miler's pace varies by a factor

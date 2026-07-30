@@ -437,7 +437,7 @@ export function validateManifest(input: unknown): ValidationResult {
         }
         warnings.push(
           `course kind "${kind}" has no time-and-distance data, so the elevation ` +
-            `backdrop, distance axis, map, and automatic clock alignment stay off. ` +
+            `backdrop, distance axis, and map stay off. ` +
             `Ask for a GPX export to turn them on.`,
         );
       } else {

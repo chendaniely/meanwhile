@@ -427,6 +427,9 @@ next write."
 - Produces:
   - `mintNoteId(): string`
   - `mergeNotes(files: ReadonlyArray<{ name: string; text: string }>, eventTimezone?: string): { notes: Note[]; problems: string[] }`
+  - **Corrected:** the shipped signature gained a third parameter,
+    `rowIdentity?: NoteRowIdentity`, forwarded unchanged to `dedupeNotes` — see
+    `src/core/notes.ts`. Not present when this plan was written.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -760,6 +763,10 @@ load."
 
 **Interfaces:**
 - Produces: `zip(files: ReadonlyArray<{ name: string; text: string }>): Blob`
+- **Corrected:** the shipped export is `zipBytes(files: ReadonlyArray<{ name:
+  string; text: string }>): Uint8Array` — both the name and the return type
+  changed from this plan. See `src/viewer/media/zip.ts`, and Step 3 below,
+  which already shows the real signature.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1010,6 +1017,9 @@ the path this feature exists to make fast."
 - Modify: `src/viewer/components/Lightbox.tsx` — caption writes a note
 - Modify: `src/viewer/components/MediaTile.tsx` — the chat symbol
 - Modify: `src/core/schema.ts` — stop writing `notes[]` and `items[].note`
+  **Corrected:** this logic actually landed in `manifestForSave()` in
+  `src/viewer/media/ingest.ts`, not in `schema.ts`. `schema.ts`'s validator
+  still *accepts* the legacy fields (as planned below); it never wrote them.
 - Modify: `src/viewer/App.tsx` — save produces the zip
 - Test: `tests/schema.test.ts`
 

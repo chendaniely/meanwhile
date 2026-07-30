@@ -5,6 +5,8 @@
 *.gpx
 *.tcx
 manifest.json
+notes*.csv
+people.csv
 
 # Media, in case anything lands outside data/
 *.jpg

@@ -3,9 +3,9 @@
  *
  * The views are three projections of THIS, not three features. Switching view
  * changes `view` and nothing else, which is what makes the cursor survive the
- * switch — scrub to 06:12 in the lanes, flip to the grid, and you are looking
- * at 06:12. That shared cursor is the difference between goggles and four
- * separate pages.
+ * switch — scrub to 06:12 in the lanes, flip to the course, and you are
+ * looking at 06:12. That shared cursor is the difference between goggles and
+ * three separate pages.
  *
  * It lives in the URL so any moment is a link you can send to someone. That
  * falls out of keeping the state serializable and is likely the feature

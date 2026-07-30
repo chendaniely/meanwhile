@@ -19,7 +19,11 @@
 import type { Item } from '../../core/schema.ts';
 import { decodeThumbnail, decodeVideoPoster } from './thumbnails.ts';
 
-/** Roughly 400 thumbnails at ~240KB each. Far below what a tab can hold. */
+/**
+ * Roughly 2,400 thumbnails at ~41KB each (measured: 480px wide, JPEG quality
+ * 0.82 — see ./thumbnails.ts). Far below what a tab can hold, and comfortably
+ * past the ~2k-file scale target.
+ */
 const DEFAULT_BUDGET_BYTES = 96 * 1024 * 1024;
 
 /**
