@@ -1038,3 +1038,60 @@ have been the precise failure the eight-pass audit existed to remove.
 
 The loop-review and semantic-release expectations are now standing process in
 CLAUDE.md's "How work gets executed" rather than a thing to re-derive.
+
+
+---
+
+> i need a way (possibly in the site interface itself) to connect the notes
+> and people datasets, where the author in notes is the new display alias
+> for the name in people. [...] i am essentially asking for a non
+> destructive way to rename people ids that are displayed. assume in the
+> future i might have multiple of the same device so we need to maeksure the
+> id in people are unique so the rename can happen with a join or something
+
+> shoudl note that the "name" shoudl be the default display name, the
+> fallback is the "also_known-as" value to display on the site
+
+> we can pin this later on, but just make sure thigns are flexiable enough to
+> handle multiple peopel with same devices
+
+`Person.id` was already stable across a rename — `renamePerson` in `App.tsx`
+only ever wrote `name`. The actual break was one layer over: `notes*.csv`
+stores `people`/`author` as names, not ids, on purpose (an id column would
+defeat the entire "hand-editable spreadsheet" reason notes are CSV), so
+renaming a device slug to a person's real name silently orphaned every note
+already written under the old name — the note survived, its link to that
+person did not.
+
+`people.csv` gained a fifth column, `also_known_as`, same `;`-separated
+convention `people`/`author` already use. `applyRename` (new,
+`core/people-csv.ts`, pure and unit-tested with plain `Person[]`/`Note[]`)
+sets the new name, pushes the old one onto `also_known_as`, and rewrites
+that old name to the new one in every already-loaded note — the alias
+covers a file the app has not read yet, the rewrite covers what is already
+in memory, and neither substitutes for the other. `resolvePersonNames`
+matches a note's names against a person's current name OR any alias now,
+which is the read side of the same join. Display got one fallback chain in
+one function, `displayName` — `name` → first alias → the existing
+device-slug prettifier — used everywhere a person's name renders instead of
+`person.name` scattered across nine call sites.
+
+For the collision question: on a rename that would collide with a different
+person's existing name or alias, the alias and the note rewrite are both
+skipped (the rename to the new name still happens) — recording the alias
+anyway would make the OTHER person ambiguous too, and rewriting notes under
+a name two people share cannot tell which one was meant. `resolvePersonNames`
+itself also never guesses: a name/alias claimed by two different people
+(possible via a hand-edited `people.csv`, outside the site's own guard)
+resolves to neither id, mirroring the existing rule for an ambiguous
+photo-caption filename match. For future same-device duplicates: checked,
+not built — `PersonId` is already an opaque string key everywhere
+downstream (map keys, lexical sort, never parsed), so a numeric suffix like
+`google-pixel-8-pro-2` can be minted for a future second device without
+touching the spelling of any id already in use. `deviceIdOf` itself still
+collides two identical phones into one id today, unchanged, per the owner's
+own "we can pin this later."
+
+16 new tests in `tests/people-csv.test.ts` (10 → 26), each confirmed to fail
+against a deliberately broken production line before being restored. 520
+tests pass.

@@ -1,7 +1,7 @@
 import { scaleTime } from 'd3-scale';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { assignLaneColors, orderPeople, OVERFLOW_COLOR } from '../../core/palette.ts';
-import { resolvePersonNames } from '../../core/people-csv.ts';
+import { displayName, resolvePersonNames } from '../../core/people-csv.ts';
 import type { Manifest, PersonId } from '../../core/schema.ts';
 import { isVisible, type AppState } from '../../core/state.ts';
 import { laneBins } from '../../core/timeline.ts';
@@ -397,7 +397,7 @@ export function Swimlanes({
                     style={{ background: colors.get(person.id) }}
                     aria-hidden="true"
                   />
-                  <span className="lanes__name-text">{person.name}</span>
+                  <span className="lanes__name-text">{displayName(person)}</span>
                   {person.role === 'runner' && <span className="report__tag">runner</span>}
                 </button>
                 {/* The headline number for a lane. A six-hour hole is the
@@ -550,7 +550,7 @@ export function Swimlanes({
                 className="chip"
                 onClick={() => onTogglePerson(p.id)}
               >
-                {p.name}
+                {displayName(p)}
               </button>
             ))}
         </p>

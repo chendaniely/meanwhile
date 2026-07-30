@@ -8,6 +8,30 @@ already built, and the reasons are worth keeping.
 
 ## Unreleased
 
+### Renaming a person no longer orphans their notes
+
+> "i need a way (possibly in the site interface itself) to connect the notes
+> and people datasets, where the author in notes is the new display alias
+> for the name in people. [...] i am essentially asking for a non
+> destructive way to rename people ids that are displayed. assume in the
+> future i might have multiple of the same device so we need to maeksure the
+> id in people are unique so the rename can happen with a join or something"
+
+`notes*.csv` refers to people by name, not id, so renaming a lane from a
+device slug ("Google Pixel 8 Pro") to a person ("Priya") used to orphan every
+note already written under the old name. `people.csv` gains a fifth column,
+`also_known_as`; renaming now pushes the old name onto it and rewrites every
+already-loaded note to the new name, and `resolvePersonNames` matches a
+note's `people`/`author` against a person's current name OR any recorded
+alias — so an untouched crew member's copy of `notes.csv`, or a note nobody
+has re-saved yet, keeps resolving after a rename. Display everywhere now
+falls back `name` → first alias → the device-slug prettifier, in one
+function, rather than showing blank for a hand-added roster row that only
+has an alias. Two people are never resolved ambiguously: a rename that would
+collide with someone else's existing name or alias skips the alias and the
+rewrite rather than guessing which person a note meant, mirroring the
+project's existing rule for an ambiguous photo-caption match.
+
 ## 0.2.0 — 2026-07-30 — notes in CSV, an audited codebase, and a live site
 
 Everything below shipped between 0.1.0 and this release. The headline is that

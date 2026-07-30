@@ -205,6 +205,21 @@ export interface Person {
   clockOffset?: string;
   /** Optional lane color override. Omit to let the palette assign one. */
   color?: string;
+  /**
+   * Earlier names this person has answered to, oldest first — a device-slug
+   * default ("Google Pixel 8 Pro") before the owner renamed it, or a name
+   * spelled differently by a crew member's own copy of `notes.csv`.
+   *
+   * `notes*.csv` stores people by NAME, not id, so a note is not "moved"
+   * when its author is renamed — the old name just stops resolving. This is
+   * the join that lets it keep resolving: `resolvePersonNames` in
+   * `people-csv.ts` matches a note's name against `name` OR any entry here,
+   * case-insensitively, and `displayName` (also `people-csv.ts`) falls back
+   * to the first entry when `name` itself is blank. See CLAUDE.md's "Clock
+   * alignment is central" / notes-as-csv sections for why the join lives in
+   * names rather than in `notes*.csv` gaining an id column.
+   */
+  alsoKnownAs?: string[];
 }
 
 /**
@@ -436,6 +451,12 @@ export function validateManifest(input: unknown): ValidationResult {
       }
       if (p['clockOffset'] !== undefined && typeof p['clockOffset'] !== 'string') {
         errors.push(`${at}.clockOffset must be an ISO-8601 duration, e.g. "-PT47S"`);
+      }
+      if (p['alsoKnownAs'] !== undefined) {
+        const aka = p['alsoKnownAs'];
+        if (!Array.isArray(aka) || aka.some((a) => typeof a !== 'string')) {
+          errors.push(`${at}.alsoKnownAs must be an array of strings`);
+        }
       }
     });
     const runners = peopleRaw.filter((p) => isObject(p) && p['role'] === 'runner');

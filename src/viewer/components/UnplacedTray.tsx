@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { assignLaneColors } from '../../core/palette.ts';
+import { displayName } from '../../core/people-csv.ts';
 import type { Manifest, PersonId } from '../../core/schema.ts';
 import type { UnplacedItem } from '../../core/window.ts';
 import { MediaTile } from './MediaTile.tsx';
@@ -29,7 +30,7 @@ export function UnplacedTray({ manifest, unplaced }: Props) {
 
   const colors = useMemo(() => assignLaneColors(manifest.people), [manifest.people]);
   const names = useMemo(
-    () => new Map(manifest.people.map((p) => [p.id, p.name])),
+    () => new Map(manifest.people.map((p) => [p.id, displayName(p)])),
     [manifest.people],
   );
 

@@ -1,4 +1,5 @@
 import { useId, useRef, useState } from 'react';
+import { displayName } from '../../core/people-csv.ts';
 import type { Person } from '../../core/schema.ts';
 
 /**
@@ -50,8 +51,12 @@ export function PersonPicker({ people, value, onChange, label }: Props) {
   const chosen = new Set(value.map((name) => name.toLowerCase().trim()));
   const q = query.trim().toLowerCase();
   const matches = people.filter((p) => {
-    const key = p.name.toLowerCase().trim();
-    return !chosen.has(key) && (q === '' || key.includes(q));
+    if (chosen.has(displayName(p).toLowerCase().trim())) return false;
+    if (q === '') return true;
+    // Search name AND every alias — same reason `resolvePersonNames` does:
+    // typing a person's old name (from a rename) should still find them.
+    const keys = [p.name, ...(p.alsoKnownAs ?? [])].map((k) => k.toLowerCase().trim());
+    return keys.some((k) => k.includes(q));
   });
   const activeIndex = Math.min(highlight, Math.max(matches.length - 1, 0));
 
@@ -135,8 +140,13 @@ export function PersonPicker({ people, value, onChange, label }: Props) {
             event.preventDefault();
             // The highlighted roster match wins when the list has one; with
             // no matches (an unrecognised name, or an empty roster) the
-            // typed text is accepted as-is.
-            commit(matches[activeIndex]?.name ?? query);
+            // typed text is accepted as-is. Always commits the CURRENT
+            // display name, even if what was typed matched an old alias —
+            // a note authored just now should carry today's name.
+            {
+              const active = matches[activeIndex];
+              commit(active ? displayName(active) : query);
+            }
           } else if (event.key === 'Escape') {
             // Closes the list without changing `value` — the typed text is
             // left alone too, so Escape is purely "stop suggesting".
@@ -162,10 +172,10 @@ export function PersonPicker({ people, value, onChange, label }: Props) {
               // (and the list) right where typing the next name needs it.
               onMouseDown={(event) => {
                 event.preventDefault();
-                commit(person.name);
+                commit(displayName(person));
               }}
             >
-              {person.name}
+              {displayName(person)}
             </li>
           ))}
         </ul>

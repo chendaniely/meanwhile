@@ -177,6 +177,38 @@ device. `name` is what appears everywhere in the UI and what `notes*.csv`
 refers to. `role` is one of `runner`, `crew`, `friend`, `other`, or blank
 (`ROLES` in `schema.ts`). `clock_offset` is an ISO-8601 duration.
 
+**Corrected, people/notes alias join:** `PEOPLE_HEADERS` gained a fifth
+column, `also_known_as` — a `;`-separated list, same convention as
+`people`/`author` above:
+
+```csv
+id,name,role,clock_offset,also_known_as
+google-pixel-8-pro,Priya,runner,,Google Pixel 8 Pro
+samsung-sm-f721w,Sam,,-PT4S,
+```
+
+This is the fix for a gap the design above didn't anticipate: `name` is
+mutable (the whole point of "rename each lane to whoever was carrying it"),
+but `notes*.csv` refers to people by NAME, not `id` — deliberately, since an
+id column would defeat the "hand-editable spreadsheet" property this whole
+design exists for. A bare rename therefore orphaned every note already
+written under the old name. `also_known_as` is the join that survives it:
+`resolvePersonNames` (`core/people-csv.ts`) matches a note's `people`/
+`author` entries against a person's current `name` **or** any entry here,
+case-insensitively, and `applyRename` (same file) is what populates it —
+pushing the previous name on, and rewriting already-loaded notes to the
+current name — every time the site's own rename control is used. See
+CLAUDE.md's notes-as-csv / clock-alignment sections for the full record,
+including the chosen behaviour when a rename collides with another person's
+existing name or alias (skip the alias and the rewrite rather than guess,
+mirroring the `resolveNotePhotos` "never guessed at" rule above).
+
+`displayName` (also `core/people-csv.ts`) is the corresponding read-side
+fallback — `name`, then the first `also_known_as` entry, then the same
+device-slug prettifier a never-renamed lane already used — so a hand-added
+roster row with only an alias still labels its lane instead of showing
+blank.
+
 ## Identity, and why merging needs no version control
 
 **`id` is opaque and stable; `at` is ordinary data.** The owner initially

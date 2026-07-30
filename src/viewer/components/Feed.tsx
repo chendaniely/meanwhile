@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { assignLaneColors } from '../../core/palette.ts';
-import { resolvePersonNames } from '../../core/people-csv.ts';
+import { displayName, resolvePersonNames } from '../../core/people-csv.ts';
 import type { Manifest, PersonId } from '../../core/schema.ts';
 import { formatClock, formatDateTime } from '../../core/time.ts';
 import type { PlacedItem, PlacedNote } from '../../core/window.ts';
@@ -81,7 +81,7 @@ export function Feed({ manifest, items, onOpen, onActive, notes = [], captionByI
   const zone = manifest.event.timezone;
   const colors = useMemo(() => assignLaneColors(manifest.people), [manifest.people]);
   const names = useMemo(
-    () => new Map(manifest.people.map((p) => [p.id, p.name])),
+    () => new Map(manifest.people.map((p) => [p.id, displayName(p)])),
     [manifest.people],
   );
 

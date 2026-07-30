@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { displayName } from '../../core/people-csv.ts';
 import type { Person, PersonId } from '../../core/schema.ts';
 import { formatClock, formatSpan, type Instant } from '../../core/time.ts';
 import type { PlacedItem } from '../../core/window.ts';
@@ -98,7 +99,7 @@ export function MomentStrip({
                 style={{ background: colors.get(person.id) }}
                 aria-hidden="true"
               />
-              <span className="lanes__name-text">{person.name}</span>
+              <span className="lanes__name-text">{displayName(person)}</span>
             </span>
 
             {items.length === 0 ? (

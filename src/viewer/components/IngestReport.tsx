@@ -1,5 +1,6 @@
 import { summarize, type GroupingInfo, type IngestSummary } from '../../core/assemble.ts';
 import { assignLaneColors, isOvercrowded, MAX_DISTINCT_PEOPLE } from '../../core/palette.ts';
+import { displayName } from '../../core/people-csv.ts';
 import type { Manifest, PersonId, TimeSource } from '../../core/schema.ts';
 import { TIME_SOURCE_RANK } from '../../core/schema.ts';
 import { formatDateTime, formatSpan } from '../../core/time.ts';
@@ -92,7 +93,7 @@ export function IngestReport({ manifest, grouping, range,
                     it — an instruction with no control is worse than neither. */}
                 <input
                   className="report__rename"
-                  value={person.name}
+                  value={displayName(person)}
                   aria-label="Person name"
                   onChange={(e) => onRename?.(person.id, e.target.value)}
                 />

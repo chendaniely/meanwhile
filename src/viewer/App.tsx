@@ -14,7 +14,7 @@ import {
   fingerprintNote, mintNoteId, noteHeadersFor, noteToRow, stampBlankAuthors,
   type Note, type NoteRowIdentity,
 } from '../core/notes.ts';
-import { formatPeopleCsv } from '../core/people-csv.ts';
+import { applyRename, displayName, formatPeopleCsv } from '../core/people-csv.ts';
 import type { Manifest, PersonId } from '../core/schema.ts';
 import { isVisible, toggleVisible, VIEW_NAMES, type ViewName } from '../core/state.ts';
 import { formatClock, type Instant } from '../core/time.ts';
@@ -393,13 +393,24 @@ export function App() {
     });
   }, []);
 
+  /**
+   * Rename a person, non-destructively. `applyRename` (`core/people-csv.ts`)
+   * does the actual work — see its doc comment for why a rename has to touch
+   * both the roster (pushing the old name onto `alsoKnownAs`) and every
+   * already-loaded note (rewriting the old name to the new one) — this is
+   * just the wiring: read the current people and notes, apply, write both
+   * results back. `notesRef` (not `notes`) is read here so this callback
+   * does not need `notes` itself in its dependency array, the same reason
+   * that ref exists elsewhere in this file.
+   */
   const renamePerson = useCallback(
-    (id: PersonId, name: string) =>
-      editManifest((m) => ({
-        ...m,
-        people: m.people.map((p) => (p.id === id ? { ...p, name } : p)),
-      })),
-    [editManifest],
+    (id: PersonId, name: string) => {
+      if (stage.name !== 'loaded') return;
+      const result = applyRename(stage.manifest.people, notesRef.current, id, name);
+      editManifest((m) => ({ ...m, people: result.people }));
+      setNotes(result.notes);
+    },
+    [stage, editManifest],
   );
 
   const setRole = useCallback(
@@ -709,7 +720,7 @@ export function App() {
       const note: Note = {
         id: mintNoteId(),
         at: new Date(entry.instant).toISOString(),
-        people: person ? [person.name] : [],
+        people: person ? [displayName(person)] : [],
         photo: itemId,
         author: [...me],
         text: body,
@@ -1280,7 +1291,7 @@ export function App() {
                     onIndex={(next) => setOpenId(items[next]?.item.id ?? null)}
                     onClose={() => setOpenId(null)}
                     colors={assignLaneColors(stage.manifest.people)}
-                    names={new Map(stage.manifest.people.map((p) => [p.id, p.name]))}
+                    names={new Map(stage.manifest.people.map((p) => [p.id, displayName(p)]))}
                     notes={notes}
                     onCaption={setCaption}
                     {...(stage.manifest.event.timezone

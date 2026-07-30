@@ -20,7 +20,9 @@ everyone's photos mixed together — which is exactly what a **Google Photos
 album download** gives you — meanwhile works out who's who from the phones
 themselves, using the camera model recorded inside each photo. You get one
 lane per device, named something like "Google Pixel 8 Pro", and you rename
-each to whoever was carrying it.
+each to whoever was carrying it. Renaming is safe to do at any point — any
+note already written under the old name follows along. See
+[The people file](#the-people-file).
 
 If you *do* have a folder per person, it uses those names instead.
 
@@ -353,6 +355,38 @@ correction comes right back. A time you placed by hand stays exactly as you
 set it; every other photo and video timestamp is still re-read fresh from
 the file itself, so a stale note file can never make a photo lie about when
 it was taken.
+
+## The people file
+
+The roster lives in its own spreadsheet, **`people.csv`**, right next to
+`notes.csv` in the folder.
+
+| Column | What goes there |
+|---|---|
+| `id` | A stable identifier — the device slug meanwhile worked out (`google-pixel-8-pro`) or a folder name. Don't edit this by hand; renaming someone changes `name`, never `id`, which is what lets their notes and lane stay attached across a rename. |
+| `name` | The display name — what shows on the lane, the feed, the map, everywhere. Starts out as the phone model; rename it in the report to whoever was carrying it. |
+| `role` | `runner` for the one person whose lane pins to the top and who owns the course. Blank for everyone else. |
+| `clock_offset` | How far this person's camera clock was off, as an ISO-8601 duration — `-PT47S` for a clock running 47 seconds fast. Leave it blank if you don't know. |
+| `also_known_as` | Earlier names this person has answered to, separated by semicolons, same as `people`/`author` in `notes.csv`. meanwhile fills this in for you the moment you rename someone (see below); you can also add to it by hand, e.g. if a crew member spells a name differently. |
+
+**Renaming self-heals `notes.csv`, instead of breaking it.** `notes.csv`
+refers to people by name, not by id — that's what keeps it a plain
+spreadsheet, editable without touching the site. So say you already wrote a
+few notes with `people` set to "Google Pixel 8 Pro", and then rename that
+lane to "Priya" in the report. Two things happen automatically:
+
+- "Google Pixel 8 Pro" is added to that row's `also_known_as` in
+  `people.csv`.
+- Every note already open in the site that said "Google Pixel 8 Pro" is
+  rewritten to say "Priya" instead, so `notes.csv` comes out with the current
+  name the next time you save.
+
+A note the site hasn't loaded yet — a crew member's own copy of `notes.csv`,
+sitting untouched on their laptop with the old name — still resolves to the
+right person the next time it's opened, because meanwhile matches a note's
+`people`/`author` against a person's *current* name **or** any name in
+`also_known_as`. Rename someone twice and both old names keep working; the
+site never forces anyone to go back and fix old files by hand.
 
 ## Publishing it
 

@@ -4,7 +4,7 @@
 
 As of 2026-07-29 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **504 tests pass** (`make check`).
+the race. **520 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -1157,6 +1157,91 @@ between the manifest and the media's own EXIF; they confirmed the manifest —
 and now, more specifically, the spreadsheet-editable roster file that stands
 in for hand-editing the manifest's JSON. **EXIF write-back is deferred, not
 rejected** — worth re-asking, since it has real archival appeal.
+
+### Renaming a person is non-destructive: `also_known_as` is the join *(person-aliases)*
+
+> "i need a way (possibly in the site interface itself) to connect the notes
+> and people datasets, where the author in notes is the new display alias
+> for the name in people. [...] i am essentially asking for a non
+> destructive way to rename people ids that are displayed."
+
+`Person.id` was already stable across a rename (`renamePerson` in `App.tsx`
+only ever touched `name`) — but `notes*.csv` stores `people`/`author` as
+NAMES, not ids, on purpose: an id column would defeat the entire reason
+notes are CSV — a plain spreadsheet, editable by hand, with nothing in it a
+person editing by hand has to look up. So renaming "Google Pixel 8 Pro" to
+"Priya" silently orphaned every note already written under the old name:
+the note survived, but its link to that person broke, and the old string
+showed up as an unrecognised name.
+
+`people.csv` gained a fifth column, **`also_known_as`** — a `;`-separated
+list, the exact convention `people`/`author` already use in `notes*.csv`
+(`splitList`). Two functions in `core/people-csv.ts` do the actual work,
+both pure and both exported for direct testing:
+
+- **`resolvePersonNames`** now matches a note's names against a person's
+  current `name` **or** any `also_known_as` entry, case-insensitively. This
+  is what makes the join survive a rename in a file the app does not
+  control — a crew member's own untouched copy of `notes.csv`, or a name
+  typed by hand later.
+- **`applyRename`** is what `App.tsx`'s `renamePerson` now calls. It (1)
+  sets the new `name`; (2) pushes the PREVIOUS name onto that person's
+  `also_known_as` (no duplicates, skipped if blank or unchanged); and (3)
+  rewrites that exact old name to the new one, case-insensitively, in every
+  already-loaded note's `people`/`author` lists, so `notes.csv` self-heals
+  to current names on the next Save instead of freezing on the device slug
+  forever. **Both (2) and (3) are kept, on purpose** — (2) is the fix for
+  files the app has not read yet, (3) is the fix for what is already in
+  memory, and neither substitutes for the other.
+
+**Display name resolution has one fallback chain, in one function.** The
+owner: *"the 'name' should be the default display name, the fallback is the
+'also_known-as' value to display on the site."* `displayName(person)` in
+`core/people-csv.ts` is `name` → first `also_known_as` entry →
+`displayNameFor(id)` (the same device-slug prettifier `assembleManifest`
+already used for a never-renamed lane) — so a hand-added roster row that
+carries only an alias still labels its lane rather than showing blank.
+Every place a person's name renders (swimlanes, feed, note list, moment
+strip, map, the roster editor's own rename input, `PersonPicker`, the
+legacy-note migrators in `ingest.ts`) reads through this one function now,
+never `person.name` directly — the fallback must not scatter, or it drifts
+out of step between views the way the notes/people split itself once did.
+
+**Two people must never resolve to the same id via a shared name.** The
+owner asked for this explicitly, foreseeing future same-device duplicates:
+*"we need to maeksure the id in people are unique so the rename can happen
+with a join."* Two decisions follow:
+
+1. **On a colliding rename, the alias and the note rewrite are both
+   skipped** — the rename to the new name still always happens.
+   `applyRename` checks whether the OLD name already matches a DIFFERENT
+   person's current name or alias before recording anything; if it does,
+   aliasing it would make that other person's identity ambiguous too, and
+   rewriting notes under a name two people share cannot tell which one a
+   given note meant. A collision degrades to "not auto-healed," never to a
+   silently stolen identity.
+2. **`resolvePersonNames` itself never guesses.** If a hand-edited
+   `people.csv` — outside the site's own guard — still lets two people share
+   a name or alias, that key resolves to NEITHER id; the name is reported as
+   unrecognised instead of picked arbitrarily. This mirrors `resolveNotePhotos`'s
+   existing "ambiguous match is reported as a problem instead of guessed at"
+   rule for a `photo` filename matching more than one item — the same
+   principle, applied to identity instead of a file path.
+
+**`PersonId` was already flexible enough for future same-device splitting —
+verified, not changed.** The owner: *"assume in the future i might have
+multiple of the same device so we need to make sure things are flexible
+enough."* `deviceIdOf` (`core/metadata.ts`) still derives an id purely from
+make+model, so two physically identical phones collide into one id today —
+splitting them (e.g. minting `google-pixel-8-pro-2` for a second one) is
+explicitly NOT built here, per the owner's own "we can pin this later."
+What was checked instead: nothing downstream treats `PersonId` as anything
+but an opaque string key (`Map`/`Set` keys throughout `state.ts`,
+`palette.ts`, `window.ts`; sorted lexically, never parsed, in
+`assembleManifest`). A future numeric suffix therefore needs no migration —
+existing ids keep their exact spelling, since a suffix would only ever be
+minted for a NEW colliding device, never retrofitted onto one already in
+use.
 
 ---
 

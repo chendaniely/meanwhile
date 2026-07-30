@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  formatPeopleCsv, parsePeopleCsv, resolvePersonNames,
+  applyRename, displayName, formatPeopleCsv, parsePeopleCsv, resolvePersonNames,
 } from '../src/core/people-csv.ts';
+import type { Note } from '../src/core/notes.ts';
 import type { Person } from '../src/core/schema.ts';
 
 const PEOPLE: Person[] = [
@@ -12,6 +13,18 @@ const PEOPLE: Person[] = [
   // (finding 4), an invalid one is dropped and reported rather than kept.
   { id: 'zflip4', name: 'Sam', clockOffset: '-PT4S' },
 ];
+
+/** Bare-minimum valid note, so each test only overrides what it cares about. */
+function note(overrides: Partial<Note>): Note {
+  return {
+    id: 'n_1',
+    at: '2026-08-22T13:00:00.000Z',
+    people: [],
+    author: [],
+    text: 'hello',
+    ...overrides,
+  };
+}
 
 describe('people.csv', () => {
   it('round-trips a roster', () => {
@@ -82,6 +95,67 @@ describe('people.csv', () => {
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('Row 4');
   });
+
+  // --- also_known_as -------------------------------------------------------
+
+  it('reads a file with no also_known_as column at all, unchanged', () => {
+    const { people, problems } = parsePeopleCsv('id,name,role,clock_offset\npixel8,Priya,runner,\n');
+    expect(problems).toEqual([]);
+    expect(people).toEqual([{ id: 'pixel8', name: 'Priya', role: 'runner' }]);
+    expect(people[0]).not.toHaveProperty('alsoKnownAs');
+  });
+
+  it('round-trips also_known_as, including multiple aliases, through parse/format', () => {
+    const withAliases: Person[] = [
+      { id: 'pixel8', name: 'Priya', role: 'runner', alsoKnownAs: ['Google Pixel 8 Pro', 'P'] },
+      { id: 'zflip4', name: 'Sam', clockOffset: '-PT4S' },
+    ];
+    expect(parsePeopleCsv(formatPeopleCsv(withAliases)).people).toEqual(withAliases);
+  });
+
+  it('splits also_known_as on ";", trimming and dropping blanks, same as notes.csv', () => {
+    const { people } = parsePeopleCsv(
+      'id,name,also_known_as\npixel8,Priya, Google Pixel 8 Pro ;;P;\n',
+    );
+    expect(people[0]?.alsoKnownAs).toEqual(['Google Pixel 8 Pro', 'P']);
+  });
+
+  it('keeps a row with a blank name cell if it carries an alias, using the alias as name', () => {
+    const { people, problems } = parsePeopleCsv(
+      'id,name,also_known_as\ncrew1,,Jo Chen\n',
+    );
+    expect(problems).toEqual([]);
+    expect(people).toEqual([{ id: 'crew1', name: 'Jo Chen', alsoKnownAs: ['Jo Chen'] }]);
+  });
+
+  it('still reports missing name when both name and also_known_as are blank', () => {
+    const { people, problems } = parsePeopleCsv('id,name,also_known_as\ncrew1,,\n');
+    expect(people).toEqual([]);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('missing name');
+  });
+});
+
+describe('displayName', () => {
+  it('prefers the current name when present', () => {
+    expect(displayName({ id: 'pixel8', name: 'Priya', alsoKnownAs: ['Google Pixel 8 Pro'] })).toBe(
+      'Priya',
+    );
+  });
+
+  it('falls back to the first also_known_as entry when name is blank', () => {
+    expect(displayName({ id: 'pixel8', name: '', alsoKnownAs: ['Google Pixel 8 Pro', 'Priya'] })).toBe(
+      'Google Pixel 8 Pro',
+    );
+  });
+
+  it('falls back to displayNameFor(id) when neither name nor an alias is usable', () => {
+    expect(displayName({ id: 'google-pixel-8-pro', name: '' })).toBe('Google Pixel 8 Pro');
+    // A blank-string alias is not usable either — must not surface it.
+    expect(displayName({ id: 'google-pixel-8-pro', name: '', alsoKnownAs: ['  '] })).toBe(
+      'Google Pixel 8 Pro',
+    );
+  });
 });
 
 describe('resolvePersonNames', () => {
@@ -93,5 +167,109 @@ describe('resolvePersonNames', () => {
     const { ids, unknown } = resolvePersonNames(['Priya', 'Ghost'], PEOPLE);
     expect(ids).toEqual(['pixel8']);
     expect(unknown).toEqual(['Ghost']);
+  });
+
+  it('resolves a person by an also_known_as alias, not just their current name', () => {
+    const renamed: Person[] = [
+      { id: 'pixel8', name: 'Priya', role: 'runner', alsoKnownAs: ['Google Pixel 8 Pro'] },
+      { id: 'zflip4', name: 'Sam' },
+    ];
+    const { ids, unknown } = resolvePersonNames(['Google Pixel 8 Pro', 'Priya'], renamed);
+    expect(ids).toEqual(['pixel8', 'pixel8']);
+    expect(unknown).toEqual([]);
+  });
+
+  it('never guesses when a name/alias is claimed by two different people', () => {
+    const clashing: Person[] = [
+      { id: 'pixel8', name: 'Priya', alsoKnownAs: ['Sam'] },
+      { id: 'zflip4', name: 'Sam' },
+    ];
+    const { ids, unknown } = resolvePersonNames(['Sam'], clashing);
+    expect(ids).toEqual([]);
+    expect(unknown).toEqual(['Sam']);
+  });
+});
+
+describe('applyRename', () => {
+  it('sets the new name and records the old one as an alias', () => {
+    const { people, collided } = applyRename(PEOPLE, [], 'pixel8', 'Priya Actual');
+    expect(collided).toBe(false);
+    expect(people.find((p) => p.id === 'pixel8')).toEqual({
+      id: 'pixel8',
+      name: 'Priya Actual',
+      role: 'runner',
+      alsoKnownAs: ['Priya'],
+    });
+    // The other person is untouched.
+    expect(people.find((p) => p.id === 'zflip4')).toEqual(PEOPLE[1]);
+  });
+
+  it('rewrites the old name to the new one in loaded notes, case-insensitively, in both people and author', () => {
+    const notes = [note({ people: ['priya'], author: ['Someone Else'] })];
+    const { notes: rewritten } = applyRename(PEOPLE, notes, 'pixel8', 'Priya Actual');
+    expect(rewritten[0]?.people).toEqual(['Priya Actual']);
+    expect(rewritten[0]?.author).toEqual(['Someone Else']);
+  });
+
+  it('does not touch a note that never mentioned the renamed person', () => {
+    const notes = [note({ people: ['Sam'], author: ['Sam'] })];
+    const { notes: rewritten } = applyRename(PEOPLE, notes, 'pixel8', 'Priya Actual');
+    expect(rewritten[0]).toEqual(notes[0]);
+  });
+
+  it('is a no-op (still non-destructive) when the "new" name is the same as the old one', () => {
+    const notes = [note({ people: ['Priya'] })];
+    const { people, notes: rewritten } = applyRename(PEOPLE, notes, 'pixel8', 'Priya');
+    expect(people.find((p) => p.id === 'pixel8')?.alsoKnownAs).toBeUndefined();
+    expect(rewritten[0]).toEqual(notes[0]);
+  });
+
+  it('accumulates aliases across two renames, and a note using the ORIGINAL name still resolves', () => {
+    const first = applyRename(PEOPLE, [note({ people: ['Priya'] })], 'pixel8', 'P. Sharma');
+    const second = applyRename(first.people, first.notes, 'pixel8', 'Priya Sharma');
+
+    const person = second.people.find((p) => p.id === 'pixel8');
+    expect(person?.name).toBe('Priya Sharma');
+    expect(person?.alsoKnownAs).toEqual(['Priya', 'P. Sharma']);
+
+    // The note itself self-heals to the CURRENT name on every rename...
+    expect(second.notes[0]?.people).toEqual(['Priya Sharma']);
+
+    // ...but a note that still says the very first name (a crew member's
+    // untouched copy of notes.csv, never loaded into this session) resolves
+    // via the accumulated alias trail rather than becoming unknown.
+    const { ids, unknown } = resolvePersonNames(['Priya'], second.people);
+    expect(ids).toEqual(['pixel8']);
+    expect(unknown).toEqual([]);
+  });
+
+  /**
+   * The chosen behaviour for a colliding rename: renaming pixel8's "Priya"
+   * to "Sam" — zflip4's EXISTING name — must not make "Priya" (the vacated
+   * name) resolve into limbo, but it especially must not push "Priya" as an
+   * alias of nobody nor let the rename silently merge two people. What is
+   * tested here is the OTHER direction, which is the actually dangerous one:
+   * renaming AWAY FROM a name matches an already-existing person exactly
+   * when the OLD name collides with someone else's current name/alias —
+   * skip the alias and the note rewrite entirely, so neither person's
+   * identity is disturbed by the other's edit.
+   */
+  it('on a colliding rename, skips the alias and the note rewrite rather than guessing', () => {
+    const collidingPeople: Person[] = [
+      { id: 'pixel8', name: 'Sam' }, // already named "Sam" before zflip4 is renamed to it below
+      { id: 'zflip4', name: 'Sam' },
+    ];
+    const notes = [note({ people: ['Sam'] })];
+    const { people, notes: rewritten, collided } = applyRename(collidingPeople, notes, 'zflip4', 'Samantha');
+
+    expect(collided).toBe(true);
+    // The rename itself still happens...
+    expect(people.find((p) => p.id === 'zflip4')?.name).toBe('Samantha');
+    // ...but no alias was recorded, because "Sam" already named someone else.
+    expect(people.find((p) => p.id === 'zflip4')?.alsoKnownAs).toBeUndefined();
+    // ...and the pre-existing note is untouched: it is ambiguous which "Sam"
+    // it meant, so guessing (rewriting it to "Samantha") would silently
+    // reattribute a note that may have belonged to pixel8's Sam.
+    expect(rewritten[0]).toEqual(notes[0]);
   });
 });

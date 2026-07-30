@@ -9,6 +9,7 @@ import {
   type Sample,
 } from '../../core/course.ts';
 import { assignLaneColors } from '../../core/palette.ts';
+import { displayName } from '../../core/people-csv.ts';
 import type { Manifest } from '../../core/schema.ts';
 import type { Instant } from '../../core/time.ts';
 import type { PlacedItem } from '../../core/window.ts';
@@ -337,8 +338,8 @@ export function CourseMap({
     for (const entry of items) {
       const gps = entry.item.gps;
       if (!gps) continue;
-      const name =
-        manifest.people.find((p) => p.id === entry.item.person)?.name ?? entry.item.person;
+      const matchedPerson = manifest.people.find((p) => p.id === entry.item.person);
+      const name = matchedPerson ? displayName(matchedPerson) : entry.item.person;
 
       const marker = L.circleMarker([gps[0], gps[1]], {
         radius: 4,

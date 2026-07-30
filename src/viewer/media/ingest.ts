@@ -18,7 +18,7 @@ import { isManifestFile, isNotesFile, isPeopleFile, isTrackFile } from '../../co
 import {
   dedupeNotes, fingerprintNote, mergeNotes, resolveNotePhotos, type Note, type NoteRowIdentity,
 } from '../../core/notes.ts';
-import { parsePeopleCsv } from '../../core/people-csv.ts';
+import { displayName, parsePeopleCsv } from '../../core/people-csv.ts';
 import {
   validateManifest,
   type Item,
@@ -479,7 +479,10 @@ export function mergeSessionNotes(
  * finding the right `manifest.notes` entry.
  */
 export function legacyNoteToNote(legacy: LegacyNote, people: readonly Person[]): Note {
-  const nameOf = (id: string): string => people.find((p) => p.id === id)?.name ?? id;
+  const nameOf = (id: string): string => {
+    const p = people.find((p) => p.id === id);
+    return p ? displayName(p) : id;
+  };
   const note: Note = {
     id: legacy.id,
     at: legacy.at,
@@ -522,7 +525,10 @@ export function migrateLegacyNotes(manifest: Manifest): Note[] {
   // the photo itself does.
   const hasCaptions = manifest.items.some((it) => it.note !== undefined);
   if (hasCaptions) {
-    const nameOf = (id: string): string => manifest.people.find((p) => p.id === id)?.name ?? id;
+    const nameOf = (id: string): string => {
+      const p = manifest.people.find((p) => p.id === id);
+      return p ? displayName(p) : id;
+    };
     const { placed } = placeItems(manifest);
     const instantById = new Map(placed.map((p) => [p.item.id, p.instant]));
     for (const item of manifest.items) {

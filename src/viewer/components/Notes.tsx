@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { mintNoteId, type Note } from '../../core/notes.ts';
 import { assignLaneColors } from '../../core/palette.ts';
-import { resolvePersonNames } from '../../core/people-csv.ts';
+import { displayName, resolvePersonNames } from '../../core/people-csv.ts';
 import type { Manifest } from '../../core/schema.ts';
 import { formatDateTime, formatDuration, type Instant } from '../../core/time.ts';
 import type { PlacedNote } from '../../core/window.ts';
@@ -224,7 +224,7 @@ interface ListProps {
 
 export function NoteList({ manifest, notes, timezone, onEdit, onDelete, onGo }: ListProps) {
   const colors = assignLaneColors(manifest.people);
-  const names = new Map(manifest.people.map((p) => [p.id, p.name]));
+  const names = new Map(manifest.people.map((p) => [p.id, displayName(p)]));
 
   if (notes.length === 0) {
     return <p className="notes__empty">No notes yet.</p>;
