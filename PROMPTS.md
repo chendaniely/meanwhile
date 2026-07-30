@@ -1401,3 +1401,27 @@ for reversing the conventional requirement that the map's wheel zoom be held
 behind ctrl/⌘:
 
 > "an app like this is mostly going to be used with only a mouse/trackpad."
+
+
+---
+
+> let's go push and release everything. in the future. let's also do passes on
+> the guards themselves and make sure we do an analysis of the actual guards.
+> treat it like you don't really trust the guards at all
+
+The gate had grown two mechanical guards — a test-count check and an
+owner-quote checker — and this closes the obvious hole in it: **a guard is a
+claim like any other, and a green check is not evidence it works.**
+
+Two failures already argued for it. Pass 1 built a quote checker that found
+nine fabricated or altered quotes, and never committed it — it lived in a
+scratch directory and vanished with the agent that wrote it, which is the real
+reason a whole quoting convention went unaudited for two more passes. Its
+committed successor then turned out to check `> ` blockquotes but not the
+inline `*"…"*` form: real, committed, green, and half-blind. Both were caught
+by looking at the guard rather than at its output.
+
+So each pass now plants a violation of every guard, confirms it is caught, and
+asks the harder question — what does this guard silently permit? A check that
+is not committed is not a check, and a guard never shown to fail is not known
+to work.

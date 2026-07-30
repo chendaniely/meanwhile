@@ -1846,7 +1846,19 @@ eight passes on this repo, every single pass found errors introduced by the
 previous pass's own fixes, including one written by the pass that was
 correcting false claims.
 
-Two rules that make the gate worth running rather than ceremonial:
+Three rules that make the gate worth running rather than ceremonial:
+
+- **Do not trust the guards either.** *"treat it like you don't really trust
+  the guards at all"* — every pass plants a violation of each mechanical guard
+  (`scripts/check-test-count.mjs`, `scripts/check-owner-quotes.mjs`), confirms
+  it is caught, reverts, and analyses what the guard does NOT cover. A green
+  check is not evidence a guard works. Twice already: pass 1's quote checker
+  found nine problems and was **never committed** — it lived in a scratch
+  directory and vanished with the agent, leaving a whole quoting convention
+  unaudited for two passes; and the committed successor checked `> `
+  blockquotes but not the inline `*"…"*` form. A check that is not committed
+  is not a check, and a guard never shown to fail is not known to work.
+
 
 - **A finding is real only when verified against the code.** Require agents to
   report DISPUTED with evidence rather than fixing on suspicion; a meaningful
