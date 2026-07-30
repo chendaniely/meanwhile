@@ -4,9 +4,16 @@ import { fromHash, toHash, type AppState } from '../../core/state.ts';
 /**
  * The app's state, mirrored into the URL.
  *
- * Any moment becomes a link you can text to someone, and the back button
- * works. Both fall out of keeping the state serializable rather than being
- * features that had to be built.
+ * Any moment becomes a link you can text to someone — that falls out of
+ * keeping the state serializable rather than being a feature that had to be
+ * built. The back button does NOT step through cursor positions, though:
+ * only `replaceState` is ever called (see below), which never pushes a
+ * history entry, so scrubbing leaves no trail for the back button to walk.
+ * That is deliberate — `pushState` would stack up hundreds of entries while
+ * scrubbing and make the back button useless for anything else. The
+ * `hashchange` listener below still means the back button (or forward, or a
+ * hand-edited address bar) works for whatever OTHER navigation happens to
+ * change the hash.
  *
  * THE URL IS WRITTEN IN AN EFFECT, not inside the state updater. Writing it
  * during an update would make the updater impure, and React deliberately

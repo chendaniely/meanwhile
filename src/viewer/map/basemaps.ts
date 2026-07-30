@@ -1,11 +1,14 @@
 /**
  * Where the map tiles come from.
  *
- * Every source here was checked to return a tile with **no API key**, so the
- * map works the moment you open it. A key is strictly an upgrade: if one is
- * configured the nicer trail basemaps appear in the list, and if it is
- * missing or expired the map carries on with the free ones rather than
- * showing a grey grid.
+ * Every source but one needs **no API key**, so the map works the moment you
+ * open it without any configuration. The one exception is `outdoors`
+ * (Thunderforest), which sets `needsKey: true` below; `basemaps()` filters it
+ * out of the list unless a build-time key is present, so an unconfigured
+ * deploy never offers a basemap that would fail. A key is strictly an
+ * upgrade: if one is configured the nicer trail basemap appears in the list,
+ * and if it is missing or expired the map carries on with the free ones
+ * rather than showing a grey grid.
  *
  * A NOTE ON THE KEY, because it is easy to get wrong: this is a static site,
  * so a build-time key is inlined into the published JavaScript and anybody
@@ -25,7 +28,14 @@ export interface Basemap {
   url: string;
   attribution: string;
   maxZoom: number;
-  /** Shown over the base layer, e.g. hillshade under a plain street map. */
+  /**
+   * UNUSED: nothing in the codebase reads this field (verified — no
+   * `.overlay` reference outside this file). `CourseMap.tsx` decides
+   * layer order itself, and adds the hillshade layer FIRST (underneath the
+   * chosen basemap, not over it) regardless of this flag. Kept on `HILLSHADE`
+   * below as documentation of intent, not as something any code branches on.
+   * Remove or wire it up if it needs to do real work.
+   */
   overlay?: boolean;
   /** Only offered when a key is configured. */
   needsKey?: boolean;

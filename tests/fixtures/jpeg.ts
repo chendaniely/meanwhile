@@ -46,8 +46,10 @@ class Writer {
   readonly le: boolean;
 
   // Written out longhand rather than as a parameter property: Node's
-  // type-stripping cannot handle those, and these fixtures are loaded by
-  // `node scripts/inspect-media.ts` as well as by vitest.
+  // type-stripping cannot handle those. `scripts/inspect-media.ts` does not
+  // import this file today, but it imports `src/core/`, which has the same
+  // constraint (see CLAUDE.md's "Metadata extraction gotchas"), and this
+  // file follows the same convention for consistency.
   constructor(le: boolean) {
     this.le = le;
   }

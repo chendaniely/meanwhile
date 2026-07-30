@@ -139,9 +139,11 @@ export interface IngestResult {
   /** Why a manifest that was found could not be used. Shown, never swallowed. */
   importError: string | null;
   /**
-   * Every note, merged from `notes*.csv` and prepended with whatever a legacy
-   * manifest's `notes[]` and `items[].note` captions migrate into. Picked up
-   * the same way a `.gpx` is: drop the file in with the photos.
+   * Every note, merged from `notes*.csv` with whatever a legacy manifest's
+   * `notes[]` and `items[].note` captions migrate into, then sorted by `at`
+   * (`mergeSessionNotes` re-sorts chronologically) — NOT ordered by which
+   * source contributed a note. Picked up the same way a `.gpx` is: drop the
+   * file in with the photos.
    */
   notes: Note[];
   /**
@@ -304,9 +306,10 @@ export async function ingestFolder(
    * is persisted between calls.
    *
    * Neither field is deleted from `manifest` by this step: the manifest
-   * WRITER stops emitting them in a later task, once notes.csv + people.csv
-   * are the actual save path. Until then the round trip through
-   * download-manifest-and-reopen must keep working.
+   * WRITER (`manifestForSave`, below) is what stops emitting them, on save.
+   * Until a manifest has been saved once since this change, the round trip
+   * through download-manifest-and-reopen keeps working with both fields
+   * still present on disk.
    */
   const noteFiles = await Promise.all(
     notesFiles.map(async (f) => ({ name: f.path, text: await f.file.text() })),
@@ -469,11 +472,11 @@ export function mergeSessionNotes(
  * Convert one legacy `Note` (the shape `manifest.notes[]` still carries) into
  * the new CSV-backed shape.
  *
- * Exported so App.tsx can build the same shape for a note just added through
- * the in-browser composer, which still produces the legacy shape today —
- * moving the composer itself to write the new shape directly is later work.
- * `id` is reused as-is, which is what lets an edit or delete made against the
- * migrated note keep finding the right `manifest.notes` entry.
+ * Exported for direct testing (see `tests/ingest.test.ts`) and used by
+ * `migrateLegacyNotes` below, which is this function's only production
+ * caller — App.tsx does not import it directly. `id` is reused as-is, which
+ * is what lets an edit or delete made against the migrated note keep
+ * finding the right `manifest.notes` entry.
  */
 export function legacyNoteToNote(legacy: LegacyNote, people: readonly Person[]): Note {
   const nameOf = (id: string): string => people.find((p) => p.id === id)?.name ?? id;

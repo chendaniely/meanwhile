@@ -20,17 +20,34 @@
   --mw-z-float: 1200;     /* the note dock — must beat Leaflet's 1000 */
   --mw-z-modal: 2000;     /* the lightbox, above everything  */
 
-  /* PRE-MEASUREMENT FALLBACK ONLY. This calc() approximates a button-only
-     header (padding, border, one line of body text) but is not the real
-     height once a person is loaded: .app__author stacks PersonPicker's
-     label over its input rather than sitting on one line, and the
-     header's own flex-wrap adds another row once a chip list wraps at a
-     narrow width. Neither is reachable from CSS alone, so App.tsx's
+  /* STATIC FLOOR ONLY — never overwritten. This calc() approximates a
+     button-only header (padding, border, one line of body text) and backs
+     .app__header's min-height below, so the header never collapses shorter
+     than that before anything has been measured.
+
+     It is NOT the real height once a person is loaded: .app__author stacks
+     PersonPicker's label over its input rather than sitting on one line,
+     and the header's own flex-wrap adds another row once a chip list wraps
+     at a narrow width. Neither is reachable from CSS alone, so App.tsx's
      `headerRef` measures the rendered .app__header with a ResizeObserver
-     and overwrites this custom property with the live height on the root
-     element. .app__header below asserts this as a min-height (a floor,
-     so it never shrinks below the fallback) and .rail reads the same
-     variable to sit just under the header, whichever value is current. */
+     and publishes the live height to `--mw-header-measured` — a SEPARATE
+     property, deliberately. .rail reads that one (falling back to this
+     static value before the first measurement) to sit just under the
+     header, whichever value is current.
+
+     THE TWO MUST STAY SEPARATE: an earlier version published the measured
+     height into this same property. `root.style.setProperty` sets an
+     INLINE style on <html>, which outranks this :root rule for every
+     consumer of the custom property — including .app__header's own
+     min-height below. So a header measured wide (say, wrapped to two rows
+     at a narrow viewport) would set a floor for itself that a later,
+     shorter measurement could never get under: min-height pins the actual
+     rendered height at the old measurement, so the ResizeObserver reads
+     back the same number it just wrote and the header can never shrink
+     again. A self-locking ratchet. Keeping the measured value in its own
+     property means .app__header's floor stays the static calc() forever,
+     and only .rail (which has no min-height depending on this value) reads
+     the live measurement. */
   --mw-header-h: calc(
     2 * var(--mw-space-3) + 1px +
     (var(--mw-text-base) * var(--mw-line-height) + 2 * var(--mw-space-2) + 2px)
@@ -228,8 +245,13 @@
   width: 100%;
 }
 
+/* --mw-fg-muted, not --mw-fg-faint: a placeholder is reader-facing text
+   (the field is often empty and the placeholder is all there is to read),
+   and tokens.css's own rule is that --mw-fg-faint is never for text a
+   reader needs. WCAG technically exempts placeholders from AA, but that is
+   a looser bar than this project set for itself on purpose. */
 .field__input::placeholder {
-  color: var(--mw-fg-faint);
+  color: var(--mw-fg-muted);
 }
 
 /* ---- person picker ------------------------------------------------------
@@ -1638,8 +1660,11 @@
 
 .rail {
   position: sticky;
-  /* Sits below the sticky page header, not under it. */
-  top: calc(var(--mw-header-h) + var(--mw-space-2));
+  /* Sits below the sticky page header, not under it. Reads the MEASURED
+     height (App.tsx's `headerRef`), falling back to the static calc()
+     before the first measurement lands — see the long comment on
+     --mw-header-h above for why these are two separate properties. */
+  top: calc(var(--mw-header-measured, var(--mw-header-h)) + var(--mw-space-2));
   z-index: var(--mw-z-rail);
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);

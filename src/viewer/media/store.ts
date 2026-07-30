@@ -48,7 +48,11 @@ interface Entry {
 
 export interface MediaStoreOptions {
   budgetBytes?: number;
-  /** Longest edge for tile thumbnails, in CSS pixels. */
+  /**
+   * Width for tile thumbnails, in CSS pixels — see `ThumbnailOptions.maxWidth`
+   * in `./thumbnails.ts`. Bounds width only; a portrait image's height (its
+   * long edge) is not separately capped and can exceed this.
+   */
   thumbWidth?: number;
 }
 

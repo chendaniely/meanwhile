@@ -13,7 +13,13 @@
  */
 
 export interface ThumbnailOptions {
-  /** Longest edge, in CSS pixels before device scaling. */
+  /**
+   * Width, in CSS pixels before device scaling — passed straight through to
+   * `createImageBitmap` as `resizeWidth`, which bounds WIDTH only. Height is
+   * not separately capped; it scales to preserve aspect ratio, so a
+   * portrait photo's long edge (its height) can exceed `maxWidth`. Not
+   * "longest edge" despite an earlier version of this comment saying so.
+   */
   maxWidth: number;
   /** Natural width from EXIF, when known, to avoid upscaling small images. */
   naturalWidth?: number;

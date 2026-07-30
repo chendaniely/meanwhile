@@ -536,7 +536,14 @@ it releases it. So there are two ways out — the chip, or the lanes again — a
 they drive one state rather than being two modes. The chip is a readout as
 much as a button: `following` / `pinned`, `aria-pressed`, lit only when
 pinned, because the normal case needs no attention and the pinned one has to
-explain why the strip has stopped moving. Escape releases it too.
+explain why the strip has stopped moving. Escape releases it too — except
+while the lightbox is open, where Escape closes the lightbox first and
+leaves the pin alone (`Swimlanes.tsx` guards with `if (!locked ||
+lightboxOpen) return`). Without that guard, `keydown` reaches `document`
+before the lightbox's own `window` listener, so closing the lightbox with
+Escape would also silently unpin the strip underneath — destroying a pin
+the user set on purpose, in what is the common case since the lightbox is
+opened from the lanes.
 
 **The wheel zooms the crop**, anchored on the pointer like a map, so you zoom
 into what you are looking at rather than the middle. It writes the SHARED
@@ -1010,8 +1017,9 @@ per-event rather than once forever.
 ### Three views, one cursor
 
 `src/core/state.ts` defines `ViewName = 'feed' | 'lanes' | 'course'` — merged
-feed, swimlanes (default), and course. **Three projections of one state
-object**, not three separate features. There is no separate map view: the
+feed (the default: `INITIAL_STATE.view` and App.tsx's `available[0]`
+fallback both pick it), swimlanes, and course. **Three projections of one
+state object**, not three separate features. There is no separate map view: the
 map lives inside the course view, alongside the elevation/HR/cadence/pace
 charts. The moment grid from the original design (pick a time, see what
 everyone captured right then) is not built — see `TODO.md`/README's "Still
