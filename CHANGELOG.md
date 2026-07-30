@@ -8,6 +8,22 @@ already built, and the reasons are worth keeping.
 
 ## 0.3.1 — 2026-07-30 — the gate turned on itself, then on its own guards
 
+### The analytics leak is shut
+
+> "ok the page changes based on browser history events is disabled"
+
+The one part of it the code could not reach. `send_page_view: false` and a
+fragment-free `page_location` stopped everything meanwhile sends itself, but
+GA4's enhanced measurement fires its own page view on every `replaceState` —
+and the app rewrites the address on every cursor move — carrying `t=`, a
+timestamp read from a photograph, and `who=`, people's names. It is a
+property-level toggle in the Google Analytics console, so no change here could
+close it. Now off.
+
+Worth keeping in mind: nothing in this repo can see that setting, so no test
+guards it. If the property is recreated or the toggle flipped back, the leak
+returns silently.
+
 ### The pre-release gate, run five times
 
 > "can you dispatch some secutiry and privacy independent subagents to review?"

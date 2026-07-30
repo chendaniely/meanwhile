@@ -1703,8 +1703,8 @@ on `view.view` alone and not on the `AppState` object, so a cursor scrub or a
 its payload is `{ view }`, a bare three-value enum, never the `AppState` it
 was read from.
 
-**This does not fully close the gap, and the code cannot close the rest of
-it.** GA4's enhanced measurement is a property-level toggle
+**The remaining gap is now closed in the console — 2026-07-30 — but the code
+still cannot close it, so keep this on record.** GA4's enhanced measurement is a property-level toggle
 ("Page changes based on browser history events"), independent of
 `send_page_view` and independent of the `page_location` passed to `config` —
 verified against Google's own docs and independent write-ups, not against a
@@ -1713,7 +1713,11 @@ live property. If it is on for this property, it still fires its own
 `location.href` at that moment — fragment included. Turning it off is
 **Admin → Data Streams → this stream → Enhanced measurement (gear icon) →
 "Page changes based on browser history events" → off**, in the GA4 console.
-That is the owner's action; no `vite.config.ts` change can reach it. See the
+That is the owner's action; no `vite.config.ts` change can reach it. **It was
+switched off on 2026-07-30**, so the leak is shut — but the toggle lives in a
+console this repo cannot see, so a future session must not assume it: if the
+property is ever recreated, or the setting flipped back, the leak returns with
+no code change and no failing test. See the
 "Verified external constraints" table below for the same fact, kept there so
 a future session does not have to re-derive it either.
 

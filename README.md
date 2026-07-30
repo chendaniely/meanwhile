@@ -93,12 +93,12 @@ Two ways to use it:
   Google: the page view Google gets on load points at a stripped
   origin-and-path with no address bar contents at all, and switching views
   fires a second, separate, minimal signal carrying only the view's name.
-  One gap remains and is not fully closed by this app's code: Google
-  Analytics' own "enhanced measurement" feature can independently notice the
-  browser's address bar changing and log its own page view of whatever is
-  there at that moment, and turning that off is a one-time setting in the
-  Google Analytics console rather than something a website can request for
-  itself — see `CLAUDE.md` if you're the one who'd need to flip it. Once a
+  There was one gap the app's own code could not close: Google Analytics'
+  "enhanced measurement" can independently notice the address bar changing and
+  log its own page view of whatever is there — and this app rewrites the
+  address on every cursor move. That is a setting in the Google Analytics
+  console, not something a website can turn off for itself. It was switched
+  off on 2026-07-30. Once a
   track (GPX/TCX) is in the folder, **map tiles** load from OpenTopoMap, Esri
   and OpenStreetMap — the Course view draws the big map, and Feed and
   Swimlanes draw a small one alongside the photos, so those tile servers see

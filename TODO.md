@@ -87,17 +87,16 @@ file; see `TODO-completed.md` for why.
   `vite.config.ts`, `apply: 'build'`). If a consent banner is ever needed —
   EU visitors, say — it belongs here, and note the project has no cookie
   banner today.
-- **Turn off "Page changes based on browser history events" in the GA4
-  console**, the owner's action, not Claude's — Admin → Data Streams → this
-  stream → Enhanced measurement (gear icon). The app now sends only a view
-  name on a genuine view change and a page view with a fragment-free address
-  (`src/viewer/analytics.ts`, `googleAnalytics()` in `vite.config.ts`), but
-  GA4's own enhanced-measurement listener can independently fire a `page_view`
-  on `pushState`/`replaceState` — which `useAppState` calls on every cursor
-  scrub — carrying the full URL, fragment included (`t=`, `who=`). No
-  `vite.config.ts` change can reach a property-level toggle. See CLAUDE.md's
-  "Analytics learns the view, and nothing else" and its "Verified external
-  constraints" table.
+- ~~**Turn off "Page changes based on browser history events" in the GA4
+  console.**~~ **Done 2026-07-30** — the owner disabled it. The reason it
+  needed doing: the app sends only a view name and a page view with a
+  fragment-free address (`src/viewer/analytics.ts`, `googleAnalytics()` in
+  `vite.config.ts`), but GA4's own enhanced-measurement listener fires its own
+  `page_view` on `pushState`/`replaceState` — which `useAppState` calls on
+  every cursor scrub — carrying the full URL, fragment included (`t=` is a
+  timestamp read from a photograph, `who=` is people's names). No
+  `vite.config.ts` change can reach a property-level toggle, which is why this
+  sat here rather than being fixed in code.
 
 ## Housekeeping
 
