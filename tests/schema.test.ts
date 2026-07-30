@@ -81,13 +81,40 @@ describe('validateManifest', () => {
     expect(errs.some((e) => e.includes('unknown person "nobody"'))).toBe(true);
   });
 
-  it('catches duplicate person and item ids', () => {
+  it('catches a duplicate person id', () => {
     expect(
       errorsOf(
         minimal({
           people: [
             { id: 'sam', name: 'Sam' },
             { id: 'sam', name: 'Sam Again' },
+          ],
+        }),
+      ).some((e) => e.includes('more than once')),
+    ).toBe(true);
+  });
+
+  it('catches a duplicate item id', () => {
+    expect(
+      errorsOf(
+        minimal({
+          items: [
+            {
+              id: 'a1f',
+              person: 'sam',
+              type: 'photo',
+              src: 'sam/IMG_4417.jpg',
+              at: '2026-08-22T13:12:04Z',
+              timeSource: 'exif-offset',
+            },
+            {
+              id: 'a1f',
+              person: 'sam',
+              type: 'photo',
+              src: 'sam/IMG_4418.jpg',
+              at: '2026-08-22T13:14:04Z',
+              timeSource: 'exif-offset',
+            },
           ],
         }),
       ).some((e) => e.includes('more than once')),

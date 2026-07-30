@@ -117,7 +117,12 @@ describe('noteToRow', () => {
   });
 
   it('leaves tz blank when it matches the event', () => {
-    expect(noteToRow(rowToNote(row(), ZONE) as Note, ZONE).tz).toBe('');
+    // Must actually carry the event's own zone through rowToNote first —
+    // row()'s default tz: '' never sets note.tz at all, which would let this
+    // pass even if the "matches the event" comparison were deleted.
+    const note = rowToNote(row({ tz: ZONE }), ZONE) as Note;
+    expect(note.tz).toBe(ZONE);
+    expect(noteToRow(note, ZONE).tz).toBe('');
   });
 
   it('round-trips through a row without losing anything', () => {

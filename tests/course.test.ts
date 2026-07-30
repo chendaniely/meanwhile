@@ -76,7 +76,13 @@ const LINE = [
 ];
 
 describe('parsing a GPX', () => {
-  it('reads position, elevation and time through the namespace prefixes', () => {
+  it('reads position, elevation and time from a GPX track', () => {
+    // Namespace-prefix stripping itself is exercised by the neighbor test
+    // below ('does read heart rate when a Garmin extension carries it') —
+    // this fixture (LINE, no `hr`) never emits a prefixed tag at all: trkpt,
+    // ele and time are always written unprefixed by gpx(), matching how real
+    // GPX writers use them (core elements live in the default namespace; only
+    // the TrackPointExtension needs one).
     const course = parseCourse(gpx(LINE));
     expect(course).not.toBeNull();
     expect(course?.samples).toHaveLength(3);
@@ -237,12 +243,18 @@ describe('simplify', () => {
   });
 
   it('does not treat the far leg of an out-and-back as redundant', () => {
-    // Distance to the SEGMENT, not the infinite line. Unclamped, the return
-    // leg lies along the outbound line and would be discarded entirely.
+    // Distance to the SEGMENT, not the infinite line. `back` stops one step
+    // short of the exact starting point (realistic — GPS noise means a real
+    // out-and-back rarely closes to the metre), so the first and last samples
+    // are numerically distinct and the top-level segment has nonzero length.
+    // The turnaround sits almost exactly along that first-to-last line, so an
+    // UNCLAMPED distance-to-the-infinite-line call finds it "close" and drops
+    // it; only clamping the projection to the segment sees it for what it is:
+    // ~2.1km off the endpoint.
     const there: Sample[] = Array.from({ length: 20 }, (_, i) => ({
       lat: 45 + i * 0.001, lon: -110, distance: i * 111,
     }));
-    const back: Sample[] = Array.from({ length: 20 }, (_, i) => ({
+    const back: Sample[] = Array.from({ length: 19 }, (_, i) => ({
       lat: 45.019 - i * 0.001, lon: -110, distance: 2109 + i * 111,
     }));
     const out = simplify([...there, ...back], 5);
@@ -536,7 +548,7 @@ describe('estimateInstant', () => {
   });
 
   it('handles an out-and-back, where distance is not a function of time', () => {
-    // The runner passes 8km twice: outbound at 07:00 and returning at 11:00.
+    // The runner passes 5km twice: outbound at 07:00 and returning at 10:00.
     const there: TimeAnchor[] = [
       { distance: 0, at: t(6) },
       { distance: 10_000, at: t(8) },

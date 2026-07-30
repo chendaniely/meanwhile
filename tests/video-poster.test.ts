@@ -64,9 +64,11 @@ function fakeVideo(options: FakeOptions = {}) {
   // Assigning currentTime starts a seek. The property reflects the target at
   // once; the frame does not arrive until `seeked`.
   let target = 0;
+  let seekWrites = 0;
   Object.defineProperty(video, 'currentTime', {
     get: () => target,
     set: (next: number) => {
+      seekWrites++;
       target = next;
       if (dipsWhileSeeking) video.readyState = 1;
       if (neverSeeks) return;
@@ -86,7 +88,14 @@ function fakeVideo(options: FakeOptions = {}) {
     if (emitCanplay) emit('canplay');
   };
 
-  return { video, load, emit, listenerCount: () => [...handlers.values()].reduce((n, s) => n + s.size, 0) };
+  return {
+    video,
+    load,
+    emit,
+    listenerCount: () => [...handlers.values()].reduce((n, s) => n + s.size, 0),
+    /** How many times `currentTime` was WRITTEN — i.e. how many seeks were requested. */
+    seekWrites: () => seekWrites,
+  };
 }
 
 describe('seekToFrame', () => {
@@ -118,12 +127,15 @@ describe('seekToFrame', () => {
   });
 
   it('only ever requests one seek, however many ready signals arrive', async () => {
-    const { video, load, emit } = fakeVideo();
+    const { video, load, emit, seekWrites } = fakeVideo();
     const result = seekToFrame(video);
     load();
     emit('canplay');
     emit('loadeddata');
     await expect(result).resolves.toBe(true);
+    // `load()` itself already fires loadeddata and canplay once each; the two
+    // extra emits above must not trigger a second `currentTime` write.
+    expect(seekWrites()).toBe(1);
   });
 
   it('gives up on a clip whose seek never lands', async () => {

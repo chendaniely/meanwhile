@@ -55,7 +55,7 @@ describe('personIdFromPath', () => {
 });
 
 describe('grouping a flat folder by device', () => {
-  // A Google Photos album download: everything loose at the root, three
+  // A Google Photos album download: everything loose at the root, two
   // phones mixed together. This is the shape real media actually arrives in.
   const flat: IngestedFile[] = [
     file('PXL_20260724_100000123.jpg', { at: '2026-07-24T10:00:00Z', device: 'google-pixel-8-pro' }),
@@ -311,9 +311,20 @@ describe('lane colors', () => {
     expect(assignLaneColors(people).get('sam')).toBe(LANE_COLORS[0]);
   });
 
-  it('assigns by person, not by screen position', () => {
-    // Hiding a lane must not repaint the others, so the same person keeps the
-    // same color regardless of who else is present.
+  it('assigns by slot order over whatever list it is given — so callers must always pass everyone', () => {
+    // assignLaneColors itself walks the array it receives and hands out hues
+    // by POSITION in that walk. Filtering the list before calling it (here,
+    // dropping dan) therefore reshuffles everyone after the gap: ali moves
+    // from slot 2 to slot 1 and gets a different color. Only sam is immune,
+    // and only because orderPeople always pins the runner to slot 0.
+    //
+    // This is exactly WHY the app-level rule holds ("color follows the
+    // person, never their position" — see palette.ts and CLAUDE.md): every
+    // real call site passes the full, unfiltered manifest.people and looks
+    // colors up from the returned Map by id. Hiding a lane in the UI filters
+    // what's RENDERED, never the list handed to assignLaneColors. The
+    // invariant is a calling convention enforced by every call site, not a
+    // property of this function in isolation.
     const withoutDan = people.filter((p) => p.id !== 'dan');
     expect(assignLaneColors(withoutDan).get('sam')).toBe(assignLaneColors(people).get('sam'));
     expect(assignLaneColors(withoutDan).get('ali')).not.toBe(assignLaneColors(people).get('ali'));

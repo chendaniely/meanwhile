@@ -293,12 +293,15 @@ describe('mergeSessionNotes', () => {
 
 describe('ingestFolder — notes end to end', () => {
   /**
-   * These two run the whole pipeline against real `File` objects (Node's
+   * These eleven run the whole pipeline against real `File` objects (Node's
    * global `File`, no browser needed) rather than the pure pieces above, to
    * prove the WIRING and not just the individual functions: `ingestFolder`
-   * really does dedupe a legacy manifest against its own migrated notes.csv,
-   * and really does carry a session forward when called the way `App.tsx`
-   * calls it on "Add files".
+   * really does dedupe a legacy manifest against its own migrated notes.csv;
+   * really does carry a session forward when called the way `App.tsx` calls
+   * it on "Add files"; and — grown over five rounds of bugfixing on top of
+   * the original two — really does keep blank-id rows, edits and deletes
+   * straight across repeated re-ingests, including the mode: "replace" case
+   * where a folder omits a tombstone.
    */
   function textFile(path: string, text: string): PickedFile {
     return { path, file: new File([text], path.slice(path.lastIndexOf('/') + 1)) };

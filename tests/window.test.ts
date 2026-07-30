@@ -452,10 +452,12 @@ describe('resolveDefaultRange', () => {
     ...over,
   });
 
-  // The exact repro that shipped this fix: two photos two hours apart, each
-  // its own single-item cluster, with two notes written in between. Before
-  // the fix, `densestWindow` alone picked one photo's zero-width cluster and
-  // both notes fell outside it with nothing on screen to say so.
+  // The exact repro that shipped this fix: two photos two hours and one
+  // minute apart (the real 0km and 32.1km photos from CLAUDE.md's
+  // interpolation writeup), each its own single-item cluster, with two notes
+  // written in between. Before the fix, `densestWindow` alone picked one
+  // photo's zero-width cluster and both notes fell outside it with nothing on
+  // screen to say so.
   const photos = at(Date.parse('2026-07-24T11:30:00Z'), Date.parse('2026-07-24T13:31:00Z'));
   const notes = placeNotes([
     note({ id: 'n1', at: '2026-07-24T12:45:00Z', text: 'first note' }),
