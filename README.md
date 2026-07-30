@@ -82,10 +82,9 @@ Two ways to use it:
   photos, and anyone you send it to can open the timeline on their phone.
 
 If the runner exports their **track file**, the timeline gets much richer: an
-elevation profile behind the photos, a map of the course, the option to lay
-everything out by mile instead of by hour, and his heart rate and cadence
-through the race. Camera clocks that drift are still corrected by hand, once
-per person, in `people.csv` — there's no automatic alignment yet.
+elevation profile behind the photos, a map of the course, and his heart rate
+and cadence through the race. Camera clocks that drift are still corrected by
+hand, once per person, in `people.csv` — there's no automatic alignment yet.
 
 ### Ask for the TCX, not the GPX — and not the Strava link
 
@@ -135,9 +134,9 @@ What needs times, and so is missing:
 - the runner's marker moving with the timeline cursor
 - pace
 
-(Automatic clock alignment isn't built yet regardless of whether the track is
-timed — camera clocks are still corrected by hand, in `people.csv`.)
-- automatic clock alignment
+Automatic clock alignment is *not* on that list: it isn't built yet either
+way, so a timed track will not turn it on. Camera clocks are corrected by
+hand, once per person, in `people.csv`.
 
 To check before you send it on, open the file in any text editor and search for
 `<time>`. No matches means it is a route. The fix is to export from the

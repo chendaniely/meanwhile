@@ -120,8 +120,9 @@ fixed in a text editor with no build step.
 }
 ```
 
-**Corrected post-M10 / notes-as-CSV.** Two fields above no longer match what
-the code accepts, so do not copy this example verbatim:
+**Corrected post-M10 / notes-as-CSV.** Three fields above no longer match
+what the code accepts, so do not copy this example verbatim — as written it
+fails `validateManifest()`:
 
 - **`course` is a discriminated union and needs its `kind`.** The shipped
   shape is `{ "kind": "gpx", "src": "...", "person": "sam" }`, alongside
@@ -132,8 +133,14 @@ the code accepts, so do not copy this example verbatim:
   `notes*.csv`; the writer never emits `items[].note` or `manifest.notes`,
   though both are still *read* so older manifests migrate rather than lose
   their captions.
+- **`items[].timeSource` is required**, and the example omits it. It records
+  where the timestamp came from, and the viewer needs it to know how far to
+  trust the placement and whether the person's `clockOffset` applies. See
+  `TIME_SOURCE_RANK` in `src/core/schema.ts` for the accepted values.
 
-`people` and `markers` are unchanged and still correct as shown.
+`people` and `markers` are unchanged and still correct as shown — but note
+`markers[].atDistance` is in **metres**, so the example's `41.0` is 41 metres,
+not mile 41.
 
 ### 4.1 Schema drift is the main risk
 

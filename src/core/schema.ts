@@ -157,9 +157,11 @@ export interface MediaConfig {
  * How the course is supplied.
  *
  * Only `gpx` produces a spine — the time/distance mapping that powers the
- * elevation backdrop, the distance axis, the tile-free map, and automatic
- * clock alignment. The Strava variants are presentational fallbacks for when
- * the athlete has not exported a track yet.
+ * elevation backdrop, the charts, and the map. (The map is a Leaflet raster
+ * basemap, not the tile-free SVG polyline the original design called for;
+ * and automatic clock alignment, once listed here, was never built — see
+ * `TODO.md`.) The Strava variants are presentational fallbacks for when the
+ * athlete has not exported a track yet.
  *
  * Strava's API cannot be used: its developer agreement bars third-party apps
  * from displaying an athlete's activity data to anyone but that athlete,

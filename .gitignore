@@ -5,19 +5,63 @@
 *.gpx
 *.tcx
 manifest.json
+*.manifest.json
 notes*.csv
 people.csv
 
-# Media, in case anything lands outside data/
+# What the Save button downloads: one zip of notes.csv + people.csv +
+# manifest.json. See exportName() in src/viewer/App.tsx.
+meanwhile.zip
+meanwhile-*.zip
+
+# Media, in case anything lands outside data/. This list is every extension
+# ingest accepts — PHOTO_EXTENSIONS and VIDEO_EXTENSIONS in
+# src/core/metadata.ts. If that set grows, grow this one with it.
+#
+# gitignore matching is case-sensitive, so each is listed twice: phones write
+# lowercase, cameras write upper. A mixed-case name (.Jpg) would slip through
+# these, which is one more reason event media belongs in /data/ rather than
+# relying on this net.
 *.jpg
 *.jpeg
-*.png
+*.jpe
 *.heic
-*.HEIC
-*.mov
-*.MOV
+*.heif
+*.png
+*.webp
+*.avif
+*.tif
+*.tiff
+*.gif
+*.dng
 *.mp4
+*.mov
+*.m4v
+*.avi
+*.mkv
+*.webm
+*.3gp
+*.mts
+*.JPG
+*.JPEG
+*.JPE
+*.HEIC
+*.HEIF
+*.PNG
+*.WEBP
+*.AVIF
+*.TIF
+*.TIFF
+*.GIF
+*.DNG
 *.MP4
+*.MOV
+*.M4V
+*.AVI
+*.MKV
+*.WEBM
+*.3GP
+*.MTS
 
 # Test fixtures are a deliberate, narrow exception: hand-built byte-level
 # parser inputs, capped at 100KB total. See tests/fixtures/README.md.

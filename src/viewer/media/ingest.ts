@@ -151,9 +151,12 @@ export interface IngestResult {
    * A roster row missing an id/name, or reusing an id already seen, is
    * DROPPED (`parsePeopleCsv` in ./core/people-csv.ts); same for a notes.csv
    * row with an unreadable date or no text (`rowToNote` in ./core/notes.ts).
-   * An ambiguous `photo` match — a filename that fits more than one item — is
-   * the one case that is KEPT: the note stays, only its photo link is left
-   * unresolved (`resolveNotePhotos` in ./core/notes.ts).
+   * Three problems KEEP the row and degrade only the field at fault: an
+   * ambiguous `photo` match — a filename fitting more than one item — leaves
+   * the note in place with its photo link unresolved (`resolveNotePhotos` in
+   * ./core/notes.ts); and a roster row with an unrecognised `role` or an
+   * unparseable `clock_offset` keeps the person, blanking just that column
+   * rather than saving it wrong (`parsePeopleCsv`).
    */
   noteProblems: string[];
 }

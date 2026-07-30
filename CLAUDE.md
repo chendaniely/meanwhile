@@ -40,8 +40,10 @@ Check before you cite.
 **M0-M11 are done.** What is left is not a milestone but a set of things
 blocked on the outside world:
 
-- **Automatic clock alignment** — blocked on a *timed* track. The owner's GPX
-  is a route export with no timestamps, so there is nothing to align against.
+- **Automatic clock alignment** — no longer blocked, just unwritten. This
+  waited on a *timed* track, because the first export was a route export with
+  no timestamps to align against; the owner supplied a real activity export on
+  2026-07-29 and it parses. No estimator has been written yet.
 - **Turning on GitHub Pages** — the workflow is committed and the repo is to
   be public; flipping *Settings → Pages → Source → GitHub Actions* is the
   owner's action, not Claude's.
