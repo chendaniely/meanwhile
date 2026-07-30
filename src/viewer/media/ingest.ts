@@ -15,7 +15,7 @@ import {
 } from '../../core/assemble.ts';
 import { parseCourse, type Course } from '../../core/course.ts';
 import { isManifestFile, isNotesFile, isPeopleFile, isTrackFile } from '../../core/metadata.ts';
-import { dedupeNotes, mergeNotes, resolveNotePhotos, type Note } from '../../core/notes.ts';
+import { dedupeNotes, fingerprintNote, mergeNotes, resolveNotePhotos, type Note } from '../../core/notes.ts';
 import { parsePeopleCsv } from '../../core/people-csv.ts';
 import {
   validateManifest,
@@ -286,6 +286,7 @@ export async function ingestFolder(
     opts.sessionNotes ?? [],
     photoResolvedNotes,
     opts.deletedNoteIds ?? new Set(),
+    manifest.event.timezone,
   );
   const noteProblems = [...rosterProblems, ...csvNoteProblems, ...photoProblems];
 
@@ -325,6 +326,24 @@ export async function ingestFolder(
  *     collaborator's file — has no id collision with `session` and is not
  *     in `deletedIds`, so it is added.
  *
+ * **A blank `id` cell is the one case id-matching alone cannot handle, and
+ * it is the documented, encouraged way to hand-add a note** — README says
+ * "leave it blank on a new row." `rowToNote` sets `id: ''` for it, and
+ * `dedupeNotes` mints a FRESH random id on every parse; nothing persists a
+ * row-to-id mapping between calls. So the identical unsaved row gets id `A`
+ * on the first ingest and a different id `B` on the next re-ingest, and a
+ * plain "does `fresh`'s id appear in `session`" check sees `B` as unknown
+ * and duplicates the note. Filtering `fresh` by CONTENT fingerprint as well
+ * (`fingerprintNote` — the same identity rule `dedupeNotes` already applies
+ * within one parse, just applied at this seam too) closes that: a fresh
+ * note whose content already matches something in `session` is the same
+ * hand-typed row wearing a new mint, not a new note, regardless of id.
+ *
+ * Deliberately NOT the fix on the other side — minting the id FROM the
+ * content instead of randomly — because that breaks the moment someone
+ * edits a hand-typed note: the id would change with the text, and identity
+ * (what an edit or delete addresses) would be lost exactly when it matters.
+ *
  * Pure and independent of `ingestFolder`'s file-reading, so it is directly
  * testable with plain `Note[]` — no `File` mocking needed.
  */
@@ -332,11 +351,18 @@ export function mergeSessionNotes(
   session: readonly Note[],
   fresh: readonly Note[],
   deletedIds: ReadonlySet<string>,
+  eventTimezone?: string,
 ): Note[] {
   const sessionIds = new Set(session.map((n) => n.id));
+  const sessionFingerprints = new Set(session.map((n) => fingerprintNote(n, eventTimezone)));
   const notes = [
     ...session,
-    ...fresh.filter((n) => !sessionIds.has(n.id) && !deletedIds.has(n.id)),
+    ...fresh.filter(
+      (n) =>
+        !sessionIds.has(n.id) &&
+        !deletedIds.has(n.id) &&
+        !sessionFingerprints.has(fingerprintNote(n, eventTimezone)),
+    ),
   ];
   notes.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   return notes;

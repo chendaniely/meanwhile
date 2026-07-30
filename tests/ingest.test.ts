@@ -220,6 +220,41 @@ describe('mergeSessionNotes', () => {
     const out = mergeSessionNotes([same], [note('a', { text: 'a' })], new Set());
     expect(out).toHaveLength(1);
   });
+
+  /**
+   * Blocker from the scoped re-review: the fix above opened the OPPOSITE
+   * failure. A blank-`id` row — the documented, encouraged way to hand-add a
+   * note ("leave it blank on a new row", per the README) — gets a FRESH
+   * random id from `dedupeNotes` on every parse, since nothing persists a
+   * row-to-id mapping between calls. So the identical unsaved row mints id
+   * `A` on the first ingest and a different id `B` on the next, and a plain
+   * "is this id already in session" check sees `B` as unrelated and
+   * duplicates the note on every "Add files". Fixed by also filtering
+   * `fresh` against a content fingerprint of `session` (the same identity
+   * rule `dedupeNotes` already applies within one parse), not id alone.
+   */
+  it('does not duplicate a fresh note whose content already matches a session note under a different, freshly-minted id', () => {
+    // Stands in for a blank-id row: `session` holds the id minted on the
+    // first ingest, `fresh` holds a DIFFERENT id minted for the identical
+    // unsaved row on the second.
+    const mintedFirst = note('A', { text: 'hand-typed note' });
+    const mintedAgain = note('B', { text: 'hand-typed note' });
+    const out = mergeSessionNotes([mintedFirst], [mintedAgain], new Set());
+    expect(out).toHaveLength(1);
+    expect(out[0]?.id).toBe('A'); // the session's copy, not a second mint
+  });
+
+  it('does not over-collapse: a fresh note with genuinely different content is kept alongside one that matches', () => {
+    // Two blank-id rows in the same file, re-minted on the second ingest:
+    // one collides in content with what the session already has, the other
+    // is a real second note and must survive.
+    const sessionCopy = note('A', { text: 'aid station' });
+    const matchingRemint = note('B', { text: 'aid station' });
+    const genuinelyNew = note('C', { text: 'wrong turn' });
+    const out = mergeSessionNotes([sessionCopy], [matchingRemint, genuinelyNew], new Set());
+    expect(out.map((n) => n.id).sort()).toEqual(['A', 'C']);
+    expect(out.map((n) => n.text).sort()).toEqual(['aid station', 'wrong turn']);
+  });
 });
 
 describe('ingestFolder — notes end to end', () => {
@@ -294,6 +329,46 @@ describe('ingestFolder — notes end to end', () => {
     expect(byId.get('legacy1')?.text).toBe('EDITED'); // the edit survives
     expect(byId.has('legacy2')).toBe(false); // the delete stays deleted
     expect(byId.has('new1')).toBe(true); // the composed note survives
+  });
+
+  it('does not duplicate a hand-typed, blank-id note across "Add files"', async () => {
+    // The blocker from the scoped re-review, reproduced end to end: a
+    // blank `id` cell is the documented way to add a note by hand (README:
+    // "leave it blank on a new row"), and `notes.csv` on disk is never
+    // rewritten by a mere re-ingest — only by Save. So the SAME unsaved row
+    // is parsed twice, minting a different random id each time, and only
+    // the fingerprint-based half of `mergeSessionNotes` stops that from
+    // becoming two notes.
+    const notesCsv =
+      'id,year,month,day,hour,minute,duration,tz,people,photo,author,text\n' +
+      ',2026,7,25,9,0,,,Priya,,,hand-typed note\n';
+
+    const first = await ingestFolder([textFile('notes.csv', notesCsv)], { title: 'x' });
+    expect(first.notes).toHaveLength(1);
+
+    const second = await ingestFolder([textFile('notes.csv', notesCsv)], {
+      title: 'x', sessionNotes: first.notes, deletedNoteIds: new Set(),
+    });
+    expect(second.notes).toHaveLength(1);
+    expect(second.notes[0]?.text).toBe('hand-typed note');
+  });
+
+  it('keeps two genuinely different blank-id rows as two notes across a re-ingest', async () => {
+    // The guard above must not over-collapse: two DIFFERENT hand-typed rows,
+    // both blank-id, must both survive "Add files" as two notes, not one.
+    const notesCsv =
+      'id,year,month,day,hour,minute,duration,tz,people,photo,author,text\n' +
+      ',2026,7,25,9,0,,,Priya,,,first note\n' +
+      ',2026,7,25,10,0,,,Priya,,,second note\n';
+
+    const first = await ingestFolder([textFile('notes.csv', notesCsv)], { title: 'x' });
+    expect(first.notes).toHaveLength(2);
+
+    const second = await ingestFolder([textFile('notes.csv', notesCsv)], {
+      title: 'x', sessionNotes: first.notes, deletedNoteIds: new Set(),
+    });
+    expect(second.notes).toHaveLength(2);
+    expect(second.notes.map((n) => n.text).sort()).toEqual(['first note', 'second note']);
   });
 });
 
