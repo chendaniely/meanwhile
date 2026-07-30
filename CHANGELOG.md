@@ -8,6 +8,8 @@ already built, and the reasons are worth keeping.
 
 ## Unreleased
 
+## 0.3.0 — 2026-07-30 — hardened before it carries anything irreversible
+
 ### Security: a file from someone else was the way in
 
 > "can you dispatch some secutiry and privacy independent subagents to review?"
