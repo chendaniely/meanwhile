@@ -563,6 +563,47 @@ describe('ingestFolder — notes end to end', () => {
     });
     expect(reopened.notes[0]?.id).not.toBe(firstId);
   });
+
+  /**
+   * The case `NoteRowIdentity` cannot resolve by construction, found by a
+   * further review: two blank-id rows in ONE file whose parsed content is
+   * BYTE-IDENTICAL — a copy-pasted row, or two people logging the same
+   * minute in the same words, both plausible accidents. `NoteRowIdentity`
+   * is keyed by content fingerprint, so identical rows collide on the SAME
+   * map slot: only one of them can occupy it, so which physical row reuses
+   * it churns from ingest to ingest (see the comment on `mergeSessionNotes`
+   * for the full trace). `sessionFingerprints`/`deletedFingerprints` are the
+   * backstop that stops that churn from ever becoming a visible duplicate —
+   * this is what an earlier version of that comment wrongly called
+   * removable, and this test is what proves it is not: with the guards
+   * removed, this fails after the SECOND ingest, gaining one phantom note
+   * per re-ingest (verified by hand while fixing the comment).
+   */
+  it('two byte-identical blank-id rows in one file stay two notes, not duplicated, across repeated re-ingests', async () => {
+    const notesCsv =
+      'id,year,month,day,hour,minute,duration,tz,people,photo,author,text\n' +
+      ',2026,7,25,9,0,,,Priya,,,same text typed twice\n' +
+      ',2026,7,25,9,0,,,Priya,,,same text typed twice\n';
+    const noteRowIdentity = new Map<string, string>();
+
+    const first = await ingestFolder([textFile('notes.csv', notesCsv)], {
+      title: 'x', noteRowIdentity,
+    });
+    expect(first.notes).toHaveLength(2);
+
+    const second = await ingestFolder([textFile('notes.csv', notesCsv)], {
+      title: 'x', sessionNotes: first.notes, noteRowIdentity,
+    });
+    expect(second.notes).toHaveLength(2);
+
+    // A third ingest, since the churn above is not guaranteed to repeat
+    // identically every time — this is the strongest check that the count
+    // stays capped rather than merely surviving one extra re-ingest.
+    const third = await ingestFolder([textFile('notes.csv', notesCsv)], {
+      title: 'x', sessionNotes: second.notes, noteRowIdentity,
+    });
+    expect(third.notes).toHaveLength(2);
+  });
 });
 
 describe('manifestForSave', () => {

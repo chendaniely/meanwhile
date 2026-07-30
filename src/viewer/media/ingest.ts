@@ -400,25 +400,33 @@ export async function ingestFolder(
  * its PRE-edit text, because the tombstone fingerprint was taken from the
  * EDITED in-memory copy while the fresh re-parse still produced the
  * original). That fix is `NoteRowIdentity` (see `dedupeNotes` in
- * `core/notes.ts`): a blank-id row now keeps the SAME id across every
- * re-parse of an unchanged file, for the lifetime of one open folder. With
- * that in place, `sessionFingerprints` and `deletedFingerprints` above are
- * no longer load-bearing for any path this application actually exercises —
- * every note reaching this function now carries a stable id (literal from
- * the file, deterministically derived for a migrated caption, or resolved
- * through `NoteRowIdentity`), so the plain id-based checks this function
- * had BEFORE either fingerprint patch existed are sufficient on their own.
+ * `core/notes.ts`): a blank-id row keeps the SAME id across every re-parse
+ * of an unchanged file, for the lifetime of one open folder — PROVIDED the
+ * row is distinguishable from every other row by content.
  *
- * They were deliberately NOT deleted here, though, because doing so would
- * require rewriting the four existing unit tests below that exercise this
- * fingerprint matching directly, via synthetic notes with different
- * explicit ids and matching content — inputs that do not correspond to any
- * real code path once ids are stable, but that are still valid, passing
- * tests of the mechanism as written. Removing a mechanism its own tests
- * still cover felt like exactly the kind of change to flag rather than push
- * through unilaterally. If a future session is comfortable updating those
- * tests, both fingerprint parameters (and the `sessionFingerprints`/
- * `deletedFingerprints` filtering below) can come out.
+ * **`sessionFingerprints` and `deletedFingerprints` are still load-bearing,
+ * and are not a leftover from before that fix — they are its backstop for
+ * the one case it cannot resolve by construction: two (or more) blank-id
+ * rows in the SAME file whose PARSED CONTENT IS BYTE-IDENTICAL.** A
+ * copy-pasted row, or two people logging the same minute with the same
+ * words, are both plausible accidents, not edge cases to wave away.
+ * `NoteRowIdentity` is a `Map` keyed by content fingerprint, so identical
+ * rows collide on ONE slot: `dedupeNotes` gives the first such row in file
+ * order that slot's stored id, and every other identical row in the same
+ * parse mints a fresh one instead (see `seen.has(stable)` there) — and
+ * because only ONE id can occupy that slot, WHICH physical row ends up
+ * reusing it churns from ingest to ingest. Traced by hand and confirmed by
+ * `tests/ingest.test.ts`'s "two byte-identical blank-id rows" case: without
+ * these two checks, every re-ingest of such a file mints one more phantom
+ * note, because the churned id is never the one `deletedIds`/`sessionIds`
+ * has on record. With them, a fresh note whose CONTENT already has a
+ * representative in `session` (add side) or was deleted (delete side) is
+ * recognised regardless of which specific id it churned to this time — the
+ * two rows are indistinguishable by content, so the two checks correctly
+ * stop caring which physical row is which and cap the count by content
+ * instead. Neither guard is removable while `NoteRowIdentity` remains
+ * content-keyed, which it has to be — there is no OTHER handle on a
+ * blank-id row to key it by.
  *
  * Pure and independent of `ingestFolder`'s file-reading, so it is directly
  * testable with plain `Note[]` — no `File` mocking needed.
