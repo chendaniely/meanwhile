@@ -19,10 +19,13 @@ DIR=...`).
 
 Also built: in-viewer notes and captions, people renaming and the runner
 role, and the Strava link/embed fallback. The Pages workflow is committed at
-`.github/workflows/pages.yml`. Notes, photo captions, and the people roster
-now read from and write to `notes*.csv` and `people.csv` rather than the
-manifest — several people's files merge by row-binding, every file is
-editable by hand in a spreadsheet, and **Save** downloads one zip of
+`.github/workflows/pages.yml`, and the deployed build carries Google
+Analytics gated to which of the three views is open and nothing else
+(`src/viewer/analytics.ts#trackView`, `make dev` sends none of it — see
+"Analytics learns the view, and nothing else"). Notes, photo captions, and
+the people roster now read from and write to `notes*.csv` and `people.csv`
+rather than the manifest — several people's files merge by row-binding, every
+file is editable by hand in a spreadsheet, and **Save** downloads one zip of
 `notes.csv`, `people.csv`, and `manifest.json` (a store-only ZIP writer,
 `src/viewer/media/zip.ts`, no dependency), named with the event and the
 moment of saving (`filenameForSave()` in `src/viewer/App.tsx`, pinned by
@@ -479,9 +482,9 @@ float over a map has to clear that. The dock is 1200.
 
 ### One action, one name, one control *(consistency pass)*
 
-> "the top menu says 'save manifest' but the expanded event settings has
-> 'export manifest.json' i perfer the simplier term, but it needs to be
-> consistent"
+> [...] "save manifest" but the expanded event settings has "export
+> manifest.json" i perfer the simplier term, but it needs to be consistent.
+> [...]
 
 Two controls for one action, under two names. The rules that came out of
 auditing every user-visible string:
@@ -544,8 +547,9 @@ below two thousand photographs.
 
 ### The moment strip must not change the page's height *(UI pass)*
 
-> "when i hover over the swimlanes and it goes from no image to a few /
-> multiple people, the page is jumping all over the place"
+> "[...] also the ux in swimlanes is really janky. [...] the page is jumping
+> all over the place because the rows where the images are are expanding in
+> height [...]"
 
 The strip's tiles wrapped, so a person with eight photographs made a row four
 lines tall and one with none made it a single line. Scrubbing therefore
@@ -561,8 +565,9 @@ it looks right at one.
 
 ### Hovering previews, clicking PINS *(UI pass)*
 
-> "when i hover over a certain location, i will eventually move the mouse to
-> click on an image below. so we need to find a balance"
+> "[...] we need a way to better work with the overover on the swimlane. it's
+> a bit to sensitive [...] find a balance between clicking to lock the
+> location but also ease of scrolling through the timeline"
 
 Hover alone cannot work: the photographs are below the track, so reaching for
 one means crossing the track, which moved the moment before you arrived. The
@@ -608,7 +613,7 @@ would leave pixel-level gaps to the accident of where a boundary fell.
 
 **The lanes alone are not enough**, and the owner was right to say so:
 
-> "just looking at when there are photos and events are not useful"
+> "just looking at when tehre are photos and events are not useful"
 
 Marks on a track say activity happened without saying what it was, which is
 most of the value. So `MomentStrip` sits underneath, showing the actual
@@ -775,8 +780,9 @@ distance and was never filtered, so the bug arrived with the good file.
 
 ### The note dock is app chrome, not a feature of one view *(owner)*
 
-> "it should just be a persistant part across all pages/tabs so the UI is
-> consitant. it's really anoying to have to scrool all the way down"
+> "for the note in the bottom right corner that's floating. i think the swim
+> lane page shoudl have that too. it should just be a persistant part across
+> all pages/tabs so the UI is consitant"
 
 It began in the feed only, then the course, with an inline composer under the
 lanes — three placements and two shapes for one action. It is now in every
@@ -785,7 +791,7 @@ it belongs to the app rather than to whichever page happens to be open.
 
 ### Interpolating a time from the photographs — the ONE place it is allowed
 
-> "sometimes as the runner, you remember moments from the elevation / course.
+> "sometimes as the runner, you rememer moments from the elevation / course.
 > especially if there are no photos in that area from yourself/crew/pacer"
 
 `estimateInstant()` turns a point on the course into a time, so you can point

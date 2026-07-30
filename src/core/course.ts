@@ -111,10 +111,17 @@ export interface CoursePoint {
  * the fix for a quadratic hang found by a security review: an unclosed
  * `<trkpt>` used to be handed the ENTIRE REST OF THE FILE as its body, which
  * was then regex-scanned for `<ele>`, `<hr>` and `<cad>` — none of which are
- * there, so each scan runs to the end. Measured before the fix on a 101 KB
- * file of unclosed tags: 2,000 points took 3.0 seconds, and ~1 MB would have
- * frozen the tab for minutes. `parseCourse` runs synchronously during ingest,
- * so there is no way out of it but closing the tab.
+ * there, so each scan runs to the end — quadratic in the point count. Before
+ * the fix, a file of nothing but unclosed `<trkpt>`s (2,000 points, ~101 KB)
+ * ran anywhere from several hundred milliseconds to multiple seconds
+ * depending on the machine and its load, and doubling the input roughly
+ * quadrupled the time every time it was tried. **Do not trust a specific
+ * millisecond figure here — re-measure with `tests/course.test.ts`'s
+ * "close to linear time, not quadratic" fixture if the shape needs
+ * re-checking; wall-clock numbers this noisy were never the useful part, the
+ * curve is.** ~1 MB of unclosed tags would still have frozen the tab for
+ * minutes. `parseCourse` runs synchronously during ingest, so there is no way
+ * out of it but closing the tab.
  *
  * Nothing legitimate is lost. `<trkpt>` and `<Trackpoint>` cannot nest, so the
  * next opening tag is a hard ceiling on where the current element can end; a
@@ -122,9 +129,13 @@ export interface CoursePoint {
  * A malformed element still yields whatever it did contain — the point is to
  * bound the work, not to throw the file away — and `parseCourse` reports it.
  *
- * `closeRe` is a single global regex whose `lastIndex` only ever moves
- * forward, so finding the closing tags costs one pass over the file in total
- * rather than one pass per element.
+ * `closeRe` is a single global regex, and its `lastIndex` is NOT strictly
+ * monotonic — the rewind below (search for "Rewind `closeRe`") walks it back
+ * to a close tag it just found when that tag turns out to belong to a LATER
+ * element, so that element can still find it. That rewind only ever gives
+ * back the one tag just peeked at, never resets to somewhere earlier in the
+ * file, so the total cost of finding every closing tag is still one pass over
+ * the file, not one pass per element.
  */
 function* elements(
   xml: string,
@@ -139,8 +150,11 @@ function* elements(
   // Once `closeRe` has run off the end, there is no closing tag left anywhere
   // after it, so asking again would rescan the whole remaining file for
   // nothing — which on a file with NO closing tags at all is quadratic all on
-  // its own. Measured: without this flag, 4,000 unclosed tags still took 259
-  // ms and doubling still quadrupled it.
+  // its own. Confirmed by removing this flag and re-measuring: even with the
+  // ceiling bound above in place, doubling the unclosed-tag count still
+  // roughly quadrupled the time, on every input size tried. The exact
+  // millisecond figure is machine-noise, not a constant — see the note above
+  // this function about re-measuring rather than trusting a pinned number.
   let noMoreCloses = false;
   let match: RegExpExecArray | null;
   while ((match = re.exec(xml)) !== null) {
@@ -238,13 +252,22 @@ function onEarth(lat: number, lon: number): boolean {
   return Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
 }
 
-/** One line about however many points had to be dropped, not one per point. */
+/**
+ * One line about however many points had to be dropped, not one per point.
+ *
+ * Covers both ways a coordinate can be unusable: a latitude or longitude
+ * that parsed but is out of range (`lat="999999"`), and one that did not
+ * parse as a number at all (`lat="abc"`, or the attribute missing outright).
+ * `parseGpx`/`parseTcx` count both into the same total — see the comment at
+ * their call sites — so a garbled coordinate is reported exactly like an
+ * out-of-range one instead of vanishing silently.
+ */
 function reportOffEarth(count: number, problems: string[]): void {
   if (count === 0) return;
   problems.push(
-    `${count} ${count === 1 ? 'point is' : 'points are'} not on Earth — a latitude outside ` +
-      '-90 to 90, or a longitude outside -180 to 180 — so ' +
-      `${count === 1 ? 'it was' : 'they were'} left out of the course.`,
+    `${count} ${count === 1 ? 'point is' : 'points are'} not on Earth — a latitude or ` +
+      'longitude that is missing, not a number, or out of range (-90 to 90 / -180 to 180) ' +
+      `— so ${count === 1 ? 'it was' : 'they were'} left out of the course.`,
   );
 }
 
@@ -268,8 +291,14 @@ function parseGpx(xml: string, problems: string[]): RawSample[] {
     // Time is optional here, and its absence is a whole supported mode rather
     // than a broken file — see `Course.timed`.
     const at = instant(point, 'time');
-    if (lat === undefined || lon === undefined) continue;
-    if (!onEarth(lat, lon)) {
+    // `attr()` returns undefined for BOTH a missing attribute and one that
+    // fails to parse as a finite number (`lat="abc"`) — same as a coordinate
+    // that parsed fine but is out of range. All three are equally unusable,
+    // so all three count toward `offEarth` and get reported the same way;
+    // treating the unparseable case as a silent, uncounted `continue` was the
+    // bug (`lat="abc"` vanished with no problem reported, while `lat="999999"`
+    // was).
+    if (lat === undefined || lon === undefined || !onEarth(lat, lon)) {
       offEarth++;
       continue;
     }
@@ -298,8 +327,12 @@ function parseTcx(xml: string, problems: string[]): RawSample[] {
     const at = instant(point, 'Time');
     const lat = num(point, 'LatitudeDegrees');
     const lon = num(point, 'LongitudeDegrees');
-    if (at === undefined || lat === undefined || lon === undefined) continue;
-    if (!onEarth(lat, lon)) {
+    // A missing timestamp is a different failure (no time to place the point
+    // at) and stays a silent skip. A missing OR unparseable coordinate is the
+    // same failure as one that is out of range — see `reportOffEarth` — so
+    // all three fall into the one counter, same as `parseGpx`.
+    if (at === undefined) continue;
+    if (lat === undefined || lon === undefined || !onEarth(lat, lon)) {
       offEarth++;
       continue;
     }

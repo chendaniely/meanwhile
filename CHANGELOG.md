@@ -45,24 +45,6 @@ either repository** — every object, reachable and unreachable, in both — and
 no photograph, its EXIF, its GPS or its bytes can reach the network, because
 no network call exists in the kernel at all.
 
-### Analytics learns which view is open, and nothing else
-
-> "i don't think i need view-usage. maybe the only tab info that is useful is
-> which view are people looking at, but i don't need to track time/people
-> information at all."
-
-The address bar carries a timestamp read from a photograph and the names of
-whoever is shown — because a link to a moment is meant to be shareable. That
-was reaching Google. The published page now sends one event naming which of
-the three views is open, and a page view whose address is rebuilt without the
-fragment. `make dev` still sends nothing at all.
-
-One part cannot be fixed in code and is recorded in `TODO.md`: GA4's
-"enhanced measurement" fires its own page view on every history change,
-reading the full address — and the app rewrites history on every cursor
-move. That is a switch in the Google Analytics console.
-
-
 ### Analytics learns the view, and nothing else
 
 > "i don't think i need view-usage. maybe the only tab info that is useful is
@@ -81,15 +63,16 @@ sends exactly one `page_view` itself, addressed at `location.origin +
 location.pathname` — no fragment, by construction. A new
 `src/viewer/analytics.ts#trackView` is the only other thing the app tells
 Google: one `view_change` event, `{ view }` only, fired from `App.tsx` on a
-genuine view change and never on a cursor scrub or a lane toggle.
+genuine view change and never on a cursor scrub or a lane toggle. `make dev`
+still sends nothing at all.
 
 **This does not fully close the gap.** GA4's enhanced measurement can fire
 its own automatic `page_view` on `replaceState` independent of
 `send_page_view`, reading the live URL — fragment included — at that moment.
-No code change reaches that; it is a per-stream toggle in the GA4 console.
-See CLAUDE.md's "Analytics learns the view, and nothing else" and its
-"Verified external constraints" table, and `TODO.md`'s deploy-and-process
-section for the action item.
+No code change reaches that; it is a per-stream toggle in the GA4 console —
+recorded in `TODO.md`. See CLAUDE.md's "Analytics learns the view, and
+nothing else" and its "Verified external constraints" table, and `TODO.md`'s
+deploy-and-process section for the action item.
 
 6 new tests, each verified by breaking the production code and confirming
 the corresponding test failed before restoring it.
@@ -181,8 +164,11 @@ folder as usual.
 ### A rename can no longer corrupt the record
 
 > "i need a way (possibly in the site interface itself) to connect the notes
-> and people datasets [...] i am essentially asking for a non destructive way
-> to rename people ids that are displayed."
+> and people datasets, where the author in notes is the new display alias
+> for the name in people. [...] i am essentially asking for a non
+> destructive way to rename people ids that are displayed. assume in the
+> future i might have multiple of the same device so we need to maeksure the
+> id in people are unique so the rename can happen with a join or something"
 
 An independent format review, run before real data went into version control,
 found the rename input firing once per KEYSTROKE. Renaming "Google Pixel 8
@@ -193,41 +179,36 @@ a guard in the rename itself meant it never healed. The note's link to that
 person was destroyed permanently, on the most ordinary interaction there is.
 
 A rename is now a committed action (blur or Enter, Escape reverts) and is
-total or refused — refused on a blank name, on a `;` (the list delimiter, which
-has no escape), and on a name another person already claims. That last case
-was its own silent corruption: renaming Alice to "Bob" produced two people
-called Bob, and "Bob" then resolved to neither, orphaning both notes including
-the one that never involved Alice.
+total or refused — refused on a blank name, on a `;` (the list delimiter,
+which has no escape), and on a name another person already claims. That last
+case was its own silent corruption: renaming Alice to "Bob" produced two
+people called Bob, and "Bob" then resolved to neither, orphaning both notes
+including the one that never involved Alice.
+
+`notes*.csv` refers to people by name, not id, so renaming a lane from a
+device slug ("Google Pixel 8 Pro") to a person ("Priya") used to orphan every
+note already written under the old name too. `people.csv` gains a fifth
+column, `also_known_as`; renaming now pushes the OLD name onto it and
+rewrites every already-loaded note to the new name, and `resolvePersonNames`
+matches a note's `people`/`author` against a person's current name OR any
+recorded alias — so an untouched crew member's copy of `notes.csv`, or a note
+nobody has re-saved yet, keeps resolving after a rename. Display everywhere
+now falls back `name` → first alias → the device-slug prettifier, in one
+function, rather than showing blank for a hand-added roster row that only has
+an alias.
+
+The two collisions are handled differently, deliberately, because they are not
+the same failure: claiming a name someone else already has is refused outright
+(above); but a rename whose OLD name is itself already claimed by someone
+else still proceeds — the id gets its new name — while skipping the alias and
+the note rewrite, rather than guessing which of the two people a note under
+that shared old name actually meant. That mirrors the project's existing rule
+for an ambiguous photo-caption match.
 
 Broken joins are now loud rather than silent: unresolved note names are
 reported at ingest and drawn in the event-level row, and a `photo` matching no
 file at all is reported, not just an ambiguous one. Aliases are cleaned on
 read, write and rename, so the column cannot grow without bound.
-
-
-### Renaming a person no longer orphans their notes
-
-> "i need a way (possibly in the site interface itself) to connect the notes
-> and people datasets, where the author in notes is the new display alias
-> for the name in people. [...] i am essentially asking for a non
-> destructive way to rename people ids that are displayed. assume in the
-> future i might have multiple of the same device so we need to maeksure the
-> id in people are unique so the rename can happen with a join or something"
-
-`notes*.csv` refers to people by name, not id, so renaming a lane from a
-device slug ("Google Pixel 8 Pro") to a person ("Priya") used to orphan every
-note already written under the old name. `people.csv` gains a fifth column,
-`also_known_as`; renaming now pushes the old name onto it and rewrites every
-already-loaded note to the new name, and `resolvePersonNames` matches a
-note's `people`/`author` against a person's current name OR any recorded
-alias — so an untouched crew member's copy of `notes.csv`, or a note nobody
-has re-saved yet, keeps resolving after a rename. Display everywhere now
-falls back `name` → first alias → the device-slug prettifier, in one
-function, rather than showing blank for a hand-added roster row that only
-has an alias. Two people are never resolved ambiguously: a rename that would
-collide with someone else's existing name or alias skips the alias and the
-rewrite rather than guessing which person a note meant, mirroring the
-project's existing rule for an ambiguous photo-caption match.
 
 ## 0.2.0 — 2026-07-30 — notes in CSV, an audited codebase, and a live site
 

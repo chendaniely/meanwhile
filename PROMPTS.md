@@ -1337,3 +1337,29 @@ The failure mode this guards against is specific to a vibe-coded project. The
 owner does not read JavaScript, so a wrong comment is undetectable to them,
 and CLAUDE.md is loaded as context by every future session — which makes a
 wrong decision-record entry an *instruction* rather than a cosmetic defect.
+
+
+---
+
+## Recovered prompts — logged late, found by the doc-accuracy pre-release gate
+
+This file is append-only and nothing above this heading has been edited or
+reordered. The pre-release documentation-accuracy gate flagged six owner
+quotes in CLAUDE.md that a programmatic verbatim check against this file
+could not confirm; running that check to completion turned up three more of
+the same kind. Six of the nine turned out to be CLAUDE.md paraphrasing, or
+silently correcting a typo, or inventing a framing sentence around a real
+quote — CLAUDE.md itself was fixed for those, since inventing a matching log
+entry here would misrepresent what was actually said. The three below were
+genuinely said and genuinely never logged — the gap was in this file, not in
+CLAUDE.md — so they are appended here now, verbatim, in the order CLAUDE.md
+already cites them.
+
+> sometimes when i'm scrolling with the note screen open the time is jumping
+> like crazy sometimes is jumping between hours and minutes
+
+> i feel like you should save this in a global state, it should always be
+> subagent driven
+
+> sometimes the phone GPS gets points all wrong and weird. and for videos
+> (especially videos taken on an action cam) there may not be GPS coordinates

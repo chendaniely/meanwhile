@@ -4,7 +4,7 @@
 # in the same commit — a Makefile that lies is worse than no Makefile.
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev build preview test test-watch typecheck check clean inspect check-test-count
+.PHONY: help install dev build preview test test-watch typecheck check clean inspect check-test-count release
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -52,7 +52,7 @@ release: ## Tag a release: make release VERSION=0.1.0
 	@test -n "$(VERSION)" || { echo "usage: make release VERSION=0.1.0"; exit 1; }
 	@grep -q "^## $(VERSION) " CHANGELOG.md \
 		|| { echo "CHANGELOG.md has no '## $(VERSION) ...' entry"; exit 1; }
-	@node -e 'const v=require("./package.json").version; if (v!==process.argv[1]) { console.error(`package.json says ${v}, not ${process.argv[1]}`); process.exit(1); }' $(VERSION)
+	@node -e 'const v=require("./package.json").version; if (v!==process.argv[1]) { console.error(`package.json says $${v}, not $${process.argv[1]}`); process.exit(1); }' $(VERSION)
 	@test -z "$$(git status --porcelain)" \
 		|| { echo "working tree is dirty — commit first"; exit 1; }
 	@git rev-parse "v$(VERSION)" >/dev/null 2>&1 \

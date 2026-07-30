@@ -45,17 +45,29 @@ disk; nothing is uploaded.
 
 ## Working on it
 
-Symlink the record into the photo folder so editing either place is one edit:
+Symlink the record into the photo folder so editing either place is one edit.
+**`manifest.json` won't exist in the record repo until after your first
+save** — don't symlink it yet, or opening the folder can fail outright on the
+dangling link rather than just skipping it:
 
 ```sh
 cd <photo folder>
 ln -s <record repo>/notes.csv .
 ln -s <record repo>/people.csv .
+```
+
+Then, for the first session: open the photo folder in the site → write notes
+→ **Save** (downloads a zip of `notes.csv`, `people.csv` and `manifest.json`)
+→ unpack all three over the repo — the two symlinks resolve in place, and
+`manifest.json` lands as a real file for the first time → commit.
+
+Once `manifest.json` exists in the repo, symlink it too:
+
+```sh
 ln -s <record repo>/manifest.json .
 ```
 
-Then: open the photo folder in the site → write notes → **Save** → unpack the
-downloaded zip over the repo → commit.
+Every session after that: open → write notes → Save → unpack → commit.
 
 ## Anything else worth remembering
 

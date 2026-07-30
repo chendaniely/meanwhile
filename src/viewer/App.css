@@ -1273,10 +1273,15 @@
   flex-direction: column;
   justify-content: center;
   overflow: hidden;
-  /* Two lines fit inside a 44px lane ONLY with the line-height reset: the
-     body's 1.75 makes them 45.5px and the labels drift out of step with the
-     marks they name. Stacking rather than sitting side by side is what lets
-     a name like "Samsung SM-F721W" be read in full. */
+  /* This line-height is NOT what keeps two lines inside a 44px lane — both
+     children set their own (.lanes__name 1.2, .lanes__gap 1.15), so this
+     reset never reaches any text; the real stack is one line of
+     .lanes__name (14px * 1.2 = 16.8px) plus one line of .lanes__gap
+     (12px * 1.15 = 13.8px) = 30.6px, well under 44px either way. Kept as a
+     safe default for any text that ever lands here without its own
+     line-height, not as a fix for a real overflow. Stacking rather than
+     sitting side by side is what lets a name like "Samsung SM-F721W" be
+     read in full. */
   line-height: 1.15;
 }
 

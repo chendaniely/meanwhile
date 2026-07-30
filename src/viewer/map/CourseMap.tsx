@@ -312,8 +312,15 @@ export function CourseMap({
       L.tileLayer(chosen.url, {
         attribution: chosen.attribution,
         maxZoom: chosen.maxZoom,
-        // Past a source's own zoom, keep scaling its last tiles rather than
-        // showing a grey grid.
+        // `maxNativeZoom` normally lets Leaflet keep upscaling a layer's last
+        // fetched tiles past where the source stops serving new ones, rather
+        // than showing a grey grid. It is set here EQUAL to `maxZoom` above —
+        // the map itself sets no `maxZoom`, so this layer's own ceiling is
+        // what stops the zoom — which means that upscaling path never
+        // actually engages for this layer alone. The one time it can: with
+        // Relief on, the hillshade layer below is hardcoded to `maxZoom: 19`
+        // (see `relief` above), so a basemap whose own `maxZoom` is lower
+        // stops rendering at its ceiling while hillshade keeps going to 19.
         maxNativeZoom: chosen.maxZoom,
         opacity: relief ? 0.65 : 1,
       }),

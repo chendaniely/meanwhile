@@ -91,7 +91,12 @@ Two media modes:
   API (`showDirectoryPicker`), with `<input type="file" webkitdirectory>` as
   the fallback. The page reads the files directly off disk and renders them
   as blob URLs. **Nothing leaves the machine** — a public site running a
-  completely private session. Desktop only; see §7.
+  completely private session. Desktop only; see §7. **Corrected post-M10:**
+  true of the photographs, video and notes, never true of the page as a
+  whole — the course view's map tiles, and, on the deployed build, Google
+  Analytics, are both external requests regardless of media mode. See the
+  corrections further down this document and CLAUDE.md's aesthetic section
+  for the current, authoritative list.
 - **Remote mode (sharing).** The manifest carries URLs and the crew opens it
   on their phones.
 

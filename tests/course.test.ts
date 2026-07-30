@@ -244,6 +244,29 @@ describe('rejecting what cannot be used', () => {
     expect(course.problems[0]).toContain('not on Earth');
   });
 
+  /**
+   * `attr()` returns undefined for BOTH a missing attribute and one that
+   * fails to parse as a finite number — `lat="abc"` is exactly as unusable as
+   * `lat="999999"`, but used to take a different, silent path: dropped by an
+   * early `continue` that never incremented the counter behind this message,
+   * so it vanished from `problems` while a numeric out-of-range value was
+   * reported. Both must count the same way now.
+   */
+  it('reports a non-numeric coordinate the same way as one that is out of range', () => {
+    const xml =
+      '<?xml version="1.0"?><gpx><trk><trkseg>' +
+      '<trkpt lat="abc" lon="-110.5"><ele>1500</ele></trkpt>' +
+      '<trkpt lat="45.8" lon="-999" ><ele>1500</ele></trkpt>' +
+      '<trkpt lat="45.81" lon="-110.5"><ele>1600</ele></trkpt>' +
+      '<trkpt lat="45.82" lon="-110.5"><ele>1550</ele></trkpt>' +
+      '</trkseg></trk></gpx>';
+    const course = parseCourse(xml) as Course;
+    expect(course.samples).toHaveLength(2);
+    expect(course.problems).toHaveLength(1);
+    expect(course.problems[0]).toContain('2 points');
+    expect(course.problems[0]).toContain('not on Earth');
+  });
+
   it('range-checks a TCX the same way it range-checks a GPX', () => {
     const course = parseCourse(tcx([
       { lat: 91, lon: -110.5, t: 0 },

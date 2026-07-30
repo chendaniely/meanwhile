@@ -1,11 +1,19 @@
 /**
- * Every object URL the app creates, and every one it revokes.
+ * Nearly every object URL the app creates for MEDIA TILES, and every one it
+ * revokes for them.
  *
  * THE TRAP THIS EXISTS TO CLOSE: `URL.createObjectURL` pins its blob in
  * memory until `revokeObjectURL` is called. Nothing collects it — not GC, not
  * removing the <img>. Create one per tile while scrolling 2,000 files and the
- * tab grows until it dies. So every URL in the app comes from here, and this
- * is the only place that revokes.
+ * tab grows until it dies. This is the place that manages that risk for
+ * tiles at scale — reference counting and a byte budget, below — not the
+ * only place in the app that ever calls `createObjectURL`. Two other call
+ * sites exist and are each self-contained, create-then-revoke, with no
+ * scaling risk: `thumbnails.ts`'s poster decoder (revoked once the frame is
+ * drawn) and `App.tsx`'s Save button (one zip Blob, revoked right after the
+ * download is triggered). Nothing leaks from either. If a THIRD long-lived
+ * or per-tile creation site is ever added outside this file, route it
+ * through here instead — that is what this module is for.
  *
  * Two mechanisms, and both are needed:
  *

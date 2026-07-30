@@ -35,6 +35,11 @@ export interface Basemap {
    * chosen basemap, not over it) regardless of this flag. Kept on `HILLSHADE`
    * below as documentation of intent, not as something any code branches on.
    * Remove or wire it up if it needs to do real work.
+   *
+   * Not the only unread field on `HILLSHADE`: its `maxZoom` (16, below) is
+   * equally unused — `CourseMap.tsx` hardcodes `maxZoom: 19` on the
+   * hillshade tile layer instead of reading `hillshade().maxZoom`, so
+   * changing the 16 here does nothing. Same caveat applies.
    */
   overlay?: boolean;
   /** Only offered when a key is configured. */
@@ -88,6 +93,8 @@ const HILLSHADE: Basemap = {
   label: 'Hillshade',
   url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',
   attribution: 'Hillshade &copy; Esri',
+  // Unread, same as `overlay` above: `CourseMap.tsx` hardcodes 19 on the
+  // hillshade tile layer rather than reading this. Change it there too.
   maxZoom: 16,
   overlay: true,
 };
