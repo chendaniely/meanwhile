@@ -48,6 +48,7 @@ import { CourseMap } from './map/CourseMap.tsx';
 import { MediaProvider } from './media/MediaContext.tsx';
 import { useMediaStore } from './media/useMediaStore.ts';
 import { useAppState } from './hooks/useAppState.ts';
+import { useMeasuredHeight } from './hooks/useMeasuredHeight.ts';
 import type { PickedFile } from './media/folder.ts';
 import {
   ingestFolder,
@@ -864,50 +865,13 @@ export function App() {
     URL.revokeObjectURL(url);
   };
 
-  /**
-   * `--mw-header-measured` (App.css) sizes `.rail`'s sticky `top` so it sits
-   * just under the sticky header rather than tucking beneath it. App.css's
-   * static `--mw-header-h` `calc()` was sized for a button-only header and
-   * undercounts it once a person is loaded: `.app__author` renders
-   * `PersonPicker`'s `.field`, which stacks a label over an input rather
-   * than sitting on one line, and `flex-wrap` on the header adds a further
-   * row once a chip list wraps at a narrow width. Rather than chase every
-   * combination through CSS, measure the rendered header and publish its
-   * real height here; the static `calc()` stays only as the
-   * pre-measurement fallback for the first paint.
-   *
-   * PUBLISHES TO A DIFFERENT PROPERTY THAN THE STATIC FLOOR, ON PURPOSE.
-   * `--mw-header-h` also backs `.app__header`'s own `min-height` in
-   * App.css. `root.style.setProperty` writes an INLINE style on <html>,
-   * which outranks the `:root {}` rule for every consumer of that custom
-   * property — if this measured value were written to `--mw-header-h`
-   * itself, the header's `min-height` would pick it up too, and the header
-   * could never shrink below whatever it was once measured at (measure
-   * wide → floor pinned wide → header can never render shorter → next
-   * measurement reads the same pinned height back). Publishing to
-   * `--mw-header-measured` instead keeps the two roles apart: the static
-   * value stays a true floor, and only `.rail` (which has no min-height
-   * riding on this) reads the live number.
-   *
-   * THE OBSERVER IS CREATED AND TORN DOWN BY THE REF CALLBACK, per
-   * `useInView.ts` (see its comment for why): disconnecting from a bare
-   * `useEffect(..., [])` cleanup fires on StrictMode's synthetic
-   * mount/unmount/mount and leaves nothing left to re-observe with.
-   */
-  const headerRef = useCallback((node: HTMLElement | null) => {
-    if (!node) return undefined;
-    const root = document.documentElement;
-    const publish = () => {
-      root.style.setProperty('--mw-header-measured', `${node.getBoundingClientRect().height}px`);
-    };
-    const observer = new ResizeObserver(publish);
-    observer.observe(node);
-    publish();
-    return () => {
-      observer.disconnect();
-      root.style.removeProperty('--mw-header-measured');
-    };
-  }, []);
+  // `--mw-header-measured` (App.css) sizes `.rail`'s sticky `top` so it sits
+  // just under the sticky header rather than tucking beneath it. App.css's
+  // static `--mw-header-h` `calc()` was sized for a button-only header and
+  // undercounts it once a person is loaded, so the real height is measured
+  // and published live instead — see `useMeasuredHeight` for the full story,
+  // including why it must never publish to `--mw-header-h` itself.
+  const headerRef = useMeasuredHeight('--mw-header-measured');
 
   return (
     <div className="app">
