@@ -22,6 +22,12 @@ meanwhile-*.zip
 # lowercase, cameras write upper. A mixed-case name (.Jpg) would slip through
 # these, which is one more reason event media belongs in /data/ rather than
 # relying on this net.
+#
+# `.MTS` COLLIDES WITH TYPESCRIPT — see the negations after the list. AVCHD
+# camcorders write `.MTS`, but `.mts` is also TypeScript's ESM module
+# extension, and macOS checkouts are case-insensitive, so the uppercase
+# pattern silently swallows lowercase source files too. Found the hard way:
+# a `.d.mts` written in `scripts/` simply never appeared in `git status`.
 *.jpg
 *.jpeg
 *.jpe
@@ -62,6 +68,23 @@ meanwhile-*.zip
 *.WEBM
 *.3GP
 *.MTS
+
+# Rescue TypeScript module files from the `.MTS` rule above, in the four
+# places source actually lives. A path negation rather than a tweak to the
+# extension patterns because it has to hold under BOTH a case-sensitive
+# checkout (where `*.MTS` misses `.mts`) and a case-insensitive one (where it
+# catches it), and only the path differs reliably between a source file and a
+# camcorder clip.
+#
+# The cost, accepted knowingly: a stray `.MTS` clip sitting in one of these
+# four locations — including the repo root, which `vite.config.mts` and
+# friends need — is no longer caught by this net. Event media belongs in
+# `/data/`, which is ignored wholesale above and is unaffected by any of
+# this; the extension list only ever existed to catch what lands outside it.
+!/src/**/*.mts
+!/scripts/**/*.mts
+!/tests/**/*.mts
+!/*.mts
 
 # Currently inert: tests/fixtures/isobmff.ts and jpeg.ts build hand-crafted
 # byte-level parser inputs PROGRAMMATICALLY, in .ts, so nothing above ever
