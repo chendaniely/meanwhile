@@ -10,7 +10,7 @@ import {
   type TimeAnchor,
 } from '../core/course.ts';
 import type { Note } from '../core/notes.ts';
-import type { Manifest, Note as LegacyNote, PersonId } from '../core/schema.ts';
+import type { Manifest, PersonId } from '../core/schema.ts';
 import { isVisible, toggleVisible, VIEW_NAMES, type ViewName } from '../core/state.ts';
 import { formatClock, type Instant } from '../core/time.ts';
 import { assignLaneColors } from '../core/palette.ts';
@@ -29,6 +29,7 @@ import { CourseFallback } from './components/CourseFallback.tsx';
 import { CourseRail } from './components/CourseRail.tsx';
 import { NoteList } from './components/Notes.tsx';
 import { NoteDock } from './components/NoteDock.tsx';
+import { PersonPicker } from './components/PersonPicker.tsx';
 import { Feed } from './components/Feed.tsx';
 import { Lightbox } from './components/Lightbox.tsx';
 import { Swimlanes } from './components/Swimlanes.tsx';
@@ -45,7 +46,6 @@ import type { PickedFile } from './media/folder.ts';
 import {
   downloadManifest,
   ingestFolder,
-  legacyNoteToNote,
   type IngestProgress,
 } from './media/ingest.ts';
 import './App.css';
@@ -65,6 +65,33 @@ function courseUrlOf(manifest: Manifest): string {
   const course = manifest.course;
   if (!course) return '';
   return course.kind === 'gpx' ? course.src : course.url;
+}
+
+/**
+ * "Who is at this laptop" — the only thing meanwhile persists locally.
+ *
+ * It pre-fills a new note's "Written by" and nothing else. It holds no event
+ * data (no photos, no timestamps, no manifest content), which is exactly why
+ * it lives in `localStorage` rather than the manifest: it describes this
+ * machine, not the event, and would be meaningless — or wrong — carried to
+ * anyone else's copy of the folder.
+ *
+ * `localStorage` throws in some privacy modes (Safari private browsing has
+ * historically done this), and a note must always be writable even then, so
+ * every access is guarded and a failure just means the setting doesn't
+ * stick — it never blocks the composer.
+ */
+const AUTHOR_STORAGE_KEY = 'meanwhile.author';
+
+function loadStoredAuthor(): string[] {
+  try {
+    const raw = localStorage.getItem(AUTHOR_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 type Stage =
@@ -93,6 +120,20 @@ export function App() {
   const [title, setTitle] = useState('Untitled event');
   const [timezone, setTimezone] = useState(guessTimezone);
 
+  // Who is at this laptop — see the comment on `loadStoredAuthor` above.
+  // Defaults to unset (`[]`); a note written before this is ever touched is
+  // saved with an empty `author`, never blocked on it.
+  const [me, setMe] = useState<string[]>(loadStoredAuthor);
+  const setMeAndPersist = useCallback((names: string[]) => {
+    setMe(names);
+    try {
+      localStorage.setItem(AUTHOR_STORAGE_KEY, JSON.stringify(names));
+    } catch {
+      // Writing can throw too (storage disabled, quota). The setting just
+      // doesn't stick for next time — it must never stop this one.
+    }
+  }, []);
+
   // Kept so re-reading the folder preserves names, clock offsets, captions,
   // and hand-placed times rather than starting over.
   const previous = useRef<Manifest | null>(null);
@@ -111,12 +152,13 @@ export function App() {
    * `notes[]` and captions migrate into (see `legacyNoteToNote` and
    * `ingestFolder`).
    *
-   * A state of its own rather than derived from `manifest` on every render,
-   * because the composer below still writes a legacy-shape note into
-   * `manifest.notes` for now (the composer itself moves to the new shape in
-   * a later task) — re-deriving from the manifest on every change would
-   * double up whatever was migrated at the last ingest. `addNote`/`editNote`/
-   * `deleteNote` keep this and `manifest.notes` in step by hand instead.
+   * A state of its own rather than derived from `manifest` on every render:
+   * this is the one list the composer, the note list, and (once Task 9 wires
+   * up the zip) the CSV writer all read from, and re-deriving it from
+   * `manifest` on every change would double up whatever ingest already
+   * migrated. `addNote`/`editNote`/`deleteNote` write here directly now —
+   * `manifest.notes`, where it exists at all, is a read-only leftover from an
+   * imported legacy manifest.
    */
   const [notes, setNotes] = useState<Note[]>([]);
 
@@ -288,20 +330,17 @@ export function App() {
   const rangeRef = useRef<TimeWindow | null>(null);
 
   /*
-   * The composer still produces the LEGACY note shape (Task 8 moves it to
-   * the new one), and `manifest.notes` is still the only thing `downloadManifest`
-   * exports — so these keep writing there. They also mirror the change into
-   * the live `notes` state, converted with the same `legacyNoteToNote` ingest
-   * uses, so a note just added, edited, or deleted shows up immediately
-   * rather than waiting for the next folder read.
+   * The composer now produces the new, CSV-backed note shape directly (Task
+   * 8), so these write straight to the `notes` state — the same list ingest
+   * populates from notes*.csv and legacy migration, and the list `NoteList`
+   * renders from. They no longer touch `manifest.notes`: that field is a
+   * read-only relic of an imported legacy manifest until Task 9 makes the
+   * save path write notes.csv and stops the writer emitting it at all, at
+   * which point there is nothing left to keep in step.
    */
   const addNote = useCallback(
-    (note: LegacyNote) => {
-      editManifest((m) => ({ ...m, notes: [...(m.notes ?? []), note] }));
-      setNotes((prev) => [
-        ...prev,
-        legacyNoteToNote(note, stage.name === 'loaded' ? stage.manifest.people : []),
-      ]);
+    (note: Note) => {
+      setNotes((prev) => [...prev, note]);
       const at = Date.parse(note.at);
       // The crop hides photos from outside the event, and notes follow it for
       // consistency — but a note you JUST wrote disappearing is indefensible.
@@ -309,32 +348,16 @@ export function App() {
       const crop = rangeRef.current;
       setNoteOutside(!Number.isNaN(at) && crop && !isWithin(at, crop) ? at : null);
     },
-    [editManifest, stage],
+    [],
   );
 
-  const editNote = useCallback(
-    (id: string, change: Partial<LegacyNote>) => {
-      editManifest((m) => ({
-        ...m,
-        notes: (m.notes ?? []).map((n) => (n.id === id ? { ...n, ...change } : n)),
-      }));
-      // Only `text` is ever sent by the note list; the field is shared by
-      // both shapes, so applying it directly is exact rather than a guess.
-      if (change.text !== undefined) {
-        const text = change.text;
-        setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, text } : n)));
-      }
-    },
-    [editManifest],
-  );
+  const editNote = useCallback((id: string, change: Partial<Note>) => {
+    setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, ...change } : n)));
+  }, []);
 
-  const deleteNote = useCallback(
-    (id: string) => {
-      editManifest((m) => ({ ...m, notes: (m.notes ?? []).filter((n) => n.id !== id) }));
-      setNotes((prev) => prev.filter((n) => n.id !== id));
-    },
-    [editManifest],
-  );
+  const deleteNote = useCallback((id: string) => {
+    setNotes((prev) => prev.filter((n) => n.id !== id));
+  }, []);
 
   const manifest = stage.name === 'loaded' ? stage.manifest : null;
 
@@ -640,6 +663,20 @@ export function App() {
               onChange={(e) => updateEvent({ title: e.target.value })}
             />
             <div className="app__bar-actions">
+              {/*
+                * "Who is at this laptop" — pre-fills a new note's "Written
+                * by" (see the `AUTHOR_STORAGE_KEY` comment above). Not a
+                * fifth action: it sets no note by itself, and stays blank
+                * with no effect on anything else if never touched.
+                */}
+              <div className="app__author">
+                <PersonPicker
+                  people={stage.manifest.people}
+                  value={me}
+                  onChange={setMeAndPersist}
+                  label="You are"
+                />
+              </div>
               <FolderPicker
                 variant="quiet"
                 label="Open folder"
@@ -1001,6 +1038,7 @@ export function App() {
             <NoteDock
               manifest={stage.manifest}
               cursor={view.cursor}
+              author={me}
               onAdd={addNote}
               count={placedNotes.length}
               open={noteOpen}

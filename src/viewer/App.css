@@ -66,6 +66,14 @@
   margin-left: auto;
 }
 
+/* The "you are" picker in the bar. Fixed width, unlike `.app__event`: the
+   event title is meant to grow into free space, this is a small setting and
+   should not compete with it or the buttons beside it for room. */
+.app__author {
+  width: 14rem;
+  flex: 0 0 auto;
+}
+
 .app__title {
   font-size: 1.25rem;
   letter-spacing: -0.01em;

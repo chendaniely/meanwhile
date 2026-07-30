@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { mintNoteId, type Note } from '../../core/notes.ts';
 import { assignLaneColors } from '../../core/palette.ts';
 import { resolvePersonNames } from '../../core/people-csv.ts';
-import type { Manifest, Note, PersonId } from '../../core/schema.ts';
-import { formatDateTime, type Instant } from '../../core/time.ts';
+import type { Manifest } from '../../core/schema.ts';
+import { formatDateTime, formatDuration, type Instant } from '../../core/time.ts';
 import type { PlacedNote } from '../../core/window.ts';
+import { PersonPicker } from './PersonPicker.tsx';
 
 /**
  * Things that happened, with or without a photograph.
@@ -18,10 +20,12 @@ import type { PlacedNote } from '../../core/window.ts';
  * already there; you type the sentence and nothing else. Typing a timestamp
  * by hand is possible but is the fallback, not the path.
  *
- * A note can carry a person, and that is not decoration: it puts the note in
- * that person's lane, which is what lets one EXPLAIN A GAP. Six empty hours in
- * the runner's lane is the story of the night section, and "asleep at
- * Cottonwood" is the caption that gap never had.
+ * A note can carry any number of people, and that is not decoration: it puts
+ * the note in each of their lanes, which is what lets one EXPLAIN A GAP. Six
+ * empty hours in the runner's lane is the story of the night section, and
+ * "asleep at Cottonwood" is the caption that gap never had. Separately, a
+ * note also records who WROTE it — a different list of names, because the
+ * crew member typing "asleep at Cottonwood" is not the person asleep.
  *
  * **The composer and the list are separate exports on purpose.** Writing a
  * note is something you do constantly while reading, so it has to sit within
@@ -75,14 +79,22 @@ interface ComposerProps {
   /** Where the timeline cursor is, used as the default time for a new note. */
   cursor: Instant | null;
   timezone?: string;
+  /**
+   * Who wrote this, pre-filled from the "you are" setting in the top bar.
+   * Only an initial value — edited here, it never writes back to that
+   * setting, so a note someone else contributed can be attributed without
+   * changing who this laptop belongs to.
+   */
+  defaultAuthor: readonly string[];
   onAdd: (note: Note) => void;
   /** Called after a note is added, so a popover can close itself. */
   onDone?: () => void;
 }
 
-export function NoteComposer({ manifest, cursor, timezone, onAdd, onDone }: ComposerProps) {
+export function NoteComposer({ manifest, cursor, timezone, defaultAuthor, onAdd, onDone }: ComposerProps) {
   const [text, setText] = useState('');
-  const [person, setPerson] = useState<PersonId | ''>('');
+  const [people, setPeople] = useState<string[]>([]);
+  const [author, setAuthor] = useState<string[]>(() => [...defaultAuthor]);
   const [when, setWhen] = useState('');
   const [span, setSpan] = useState('');
 
@@ -102,15 +114,19 @@ export function NoteComposer({ manifest, cursor, timezone, onAdd, onDone }: Comp
     const at = fromLocalInput(whenValue, timezone);
     if (at === null) return;
     const note: Note = {
-      // Time plus a random suffix: stable once written, and unique even for
-      // two notes typed into the same minute.
-      id: `note-${at}-${Math.random().toString(36).slice(2, 7)}`,
+      id: mintNoteId(),
       at: new Date(at).toISOString(),
+      people: [...people],
+      author: [...author],
       text: body,
     };
-    if (person) note.person = person;
+    // The end time is typed as a clock reading ("until 6:40"), the same way
+    // a person remembers it — but the file stores a DURATION, so it survives
+    // export unaffected by whichever day the note happens to fall on. An end
+    // that is not after the start is not a span; omit `duration` rather than
+    // writing a negative or zero one.
     const until = span ? fromLocalInput(span, timezone) : null;
-    if (until !== null && until > at) note.until = new Date(until).toISOString();
+    if (until !== null && until > at) note.duration = formatDuration(until - at);
     onAdd(note);
     setText('');
     setSpan('');
@@ -169,15 +185,15 @@ export function NoteComposer({ manifest, cursor, timezone, onAdd, onDone }: Comp
             onChange={(e) => setSpan(e.target.value)}
           />
         </label>
-        <label className="compose__field">
-          <span>Whose</span>
-          <select value={person} onChange={(e) => setPerson(e.target.value)}>
-            <option value="">Everyone</option>
-            {manifest.people.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </label>
+        {/*
+          * Two independent multi-selects, not one field with a role toggle:
+          * who a note is ABOUT and who WROTE it are different lists that
+          * often don't overlap — a crew member notes the runner is asleep.
+          * Leaving "Whose" empty is an event-level note, same as the old
+          * "Everyone" option.
+          */}
+        <PersonPicker people={manifest.people} value={people} onChange={setPeople} label="Whose" />
+        <PersonPicker people={manifest.people} value={author} onChange={setAuthor} label="Written by" />
         <button type="button" className="button button--primary" onClick={submit}>
           Add note
         </button>

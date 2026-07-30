@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Manifest, Note } from '../../core/schema.ts';
+import type { Note } from '../../core/notes.ts';
+import type { Manifest } from '../../core/schema.ts';
 import type { Instant } from '../../core/time.ts';
 import { NoteComposer } from './Notes.tsx';
 
@@ -21,6 +22,8 @@ interface Props {
   manifest: Manifest;
   cursor: Instant | null;
   timezone?: string;
+  /** The "you are" setting from the top bar — pre-fills the composer's "Written by". */
+  author: readonly string[];
   onAdd: (note: Note) => void;
   /** Notes already written, purely for the count on the button. */
   count: number;
@@ -36,7 +39,7 @@ interface Props {
 }
 
 export function NoteDock({
-  manifest, cursor, timezone, onAdd, count, notice, open: openProp, onOpenChange,
+  manifest, cursor, timezone, author, onAdd, count, notice, open: openProp, onOpenChange,
 }: Props) {
   const [ownOpen, setOwnOpen] = useState(false);
   // Controlled when a parent supplies `open`, self-managed otherwise, so the
@@ -96,6 +99,7 @@ export function NoteDock({
           <NoteComposer
             manifest={manifest}
             cursor={cursor}
+            defaultAuthor={author}
             onAdd={onAdd}
             onDone={() => setOpen(false)}
             {...(timezone ? { timezone } : {})}
