@@ -1217,8 +1217,11 @@ Orange `#F26522` passes unchanged at 5.9:1 and is the cursor accent.
 `--mw-fg-faint` is 4.1:1 and is **borders and decoration only, never text**.
 
 Atkinson Hyperlegible is **self-hosted** (`src/viewer/fonts/`, SIL OFL, ~56KB)
-so the site makes zero external requests. The only external request meanwhile
-ever makes is an optional Strava embed iframe.
+so the app shell itself makes zero external requests. That does not describe
+the whole page: the course view's map tiles (OpenTopoMap, Esri/ArcGIS, OSM,
+and optionally Thunderforest — see `src/viewer/map/basemaps.ts`) are external
+and load unconditionally on every render, and the optional Strava embed
+iframe is external too, though it is click-to-load.
 
 ## Scale target *(session 2)*
 

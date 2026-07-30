@@ -1,8 +1,10 @@
 /* Atkinson Hyperlegible, self-hosted (SIL OFL 1.1).
  *
- * Self-hosted rather than loaded from Google Fonts so the site makes zero
- * external requests. The only external request meanwhile ever makes is an
- * optional Strava embed iframe, and only when the manifest asks for one.
+ * Self-hosted rather than loaded from Google Fonts so the APP SHELL makes
+ * zero external requests. That is not true of the whole page: the course
+ * view's map tiles (OpenTopoMap, Esri, OSM, and optionally Thunderforest —
+ * see src/viewer/map/basemaps.ts) are external and load unconditionally, and
+ * an optional Strava embed iframe is external too, though only on a click.
  *
  * Latin subset only (~56KB total across four files). */
 

@@ -430,6 +430,9 @@ own colors fail WCAG AA on `#171512`: links use `#4E8FBF` (5.3:1) instead of
 `#236192` (2.8:1), and danger text uses `#D98BA3` instead of `#9A4665`
 (3.0:1). Orange `#F26522` passes unchanged at 5.9:1 and is the cursor.
 
-Atkinson Hyperlegible is self-hosted (~56KB) so the site makes zero external
-requests. The only external request meanwhile ever makes is an optional
-Strava embed iframe.
+Atkinson Hyperlegible is self-hosted (~56KB) so the app shell itself makes
+zero external requests. **Corrected post-M10:** the course view's map tiles
+(OpenTopoMap, Esri/ArcGIS, OSM, and optionally Thunderforest) are external
+and load unconditionally on every render — see the "no map library" rule's
+reversal in `CLAUDE.md`. The optional Strava embed iframe is external too,
+though it is click-to-load.

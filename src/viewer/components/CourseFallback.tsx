@@ -18,11 +18,15 @@ import type { CourseRef } from '../../core/schema.ts';
  * embed needs a `{CODE}` that only Strava's share dialog produces, and it
  * cannot be derived.
  *
- * THE IFRAME IS CLICK-TO-LOAD. It is the only external request meanwhile ever
- * makes. Whoever pasted the URL consented to that; whoever they later send the
- * manifest to did not, and loading it on their behalf would hand their IP
- * address to Strava before they had decided to look. One click is a small
- * price for that staying true.
+ * THE IFRAME IS CLICK-TO-LOAD. That does NOT make it the only external
+ * request meanwhile makes — the course view's map tiles (OpenTopoMap, Esri,
+ * OSM, and optionally Thunderforest; see src/viewer/map/basemaps.ts) fetch
+ * from four external hosts unconditionally, on every render. What click-to-
+ * load buys is narrower: this iframe is the only one of those requests that
+ * waits for a person to ask for it. Whoever pastes the URL consents to that
+ * click; whoever they later send the manifest to did not, and loading it on
+ * their behalf would hand their IP address to Strava before they had decided
+ * to look. One click is a small price for that staying true.
  */
 
 interface Props {
@@ -65,7 +69,7 @@ export function CourseFallback({ course }: Props) {
 
       <p className="app__hint">
         {course.kind === 'strava-embed'
-          ? 'Strava’s widget is a sealed box — it cannot follow the cursor here, and it is the only thing on this page that contacts another server.'
+          ? 'Strava’s widget is a sealed box — it cannot follow the cursor here. The map tiles on this page load from other servers automatically; this is the only thing that waits for you to click first.'
           : 'A plain activity URL cannot be embedded: the embed needs a code that only Strava’s share dialog produces.'}{' '}
         To light up the course view, ask the athlete for <strong>Export TCX</strong>
         {' '}(heart rate and cadence) or <strong>Export GPX</strong>, and drop the file
