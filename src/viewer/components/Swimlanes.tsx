@@ -44,6 +44,8 @@ interface Props {
   bounds?: TimeWindow;
   /** Zooming the lanes changes the crop everything else is showing. */
   onRange?: (next: TimeWindow) => void;
+  /** Forwarded to the moment strip's tiles — see `Feed`'s prop of the same name. */
+  captionByItem?: ReadonlyMap<string, string>;
 }
 
 const LANE_HEIGHT = 44;
@@ -60,6 +62,7 @@ export function Swimlanes({
   onOpen,
   bounds,
   onRange,
+  captionByItem,
 }: Props) {
   const zone = manifest.event.timezone;
   const track = useRef<HTMLDivElement>(null);
@@ -339,6 +342,7 @@ export function Swimlanes({
           radiusMs={radius}
           {...(zone ? { timezone: zone } : {})}
           {...(onOpen ? { onOpen } : {})}
+          {...(captionByItem ? { captionByItem } : {})}
         />
       )}
 

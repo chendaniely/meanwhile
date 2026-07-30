@@ -18,6 +18,15 @@ interface Props {
   color?: string;
   /** Overlaid on the tile. Usually the time. */
   caption?: string;
+  /**
+   * The text of the note attached to this item, if it has one.
+   *
+   * This is the discoverability fix: a caption used to be invisible unless
+   * you opened the lightbox, so nobody knew one was there to read. Its
+   * presence draws a small chat glyph on the tile; hovering it shows the
+   * text, the same way the lightbox does.
+   */
+  note?: string;
   /** Opens the item full size. Video plays there rather than in the grid. */
   onOpen?: () => void;
   /**
@@ -55,7 +64,7 @@ function displayAspect(item: Item): number {
 
 type State = 'idle' | 'loading' | 'ready' | 'undecodable';
 
-export function MediaTile({ item, color, caption, onOpen, fit = 'aspect' }: Props) {
+export function MediaTile({ item, color, caption, note, onOpen, fit = 'aspect' }: Props) {
   const { store } = useMedia();
   const { ref, inView } = useInView<HTMLDivElement>();
   const [url, setUrl] = useState<string | null>(null);
@@ -132,6 +141,17 @@ export function MediaTile({ item, color, caption, onOpen, fit = 'aspect' }: Prop
             view explains what happened and still shows the metadata. */}
         {onOpen && (
           <button type="button" className="tile__open" onClick={onOpen} aria-label={label} />
+        )}
+
+        {/* After the open button in DOM order — on top of it, on purpose —
+            so the glyph itself is what receives the hover and shows the
+            caption via its native title tooltip. A photo with a comment was
+            otherwise invisible until you opened the lightbox; this is the
+            discoverability fix. */}
+        {note && (
+          <span className="tile__note-glyph" title={note} aria-label={`Note: ${note}`}>
+            💬
+          </span>
         )}
       </div>
     </figure>

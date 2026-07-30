@@ -32,6 +32,8 @@ interface Props {
   /** Pinned, so the strip stops following the pointer. See Swimlanes. */
   locked?: boolean;
   onToggleLock?: () => void;
+  /** Caption text for items that carry one, keyed by item id. See `Feed`'s prop of the same name. */
+  captionByItem?: ReadonlyMap<string, string>;
 }
 
 export function MomentStrip({
@@ -44,6 +46,7 @@ export function MomentStrip({
   onOpen,
   locked = false,
   onToggleLock,
+  captionByItem,
 }: Props) {
   const rows = useMemo(() => {
     const near = placed.filter((entry) => Math.abs(entry.instant - at) <= radiusMs);
@@ -110,6 +113,9 @@ export function MomentStrip({
                       item={entry.item}
                       {...(colors.get(person.id) ? { color: colors.get(person.id) as string } : {})}
                       caption={formatClock(entry.instant, timezone)}
+                      {...(captionByItem?.get(entry.item.id)
+                        ? { note: captionByItem.get(entry.item.id) as string }
+                        : {})}
                       fit="square"
                       {...(onOpen ? { onOpen: () => onOpen(entry) } : {})}
                     />

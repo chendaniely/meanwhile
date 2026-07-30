@@ -340,6 +340,26 @@ function richness(course: Course): number {
 }
 
 /**
+ * The manifest as it is SAVED: without `notes[]` or `items[].note`.
+ *
+ * Prose lives in `notes*.csv` now (see Task 9's brief). The validator in
+ * `schema.ts` still ACCEPTS both legacy fields, so a manifest saved before
+ * this change keeps loading — this is the writer half of that split, and the
+ * only place it needs to be enforced, since every save (a bare manifest.json
+ * or the zip) passes through here first. A manifest therefore migrates itself
+ * the first time it is saved after being opened.
+ */
+export function manifestForSave(manifest: Manifest): Manifest {
+  const { notes: _legacyNotes, ...rest } = manifest;
+  const items = manifest.items.map((item) => {
+    if (item.note === undefined) return item;
+    const { note: _legacyNote, ...kept } = item;
+    return kept;
+  });
+  return { ...rest, items };
+}
+
+/**
  * Offer the manifest as a download.
  *
  * The whole app stores nothing, so "save" means handing the user a file. The
@@ -347,7 +367,7 @@ function richness(course: Course): number {
  * how a long authoring session slowly eats memory.
  */
 export function downloadManifest(manifest: Manifest, filename = 'manifest.json'): void {
-  const json = `${JSON.stringify(manifest, null, 2)}\n`;
+  const json = `${JSON.stringify(manifestForSave(manifest), null, 2)}\n`;
   const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
   const anchor = document.createElement('a');
   anchor.href = url;

@@ -306,4 +306,19 @@ describe('notes in the manifest', () => {
     const r = validateManifest(withNotes(undefined));
     expect(r.ok).toBe(true);
   });
+
+  it('still READS an old manifest carrying notes and captions', () => {
+    const old = {
+      schema: 1,
+      event: { title: 'Race' },
+      people: [{ id: 'p', name: 'Priya' }],
+      notes: [{ id: 'n', at: '2026-07-25T21:45:00Z', text: 'wrong turn' }],
+      items: [{
+        id: 'a.jpg', person: 'p', type: 'photo', src: 'a.jpg',
+        timeSource: 'exif-offset', at: '2026-07-25T21:45:00Z', note: 'the buckle',
+      }],
+    };
+    const result = validateManifest(old);
+    expect(result.ok).toBe(true);
+  });
 });

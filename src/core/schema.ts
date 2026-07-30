@@ -202,6 +202,15 @@ export interface Marker {
 /**
  * Something that happened, written down — with or without a photograph.
  *
+ * **Legacy shape, read-only.** Prose now lives in `notes*.csv` — a
+ * spreadsheet, not a JSON blob — read and written via the differently-shaped
+ * `Note` in `./notes.ts`. The manifest WRITER never emits `manifest.notes`
+ * any more; this type and the validation below stay only so a manifest saved
+ * before that change still loads, and its captions/notes get migrated into
+ * the CSV shape on the next ingest (see `migrateLegacyNotes` in
+ * `viewer/media/ingest.ts`). Do not add a code path that writes to
+ * `manifest.notes` again.
+ *
  * The gap this fills: every other annotation in the app hangs off a file, so
  * anything nobody photographed could not be recorded at all. An ultra is full
  * of exactly those things. In the owner's words: *"either because we forgot to
@@ -260,6 +269,12 @@ export interface Item {
   duration?: number;
   /** [latitude, longitude] in degrees. */
   gps?: [number, number];
+  /**
+   * Legacy caption, read-only. A caption is now a `notes.csv` row whose
+   * `photo` column names this item's id — see `./notes.ts`. The writer never
+   * sets this field again; it is kept only so a manifest saved before that
+   * change still loads, and `migrateLegacyNotes` turns it into a real note.
+   */
   note?: string;
   width?: number;
   height?: number;
@@ -276,7 +291,10 @@ export interface Manifest {
   course?: CourseRef;
   people: Person[];
   markers?: Marker[];
-  /** Things that happened, with or without a photograph. */
+  /**
+   * Legacy note list, read-only — see the `Note` doc comment above. The
+   * writer never emits this array; `notes*.csv` is the real store now.
+   */
   notes?: Note[];
   items: Item[];
 }

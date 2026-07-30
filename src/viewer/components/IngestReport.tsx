@@ -168,7 +168,9 @@ export function IngestReport({ manifest, grouping, range,
       {/* No buttons here. Opening, adding and saving all live in the top bar,
           which is always reachable — two controls for one action, under two
           names, is how "Save manifest" and "Export manifest.json" ended up
-          side by side. */}
+          side by side once before. There is exactly one save control now:
+          "Save", which downloads notes.csv, people.csv, and manifest.json
+          together as a zip. */}
     </section>
   );
 }

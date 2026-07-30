@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Note } from '../../core/notes.ts';
 import type { PersonId, TimeSource } from '../../core/schema.ts';
 import { formatDateTime } from '../../core/time.ts';
 import type { PlacedItem } from '../../core/window.ts';
@@ -23,8 +24,16 @@ interface Props {
   onClose: () => void;
   colors: ReadonlyMap<PersonId, string>;
   names: ReadonlyMap<PersonId, string>;
-  /** Write a caption back to the manifest. Omit to make the lightbox read-only. */
-  onNote?: (id: string, note: string) => void;
+  /**
+   * Notes, so the caption field can find and show the one already attached to
+   * the open photo — a caption is a note whose `photo` names the item's id.
+   */
+  notes?: readonly Note[];
+  /**
+   * Write, update, or clear the caption note for the open item. Omit to make
+   * the lightbox read-only.
+   */
+  onCaption?: (itemId: string, text: string) => void;
   timezone?: string;
 }
 
@@ -38,7 +47,7 @@ const SHAKY: Partial<Record<TimeSource, string>> = {
   manual: 'Placed by hand.',
 };
 
-export function Lightbox({ items, index, onIndex, onClose, colors, names, timezone, onNote }: Props) {
+export function Lightbox({ items, index, onIndex, onClose, colors, names, timezone, notes, onCaption }: Props) {
   const { store } = useMedia();
   const entry = items[index];
   const item = entry?.item;
@@ -95,6 +104,7 @@ export function Lightbox({ items, index, onIndex, onClose, colors, names, timezo
 
   const name = item.src.slice(item.src.lastIndexOf('/') + 1);
   const caution = SHAKY[item.timeSource];
+  const caption = notes?.find((n) => n.photo === item.id)?.text ?? '';
 
   return (
     <div
@@ -153,7 +163,7 @@ export function Lightbox({ items, index, onIndex, onClose, colors, names, timezo
         </div>
         {caution && <p className="lightbox__caution">{caution}</p>}
 
-        {onNote && (
+        {onCaption && (
           <label className="lightbox__note">
             <span className="mw-visually-hidden">Caption</span>
             <input
@@ -162,11 +172,11 @@ export function Lightbox({ items, index, onIndex, onClose, colors, names, timezo
                  the previous photo's text stays on screen. */
               key={item.id}
               className="lightbox__note-input"
-              defaultValue={item.note ?? ''}
+              defaultValue={caption}
               placeholder="Add a caption…"
               // Written on blur, not on every keystroke: each edit rebuilds
-              // the manifest and re-runs placement over every item.
-              onBlur={(e) => onNote(item.id, e.target.value)}
+              // the note list and re-runs placement over every note.
+              onBlur={(e) => onCaption(item.id, e.target.value)}
               onKeyDown={(e) => {
                 // The lightbox closes on Escape and moves on the arrows.
                 // While typing, those belong to the text field.

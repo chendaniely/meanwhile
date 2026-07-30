@@ -9,7 +9,9 @@ import {
   type Course,
   type TimeAnchor,
 } from '../core/course.ts';
-import type { Note } from '../core/notes.ts';
+import { formatCsv } from '../core/csv.ts';
+import { mintNoteId, noteToRow, NOTE_HEADERS, type Note } from '../core/notes.ts';
+import { formatPeopleCsv } from '../core/people-csv.ts';
 import type { Manifest, PersonId } from '../core/schema.ts';
 import { isVisible, toggleVisible, VIEW_NAMES, type ViewName } from '../core/state.ts';
 import { formatClock, type Instant } from '../core/time.ts';
@@ -44,10 +46,11 @@ import { useMediaStore } from './media/useMediaStore.ts';
 import { useAppState } from './hooks/useAppState.ts';
 import type { PickedFile } from './media/folder.ts';
 import {
-  downloadManifest,
   ingestFolder,
+  manifestForSave,
   type IngestProgress,
 } from './media/ingest.ts';
+import { zipBytes } from './media/zip.ts';
 import './App.css';
 
 /** The browser's own zone is right far more often than not — it is where the
@@ -65,6 +68,19 @@ function courseUrlOf(manifest: Manifest): string {
   const course = manifest.course;
   if (!course) return '';
   return course.kind === 'gpx' ? course.src : course.url;
+}
+
+/**
+ * `meanwhile-<slug of the event title>.zip`, or `meanwhile.zip` when there is
+ * no title to slug — a blank event name must still produce a legal filename.
+ */
+function filenameForSave(title: string): string {
+  const slug = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug ? `meanwhile-${slug}.zip` : 'meanwhile.zip';
 }
 
 /**
@@ -306,23 +322,6 @@ export function App() {
     [editManifest],
   );
 
-  const setNote = useCallback(
-    (id: string, note: string) =>
-      editManifest((m) => ({
-        ...m,
-        items: m.items.map((it) => {
-          if (it.id !== id) return it;
-          const next = { ...it };
-          // An empty box means no caption, not an empty one: a stray "" would
-          // survive export and re-import as a caption that renders as nothing.
-          if (note.trim()) next.note = note;
-          else delete next.note;
-          return next;
-        }),
-      })),
-    [editManifest],
-  );
-
   /** A note that landed outside the crop, so it can be pointed at. */
   const [noteOutside, setNoteOutside] = useState<Instant | null>(null);
   /** Opened from "Note here" on the course, so the dock appears already open. */
@@ -382,6 +381,19 @@ export function App() {
   // every part of the screen agrees about where things sit.
   const placement = useMemo(() => (manifest ? placeItems(manifest) : null), [manifest]);
   const placedNotes = useMemo(() => placeNotes(notes), [notes]);
+
+  /**
+   * Caption text keyed by item id, so a tile can show the discoverability
+   * glyph without every call site re-deriving the lookup. A caption IS a
+   * note — one whose `photo` names the item it is attached to.
+   */
+  const captionByItem = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const n of notes) {
+      if (n.photo) map.set(n.photo, n.text);
+    }
+    return map;
+  }, [notes]);
 
   /**
    * The outer limit of the timeline — what the slider can reach.
@@ -553,6 +565,46 @@ export function App() {
   }, [placement, range, view]);
 
   /**
+   * Write, update, or clear the caption note for a photo, from the lightbox.
+   *
+   * A caption IS a note — one whose `photo` column names the item — so this
+   * writes straight into the same `notes` state the composer and NoteList
+   * use, rather than a separate `items[].note` field. Clearing the field
+   * deletes the note, the same rule NoteList's own text field follows: an
+   * empty caption is not a caption. The first time a photo is captioned this
+   * mints a fresh note at the item's own resolved instant (clock offset
+   * applied, timezone resolved) and in its own person's lane, so it reads
+   * exactly where the photo does everywhere notes are shown.
+   */
+  const setCaption = useCallback(
+    (itemId: string, text: string) => {
+      const body = text.trim();
+      const existing = notes.find((n) => n.photo === itemId);
+      if (!body) {
+        if (existing) deleteNote(existing.id);
+        return;
+      }
+      if (existing) {
+        editNote(existing.id, { text: body });
+        return;
+      }
+      const entry = items.find((e) => e.item.id === itemId);
+      if (!entry || stage.name !== 'loaded') return;
+      const person = stage.manifest.people.find((p) => p.id === entry.item.person);
+      const note: Note = {
+        id: mintNoteId(),
+        at: new Date(entry.instant).toISOString(),
+        people: person ? [person.name] : [],
+        photo: itemId,
+        author: [...me],
+        text: body,
+      };
+      addNote(note);
+    },
+    [notes, items, stage, me, addNote, editNote, deleteNote],
+  );
+
+  /**
    * The one line worth seeing without opening the panel.
    *
    * Unplaced files are the number that changes what you do next — they are
@@ -644,6 +696,46 @@ export function App() {
     setStage({ ...stage, manifest: updated });
   };
 
+  /**
+   * Save produces ONE file: a zip of `notes.csv`, `people.csv`, and
+   * `manifest.json`. Three files rather than three separate downloads,
+   * because "save" has to mean one action with one name — and because the
+   * whole point of the round trip is that all three land back in the same
+   * folder the photos are in and are picked up together on the next open.
+   *
+   * `manifestForSave` is what actually migrates a manifest: it strips
+   * `notes[]` and `items[].note`, which is the writer half of "the validator
+   * still reads them, but nothing this app saves carries them again."
+   *
+   * Follows `downloadManifest`'s own pattern for the trigger — an anchor
+   * click on an object URL, revoked immediately after — just aimed at a zip
+   * Blob instead of a JSON one.
+   */
+  const saveEvent = () => {
+    if (stage.name !== 'loaded') return;
+    const manifest = manifestForSave(stage.manifest);
+    const files = [
+      {
+        name: 'notes.csv',
+        text: formatCsv(NOTE_HEADERS, notes.map((n) => noteToRow(n, manifest.event.timezone))),
+      },
+      { name: 'people.csv', text: formatPeopleCsv(manifest.people) },
+      { name: 'manifest.json', text: `${JSON.stringify(manifest, null, 2)}\n` },
+    ];
+    // `zipBytes` is typed to return a bare `Uint8Array`, whose backing buffer
+    // TypeScript therefore widens to `ArrayBufferLike` — but `BlobPart` wants
+    // one backed by a concrete `ArrayBuffer`. The array really is: it comes
+    // from `new Uint8Array(length)` inside `zipBytes`, which only ever
+    // allocates a real `ArrayBuffer`, never a `SharedArrayBuffer`.
+    const bytes = zipBytes(files) as Uint8Array<ArrayBuffer>;
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/zip' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filenameForSave(manifest.event.title);
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="app">
       {/*
@@ -688,12 +780,8 @@ export function App() {
                 onError={setError}
                 label="Add files"
               />
-              <button
-                type="button"
-                className="button button--primary"
-                onClick={() => downloadManifest(stage.manifest)}
-              >
-                Save manifest
+              <button type="button" className="button button--primary" onClick={saveEvent}>
+                Save
               </button>
             </div>
           </>
@@ -956,6 +1044,7 @@ export function App() {
                   onOpen={(entry) => setOpenId(entry.item.id)}
                   {...(bounds ? { bounds } : {})}
                   onRange={setWindow}
+                  captionByItem={captionByItem}
                 />
               )}
 
@@ -964,6 +1053,7 @@ export function App() {
                   manifest={stage.manifest}
                   items={items}
                   notes={visibleNotes}
+                  captionByItem={captionByItem}
                   onOpen={(entry) => setOpenId(entry.item.id)}
                   onActive={(moment: readonly PlacedItem[]) => {
                     const first = moment[0];
@@ -1012,7 +1102,8 @@ export function App() {
                   onClose={() => setOpenId(null)}
                   colors={assignLaneColors(stage.manifest.people)}
                   names={new Map(stage.manifest.people.map((p) => [p.id, p.name]))}
-                  onNote={setNote}
+                  notes={notes}
+                  onCaption={setCaption}
                   {...(stage.manifest.event.timezone
                     ? { timezone: stage.manifest.event.timezone }
                     : {})}

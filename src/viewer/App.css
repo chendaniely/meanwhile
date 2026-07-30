@@ -807,6 +807,26 @@
   pointer-events: none;
 }
 
+/* The discoverability fix: a caption used to be invisible unless the
+   lightbox was open. Top-left, clear of the duration badge and play glyph,
+   which both sit bottom/centre. */
+.tile__note-glyph {
+  position: absolute;
+  top: var(--mw-space-2);
+  left: var(--mw-space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  font-size: 0.8rem;
+  line-height: 1;
+  color: var(--brand-warm-white);
+  background: rgb(23 21 18 / 70%);
+  border-radius: 50%;
+  cursor: default;
+}
+
 /* ---- lightbox ---------------------------------------------------------- */
 
 .lightbox {

@@ -40,6 +40,12 @@ interface Props {
    * reading the event in the order it happened.
    */
   notes?: readonly PlacedNote[];
+  /**
+   * Caption text for items that carry one, keyed by item id. A caption is a
+   * note whose `photo` names the item — this is what lets a tile show the
+   * discoverability glyph without every call site re-deriving the lookup.
+   */
+  captionByItem?: ReadonlyMap<string, string>;
 }
 
 /** Gap that separates one moment from the next. */
@@ -65,7 +71,7 @@ function toMoments(placed: readonly PlacedItem[]): Moment[] {
   return out;
 }
 
-export function Feed({ manifest, items, onOpen, onActive, notes = [] }: Props) {
+export function Feed({ manifest, items, onOpen, onActive, notes = [], captionByItem }: Props) {
   const zone = manifest.event.timezone;
   const colors = useMemo(() => assignLaneColors(manifest.people), [manifest.people]);
   const names = useMemo(
@@ -279,6 +285,7 @@ export function Feed({ manifest, items, onOpen, onActive, notes = [] }: Props) {
               item={item}
               {...(colors.get(item.person) ? { color: colors.get(item.person) as string } : {})}
               caption={formatClock(instant, zone)}
+              {...(captionByItem?.get(item.id) ? { note: captionByItem.get(item.id) as string } : {})}
               onOpen={() => onOpen({ item, instant })}
             />
           ))}
