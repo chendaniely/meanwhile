@@ -4,7 +4,7 @@
 
 As of 2026-07-30 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **777 tests pass** (`make check`).
+the race. **787 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -17,7 +17,9 @@ terrain basemaps, elevation/HR/cadence/pace charts, and a shared distance
 focus linking the two. Plus `scripts/inspect-media.ts` (`make inspect
 DIR=...`), and two doc guards that gate `make check`:
 `scripts/check-test-count.mjs` and `scripts/check-owner-quotes.mjs`
-(`make check-quotes`).
+(`make check-quotes`, which reads **every tracked `.md` file** except
+`PROMPTS.md`). `make inspect` is additionally gated on the Node floor by
+`scripts/require-node.mjs`, because npm's `engines` field only warns.
 
 Also built: in-viewer notes and captions, people renaming and the runner
 role, and the Strava link/embed fallback. The Pages workflow is committed at
@@ -1803,9 +1805,28 @@ How to run one:
   `scripts/check-test-count.mjs` retired a number that had gone stale four
   times; it now gates `make check` and CI.
   `scripts/check-owner-quotes.mjs` does the same for every owner quote in
-  this file, against `PROMPTS.md`, and gates `make check` too. It catches
-  three things by hand-checking is bad at: a quote with no source, a quote
-  **spliced** from two prompts, and a typo silently tidied up.
+  **every tracked `.md` file** (only `PROMPTS.md`, the source of truth, is
+  skipped), and gates `make check` too. It catches three things hand-checking
+  is bad at: a quote with no source, a quote **spliced** from two prompts,
+  and a typo silently tidied up.
+- **A guard scoped to one file is scoped to where you happened to look.** The
+  quote checker read `CLAUDE.md` alone for two versions, because that is
+  where the quoting is densest. `CHANGELOG.md` pairs every release with a
+  prompt — 24 citations — and `README.md`, `TODO.md` and `docs/` quote too.
+  Widening it to `git ls-files '*.md'` found an **unsourced quotation in
+  `TODO.md`** on the first run. Ask what a guard's INPUT is, not just what its
+  logic does.
+- **A guard aimed at wording is a guard aimed at nothing.** The
+  `CourseFallback` copy test matched three nouns near three verbs; a
+  differently-worded version of the same falsehood walked past all five
+  tests. Aim at the property — here, "a denial of outbound contact must name
+  what it is limited to" — and then PROVE it by putting the real falsehood
+  back into the component, not just into the test's own fixture list.
+- **A count that excludes something is not a count.** `check-test-count.mjs`
+  read vitest's `numPassedTests`, which excludes SKIPPED tests, so `.skip`
+  plus a decrement in this file passed while the coverage vanished. It refuses
+  any skipped or todo test now. Whenever a guard reads one number out of a
+  report, ask what that number leaves out.
 - **A guard that lives in a scratch directory is not a guard.** The first
   version of the quote checker was written, run once, and never committed —
   so the next pass had nothing to run and four bad quotes survived. If a
@@ -1964,6 +1985,41 @@ Installed and why:
 
 FIT is binary and would need a real dependency, which is why it is deferred.
 
+### npm's `engines` is ADVISORY, and `engine-strict` was measured and rejected
+
+`package.json` says `"engines": {"node": ">=22.18.0"}`. **npm does not enforce
+that.** It prints `npm warn EBADENGINE` and installs anyway — verified on Node
+v25.8.2 by setting the floor to `>=99.0.0`: three warning lines, then "up to
+date", exit 0. `npm config get engine-strict` is `false` and there is no
+`.npmrc`. The README claimed the field "enforces" the floor for several
+versions; that sentence was the 2026-07-30 gate's one blocking finding.
+
+**A committed `.npmrc` with `engine-strict=true` was the obvious fix and is
+not the right one.** It does work (also verified — the install is refused).
+Two measurements killed it:
+
+1. **It enforces every package's engines, not ours.** 90 installed packages
+   declare `engines.node`, and 19 declare a disjunction with a gap — jsdom,
+   vite, vitest and friends all say `^20.19.0 || ^22.12.0 || >=24.0.0`. On
+   Node 23, which clears *this* project's floor, `npm install` would be
+   refused outright by a transitive dependency's opinion.
+2. **The 22.18 floor belongs to one optional command.** It is set by
+   `scripts/inspect-media.ts` running as TypeScript with no build step.
+   `make dev` and `make build` run on Node 20.19 (vite's own floor). Refusing
+   an install that would have worked, for a command the reader may never run,
+   is the wrong trade.
+
+So the gate sits where the requirement is: **`make inspect` runs
+`scripts/require-node.mjs` first**, which reads the floor out of
+`package.json` (one source of truth) and refuses in plain English. npm stays
+advisory and the README says so.
+
+**Reversing this** — adding `.npmrc` — means accepting that 90 third-party
+engine declarations become hard gates on installing this project, and that
+someone on a Node this project supports can be refused by a dependency. If
+that trade ever looks right, re-measure the dependency ranges first; they
+change.
+
 ## The documentation contract
 
 This project is **vibe-coded**: the owner does not read
@@ -1997,13 +2053,21 @@ structure, or behavior MUST update the affected docs in the SAME commit:
   exists to keep.
 - The spec in `docs/superpowers/specs/` — update if the design changes.
 
-### Releases: three things that must agree
+### Releases: four things that must agree
 
-`CHANGELOG.md`, the `version` in `package.json`, and the git tag. **`make
-release VERSION=x.y.z` refuses unless they do** — no changelog entry, a
-mismatched version, a dirty tree or an existing tag all stop it, and it runs
-`make check` before tagging. It deliberately fixes nothing up: a tag pointing
-at a version the changelog does not describe is worse than no tag.
+`CHANGELOG.md`, the `version` in `package.json`, **`package-lock.json`**, and
+the git tag. **`make release VERSION=x.y.z` refuses unless they do** — no
+changelog entry, a mismatched version, a stale lockfile, a dirty tree or an
+existing tag all stop it, and it runs `make check` before tagging. It
+deliberately fixes nothing up: a tag pointing at a version the changelog does
+not describe is worse than no tag.
+
+**The lockfile was added to that list after it went three releases stale.**
+It says `0.1.0` while `package.json` said `0.3.0`, because npm only rewrites
+it during an install and bumping `package.json` by hand does not touch it. It
+carries the version in **two** places — `.version` and `.packages[""].version`
+— and `make release` checks both. Fix a mismatch with `npm install
+--package-lock-only`.
 
 Tags are `vX.Y.Z`; the changelog heading is `## X.Y.Z — YYYY-MM-DD — title`.
 The target only tags. Pushing stays a deliberate act:

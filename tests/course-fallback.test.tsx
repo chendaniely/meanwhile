@@ -127,12 +127,103 @@ describe('CourseFallback', () => {
     expect(text).toMatch(/analytics/i);
 
     // (3) And the false absolute must not come back in any of its shapes.
-    //     Deliberately loose: it matches the CLASS of claim — "nothing /
-    //     no other … reaches / contacts / touches … server" — rather than one
-    //     sentence, because all three previous versions were worded
-    //     differently and all three were the same mistake.
-    expect(text).not.toMatch(
-      /\b(nothing|no other|nothing else)\b[^.;]{0,60}\b(reach|reaches|contact|contacts|touch|touches)\b/i,
-    );
+    expect(unqualifiedDenials(text)).toEqual([]);
+  });
+
+  // -----------------------------------------------------------------------
+  // The guard above, aimed at its own weak spot.
+  //
+  // The first version of (3) was a regex needing one of three NOUNS
+  // (nothing / no other / nothing else) near one of three VERBS (reach /
+  // contact / touch). Aiming at six words is aiming at a wording, and the
+  // 2026-07-30 gate walked straight past it with a differently-worded
+  // falsehood — "no analytics or anything else is ever sent anywhere from
+  // this page" — which passed all five tests in this file.
+  //
+  // `unqualifiedDenials` aims at the substance instead, and the cases below
+  // are the proof it does: each falsehood must be caught, and the copy the
+  // component actually ships must not be.
+  // -----------------------------------------------------------------------
+  describe('the denial guard itself', () => {
+    it('catches every shape of the false claim, including ones no regex was written for', () => {
+      for (const falsehood of [
+        // The exact substitution that defeated the previous guard.
+        'Strava’s widget is a sealed box. With no track there is no map, so no tiles load at all, and no analytics or anything else is ever sent anywhere from this page.',
+        // Pass 3's version, which the previous guard did catch.
+        'With no track there is no map, so no tiles load; nothing else on this page reaches another server except the Strava iframe.',
+        // Pass 1's direction, inverted into an absolute.
+        'No tiles here. This page never contacts any server unless you click.',
+        // A verb the old list did not have, and no "nothing" at all.
+        'No tiles are fetched, and no data leaves your machine from this page.',
+        // The claim made about the reader rather than the page.
+        'You are not tracked here, and nobody is told you opened this.',
+      ]) {
+        expect(unqualifiedDenials(falsehood), falsehood).not.toEqual([]);
+      }
+    });
+
+    it('lets the shipped copy through, and ordinary rewordings of it', () => {
+      mount(EMBED);
+      for (const honest of [
+        hint(),
+        // Reworded, same substance.
+        'There is no track, so no map tiles are fetched here at all. The published site’s analytics tag is the only request this page makes by itself; make dev adds none.',
+        // A total, but scoped to tiles inside the same clause.
+        'Nothing is fetched from any map or tile server while there is no track.',
+        'No map tile is loaded from anywhere on this page.',
+        // Scoped to the local build, in the clause that makes the denial.
+        'Locally, make dev loads no analytics at all.',
+      ]) {
+        expect(unqualifiedDenials(honest), honest).toEqual([]);
+      }
+    });
   });
 });
+
+/**
+ * Clauses that DENY this page contacts anything, without saying what the
+ * denial is limited to.
+ *
+ * The property being guarded, stated once: **the copy must not deny that the
+ * published page contacts anything, because it contacts googletagmanager.**
+ * What separates the true sentences from the false ones is not which verb
+ * they use — it is SCOPE. Every true negative here names its subject ("no
+ * *tiles*", "run it *locally* with *make dev*"); every false one has been an
+ * unscoped claim about the page as a whole.
+ *
+ * So: split into clauses, find the ones that negate outbound contact, and
+ * keep any that does not name one of the two things this panel may honestly
+ * say nothing is fetched for. A rewording that keeps the scope keeps
+ * passing; a rewording that drops it fails whatever words it uses.
+ *
+ * **`and` splits a clause**, which is the one rule a writer has to know: the
+ * scope must sit in the same clause as the denial it limits. "no tiles load
+ * and nothing else is ever sent anywhere" reads as scoped and is not — the
+ * second half is a fresh claim about the whole page, and that is precisely
+ * the move each of the three wrong versions made. Write "nothing is fetched
+ * from any tile server" instead, and it passes.
+ */
+function unqualifiedDenials(text: string): string[] {
+  // Outbound contact, by any name anyone has reached for. Substrings, so
+  // "reaches"/"contacted"/"requests"/"loading" come along for free.
+  // `tracked`/`tracking` and not a bare `track`: this panel's whole subject
+  // is a GPX *track*, so the bare word is the commonest honest noun on the
+  // page and matching it flags "there is no track" as a privacy claim.
+  const CONTACT =
+    /\b(reach|contact|touch|talk|sent|send|fetch|request|load|transmit|upload|phone|call|tracked|tracking|leave|leaves|told|tell)/i;
+  // A denial. `no`/`not`/`never`/`none`/`nothing`/`nobody`/`cannot`, plus the
+  // "n't" contractions and the totalising "anything/anywhere" that only ever
+  // appears here under a negation.
+  const DENIAL = /\b(no|not|never|none|nothing|nobody|n['’]t|cannot|without|anywhere|anything)\b/i;
+  // The two scopes this panel may honestly deny anything for: map tiles
+  // (there is no track, so no map, so no tile) and the local dev build
+  // (which really does inject no analytics).
+  const SCOPED = /\b(tile|tiles|basemap|map|local|locally|localhost|dev)\b/i;
+
+  return text
+    .split(/[.;:]|\s—\s|\band\b|,\s*/i)
+    .map((clause) => clause.trim())
+    .filter(
+      (clause) => clause !== '' && DENIAL.test(clause) && CONTACT.test(clause) && !SCOPED.test(clause),
+    );
+}

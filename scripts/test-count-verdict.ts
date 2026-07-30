@@ -25,17 +25,59 @@
 
 // Exported so a test can assert this regex still matches CLAUDE.md's actual
 // line, guarding against the two drifting apart silently.
-export const TEST_COUNT_PATTERN = /\*\*(\d+) tests pass\*\*/;
+//
+// GLOBAL, and every occurrence is checked. The first version matched only
+// the first one, so a second "**N tests pass**" anywhere else in CLAUDE.md —
+// a stale figure left in a decision-record entry, say — could sit there
+// wrong forever while the check stayed green. There is one such line and
+// there should be exactly one: a count repeated in two places is a count
+// that will disagree with itself.
+export const TEST_COUNT_PATTERN = /\*\*(\d+) tests pass\*\*/g;
+
+/**
+ * What vitest's JSON reporter reports. `passed` alone is not the suite:
+ * `numPassedTests` EXCLUDES skipped and todo tests, so marking a test
+ * `.skip` and decrementing the number in CLAUDE.md used to pass this check
+ * while silently dropping the coverage it claims.
+ */
+export interface TestCounts {
+  passed: number;
+  skipped: number;
+  todo: number;
+}
 
 export interface TestCountVerdict {
   ok: boolean;
   message: string;
 }
 
-export function verdictForTestCount(claudeMdText: string, actualCount: number): TestCountVerdict {
-  const match = claudeMdText.match(TEST_COUNT_PATTERN);
+export function verdictForTestCount(
+  claudeMdText: string,
+  counts: TestCounts,
+): TestCountVerdict {
+  // A skipped test is not a passing test, and it is not a failing one either
+  // — which is what makes it dangerous here. Nothing else in `make check`
+  // notices it, so a `.skip` added to quiet a flake would disappear from
+  // view entirely and the documented count would still be "right".
+  if (counts.skipped > 0 || counts.todo > 0) {
+    const parts = [
+      counts.skipped > 0 ? `${counts.skipped} skipped` : null,
+      counts.todo > 0 ? `${counts.todo} todo` : null,
+    ].filter((p) => p !== null);
+    return {
+      ok: false,
+      message:
+        `check-test-count: the suite has ${parts.join(' and ')} test(s). A skipped test is ` +
+        'not a passing test — it is coverage this project claims and does not have, and ' +
+        'nothing else in `make check` would notice it. Delete it, fix it, or unskip it. ' +
+        'If a skip is genuinely the right answer, say so here in ' +
+        'scripts/test-count-verdict.ts rather than leaving it silent.',
+    };
+  }
 
-  if (!match) {
+  const matches = [...claudeMdText.matchAll(TEST_COUNT_PATTERN)];
+
+  if (matches.length === 0) {
     return {
       ok: false,
       message:
@@ -43,19 +85,30 @@ export function verdictForTestCount(claudeMdText: string, actualCount: number): 
     };
   }
 
-  const documented = Number(match[1]);
+  if (matches.length > 1) {
+    const found = matches.map((m) => m[1]).join(', ');
+    return {
+      ok: false,
+      message:
+        `check-test-count: CLAUDE.md has ${matches.length} "**NNN tests pass**" lines (${found}). ` +
+        'There must be exactly one — two copies of a count are two things to keep in step, ' +
+        'and this check only ever repaired the first. Delete all but the current one.',
+    };
+  }
 
-  if (documented !== actualCount) {
+  const documented = Number(matches[0]![1]);
+
+  if (documented !== counts.passed) {
     return {
       ok: false,
       message:
         `check-test-count: CLAUDE.md says "${documented} tests pass" but the suite actually ` +
-        `has ${actualCount} passing. Update the "${documented} tests pass" line in CLAUDE.md to ${actualCount}.`,
+        `has ${counts.passed} passing. Update the "${documented} tests pass" line in CLAUDE.md to ${counts.passed}.`,
     };
   }
 
   return {
     ok: true,
-    message: `check-test-count: CLAUDE.md's "${documented} tests pass" matches the suite. OK.`,
+    message: `check-test-count: CLAUDE.md's "${documented} tests pass" matches the suite, and nothing is skipped. OK.`,
   };
 }

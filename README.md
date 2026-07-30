@@ -213,8 +213,14 @@ don't have it, install it from [nodejs.org](https://nodejs.org/) or with
 (`scripts/inspect-media.ts`), which runs as plain TypeScript with no build
 step — Node only strips types without a flag from 22.18 (the first LTS with
 it unflagged); older Node either needs `--experimental-strip-types` by hand
-or, before 22.6, can't run it at all. `package.json`'s `engines` field
-enforces this floor.
+or, before 22.6, can't run it at all.
+
+`package.json` records that floor in its `engines` field, but **npm only
+warns about it — it will install anyway.** So don't rely on the install step
+to stop you: if `npm install` prints `npm warn EBADENGINE`, your Node is too
+old, whatever it does next. `make inspect` checks properly and refuses with a
+plain-English message; `make dev` and `make build` are more forgiving and
+will generally run on an older Node.
 
 Then, from inside this folder:
 
@@ -609,12 +615,24 @@ make inspect DIR=~/Desktop/race-photos
 ```
 
 It reads metadata only. Nothing is written, moved, or uploaded. You get one
-line per file and a summary like:
+line per file and then a summary — this is the real output for a folder of
+three files:
 
 ```
-sam/IMG_4417.jpg    photo gps          2026-08-22T13:12:04Z       47.3900,-121.3900
-sam/IMG_0042.MOV    video qt-offset    2026-08-22T06:20:00-07:00  47.3900,-121.3900 12.5s
-stripped.jpg        photo none         -                          -
+file                               kind  timeSource   at                         gps duration
+------------------------------------------------------------------------------------------
+sam/IMG_0042.MOV                   video qt-offset    2026-08-22T06:20:00-07:00  47.3900,-121.3900 12.5s
+sam/IMG_4417.jpg                   photo gps          2026-08-22T13:12:04Z       47.3900,-121.3900
+stripped.jpg                       photo none         -                          -
+
+--- summary ---
+3 files, 2 with GPS
+  gps          1
+  none         1
+  qt-offset    1
+
+1 file(s) have no usable timestamp and would go to the unplaced tray:
+  stripped.jpg
 ```
 
 The `timeSource` column is the one to read. It says **where the time came

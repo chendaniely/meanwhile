@@ -1,6 +1,16 @@
 #!/usr/bin/env node
-// Confirms every owner quote CLAUDE.md prints is actually in PROMPTS.md,
-// verbatim, as one contiguous run inside ONE prompt.
+// Confirms every owner quote this repository's markdown prints is actually
+// in PROMPTS.md, verbatim, as one contiguous run inside ONE prompt.
+//
+// EVERY TRACKED `.md` FILE IS CHECKED, not just CLAUDE.md. The first two
+// versions read CLAUDE.md alone, which was where the decision record lives
+// and so where the quoting was densest — but `CHANGELOG.md` pairs every
+// release with the prompt that asked for it (24 citations), `README.md` and
+// `TODO.md` quote the owner too, and none of that was covered. The 2026-07-30
+// gate widened it to `git ls-files '*.md'` and immediately found an
+// unsourced quote in `TODO.md` that had been there since the UI pass. Only
+// PROMPTS.md itself is skipped: it is the source of truth, so checking it
+// against itself is vacuous.
 //
 // Why this exists. CLAUDE.md's decision record quotes the owner constantly,
 // and PROMPTS.md is the append-only verbatim log those quotes are supposed
@@ -34,13 +44,25 @@
 // Two conventions, derived by reading every candidate in CLAUDE.md rather
 // than assumed:
 //
-//   1. BLOCKQUOTE — a contiguous run of lines starting with `>`. All 22 in
-//      CLAUDE.md today are owner prompts except one pull-quote of the
-//      README's own data-quality rule, which the allowlist carves out.
+//   1. BLOCKQUOTE — a contiguous run of lines starting with `>`. In
+//      CLAUDE.md and CHANGELOG.md these are almost all owner prompts. In
+//      README.md and under docs/ a blockquote is markdown's only admonition
+//      syntax, so most of them are callouts rather than citations; the
+//      allowlist carves those out one at a time, with a reason each.
 //
-//   2. INLINE ITALIC — `*"…"*` (also `_"…"_`, and smart quotes). 7 in
-//      CLAUDE.md today; 6 are owner quotes and one quotes a message the app
-//      itself prints.
+//   2. INLINE ITALIC — `*"…"*` (also `_"…"_`, and smart quotes). Mostly
+//      owner quotes; a handful quote a message the app itself prints or a
+//      button in somebody else's product.
+//
+// NARROWING (1) TO "BLOCKQUOTES THAT OPEN WITH A QUOTATION MARK" WAS TRIED
+// AND REJECTED ON EVIDENCE. It looked clean — it would have retired most of
+// the allowlist below in one line — but measured across every tracked `.md`
+// file it silently drops a real citation: `CLAUDE.md`'s consistency-pass
+// quote opens with the elision marker `[...]` and only then the quote mark.
+// One silent miss is the failure this script exists to prevent, and a rule
+// that is 98% right is exactly how the inline-italic convention went
+// unchecked for two versions. The dumb superset plus written-down exceptions
+// fails loud instead, and the tax is one allowlist entry per new admonition.
 //
 // The rule for (2) is deliberately DUMB: every inline italic double-quoted
 // span is treated as a claim to quote, and the short allowlist below carves
@@ -92,7 +114,9 @@
 // fragment must appear IN ONE PROMPT, IN ORDER, NON-OVERLAPPING. That
 // requirement is what catches splicing (b): fragments from two prompts each
 // exist somewhere, but no single prompt contains them all.
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Fragments shorter than this are skipped: after an elision marker a quote
@@ -102,20 +126,67 @@ import { fileURLToPath } from 'node:url';
 // carries no claim worth checking.
 const MIN_FRAGMENT_CHARS = 12;
 
-// Quoted spans in CLAUDE.md that are NOT claims to quote the owner. Keyed
-// on the normalised quoted text, not a line number, so the entry survives
-// edits elsewhere in the file — and so that CHANGING one of these texts
-// makes the checker flag it again rather than silently keeping the pass.
+// Quoted spans that are NOT claims to quote the owner. Keyed on the
+// normalised quoted text, not a file and line, so an entry survives edits
+// around it — and so that CHANGING one of these texts makes the checker flag
+// it again rather than silently keeping the pass.
+//
+// One consequence of text-keying, now that every tracked `.md` is scanned:
+// an entry exempts that text in ANY of them. That is deliberate for the
+// data-quality rule, which appears verbatim in three files and is supposed
+// to — the entry is what says so. It is a mild weakening everywhere else,
+// accepted because the alternative (keying on file + text) would need three
+// near-identical entries for that one rule and a per-file staleness tally,
+// and because every exemption here is written down where a reader can
+// disagree with it.
 export const ALLOWLIST = [
   {
     text: 'AirDrop, a shared Drive/Dropbox folder, or a Google Photos album. Never iMessage, WhatsApp, Messenger, Instagram, or Slack.',
     reason:
-      "CLAUDE.md quoting its own README's data-quality rule, in a blockquote used as a pull-quote. Not attributed to the owner. It must match README.md verbatim instead — a shortened paraphrase here is what the 2026-07-30 gate found, so if this entry goes stale, check README.md before editing CLAUDE.md.",
+      "The README's data-quality rule, pulled into CLAUDE.md and the design spec as a blockquote. Not attributed to the owner. All three copies must match verbatim — a shortened paraphrase in CLAUDE.md is what the 2026-07-30 gate found — and because this entry is keyed on the text alone, it goes stale the moment any of the three drifts.",
   },
   {
     text: 'update the site, or clear the schema cell',
     reason:
       'A message the app itself prints when a notes row carries a newer schema version. Quoted as a UI string, not as something the owner said.',
+  },
+  {
+    text: 'Download all',
+    reason:
+      "Google Photos' own button label, quoted so a reader can find it in that product's UI. Appears in README.md and the design spec.",
+  },
+  {
+    text: "Status: working, but not finished. Point it at a folder and you get a chronological feed and a swimlane view of everyone's photos and video, croppable to the part of the event you care about. Drop a GPX or TCX in too and a course view appears — a real topographic map with the elevation, heart rate, cadence and pace charts underneath. The moment grid isn't built yet. See [Running it](#running-it).",
+    reason:
+      "README.md's status callout. A blockquote used as markdown's only admonition syntax, written by Claude about the project — not a citation of anything.",
+  },
+  {
+    text: "Open the activity on strava.com and add `/export_tcx` to the address: `https://www.strava.com/activities/<id>/export_tcx` The ⋯ → Export GPX menu item also works, if you don't need the heart-rate data.",
+    reason: "README.md admonition: instructions for the reader, not a quotation.",
+  },
+  {
+    text: "Chrome or Edge specifically, for now. Reading a folder off your own disk uses a browser feature Safari and Firefox don't have yet. That only affects building a timeline on your own machine — once a timeline points at photos on the web, any browser can open it.",
+    reason: "README.md admonition explaining the browser limit. Not a quotation.",
+  },
+  {
+    text: "I'm putting everyone's photos from the race onto one shared timeline, so we can see what each of us was doing at the same moments. For it to work I need the original files, because the timestamp inside them is what places each photo. Sending them through WhatsApp, iMessage, Messenger or Instagram strips that out and the photo can't be used. Easiest ways that keep it intact: - AirDrop them to me (iPhone/Mac) - Drop them in the shared Drive/Dropbox folder - Add them to the shared Google Photos album Videos too, please. And don't worry about picking the good ones — send everything, it's easier to leave things out later than to chase them down.",
+    reason:
+      'A sample message README.md offers the reader to send their own crew. Written by Claude for them to copy, not something anyone said.',
+  },
+  {
+    text: 'For agentic workers: REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.',
+    reason:
+      'Boilerplate the plan template writes at the top of every plan document, addressed to the agent executing it.',
+  },
+  {
+    text: 'Blank is the normal case',
+    reason:
+      "The notes-as-csv design spec quoting its own column documentation a few lines above, to point back at it.",
+  },
+  {
+    text: 'An offset ... is wrong on either side of a daylight-saving change',
+    reason:
+      'The notes-as-csv design spec quoting its own earlier sentence, to carry the argument forward.',
   },
 ];
 
@@ -267,7 +338,11 @@ export function citationsOf(claudeMd) {
   return [...blockquotes, ...inline].sort((a, b) => a.line - b.line);
 }
 
-export function runCheck(claudeMd, promptsMd) {
+/**
+ * `sources` is `[{ path, text }]` — every tracked markdown file except
+ * PROMPTS.md, which is the log being checked against.
+ */
+export function runCheck(sources, promptsMd) {
   const prompts = extractBlockquotes(promptsMd).map((b) => normalise(b.raw));
   const allowed = new Map(ALLOWLIST.map((entry) => [normalise(entry.text), entry]));
   const usedAllowances = new Set();
@@ -275,25 +350,31 @@ export function runCheck(claudeMd, promptsMd) {
   const counts = { blockquote: 0, 'inline-italic': 0 };
   const skipped = { blockquote: 0, 'inline-italic': 0 };
   const failures = [];
+  /** Per-file tally, so the summary says which files actually carry quotes. */
+  const perFile = new Map();
 
-  for (const citation of citationsOf(claudeMd)) {
-    const normalised = normalise(unquote(citation.raw));
-    if (allowed.has(normalised)) {
-      usedAllowances.add(normalised);
-      skipped[citation.kind]++;
-      continue;
+  for (const { path, text } of sources) {
+    for (const citation of citationsOf(text)) {
+      const normalised = normalise(unquote(citation.raw));
+      if (allowed.has(normalised)) {
+        usedAllowances.add(normalised);
+        skipped[citation.kind]++;
+        continue;
+      }
+      counts[citation.kind]++;
+      perFile.set(path, (perFile.get(path) ?? 0) + 1);
+      const verdict = checkCitation(citation.raw, prompts);
+      if (verdict.ok) continue;
+      failures.push({
+        file: path,
+        ...citation,
+        ...verdict,
+        divergences: verdict.missing.map((fragment) => ({
+          fragment,
+          ...(divergencePoint(fragment, prompts) ?? { matched: null, divergesAt: null }),
+        })),
+      });
     }
-    counts[citation.kind]++;
-    const verdict = checkCitation(citation.raw, prompts);
-    if (verdict.ok) continue;
-    failures.push({
-      ...citation,
-      ...verdict,
-      divergences: verdict.missing.map((fragment) => ({
-        fragment,
-        ...(divergencePoint(fragment, prompts) ?? { matched: null, divergesAt: null }),
-      })),
-    });
   }
 
   // An allowlist entry that no longer matches anything is an exemption
@@ -301,25 +382,63 @@ export function runCheck(claudeMd, promptsMd) {
   // inherit the exemption by accident. Fail on it rather than let it rot.
   const stale = [...allowed.keys()].filter((text) => !usedAllowances.has(text));
 
-  return { counts, skipped, failures, stale };
+  return { counts, skipped, failures, stale, perFile };
+}
+
+/**
+ * Every tracked markdown file except PROMPTS.md.
+ *
+ * `git ls-files` rather than a directory walk: it is already the definition
+ * of "tracked", so it inherits `.gitignore` (node_modules, dist, and the
+ * owner's own media folder) for free, and a file that is not committed
+ * cannot be documentation this check is responsible for. The pathspec
+ * matches at any depth, so `docs/**` is covered.
+ */
+export function trackedMarkdown(repoRoot) {
+  let out;
+  try {
+    out = execFileSync('git', ['ls-files', '-z', '*.md'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch (err) {
+    // Failing loudly beats falling back to a directory walk: a fallback that
+    // quietly scanned a different set of files is how a guard ends up
+    // checking less than its output claims.
+    throw new Error(
+      "check-owner-quotes: `git ls-files` failed, so the set of files to check is unknown.\n" +
+        '  This needs to run inside a git checkout (a source tarball will not do).\n' +
+        `  ${err instanceof Error ? err.message : err}`,
+    );
+  }
+  return out
+    .split('\0')
+    .filter((path) => path !== '' && path !== 'PROMPTS.md')
+    .sort();
 }
 
 function main() {
-  const repoRoot = new URL('..', import.meta.url);
-  const claudeMd = readFileSync(new URL('CLAUDE.md', repoRoot), 'utf8');
-  const promptsMd = readFileSync(new URL('PROMPTS.md', repoRoot), 'utf8');
+  const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+  const paths = trackedMarkdown(repoRoot);
+  const sources = paths.map((path) => ({
+    path,
+    text: readFileSync(join(repoRoot, path), 'utf8'),
+  }));
+  const promptsMd = readFileSync(join(repoRoot, 'PROMPTS.md'), 'utf8');
 
-  const { counts, skipped, failures, stale } = runCheck(claudeMd, promptsMd);
+  const { counts, skipped, failures, stale, perFile } = runCheck(sources, promptsMd);
 
   for (const text of stale) {
     console.error(
-      `\ncheck-owner-quotes: allowlist entry no longer matches anything in CLAUDE.md:\n  "${text}"\n` +
+      `\ncheck-owner-quotes: allowlist entry no longer matches anything in any tracked\n` +
+        `  markdown file:\n  "${text}"\n` +
         '  Remove it from ALLOWLIST in scripts/check-owner-quotes.mjs, or restore the text.',
     );
   }
 
   for (const failure of failures) {
-    console.error(`\nCLAUDE.md:${failure.line} (${failure.kind})`);
+    console.error(`\n${failure.file}:${failure.line} (${failure.kind})`);
     console.error(`  quoted: ${unquote(failure.raw).replace(/\s+/g, ' ').slice(0, 300)}`);
     if (failure.spliced) {
       console.error(
@@ -333,24 +452,37 @@ function main() {
       console.error(`  NOT IN PROMPTS.md: "${fragment}"`);
       if (matched === null) continue;
       console.error(`    PROMPTS.md agrees up to: "...${matched.split(' ').slice(-8).join(' ')}"`);
-      console.error(`    then CLAUDE.md has:      "${divergesAt} ..."`);
+      // The file, not a hardcoded "CLAUDE.md": every tracked markdown file is
+      // checked now, and naming the wrong one sends the reader to the wrong
+      // place with a confident-looking diagnostic.
+      console.error(
+        `    then ${failure.file} has:${' '.repeat(Math.max(1, 16 - failure.file.length))}"${divergesAt} ..."`,
+      );
     }
   }
 
   const total = counts.blockquote + counts['inline-italic'];
+  const contributors = [...perFile.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([path, n]) => `${path} ${n}`)
+    .join(', ');
   const summary =
-    `check-owner-quotes: ${total} owner quotes checked ` +
+    `check-owner-quotes: ${total} owner quotes checked across ${paths.length} tracked ` +
+    `markdown files ` +
     `(${counts.blockquote} blockquote, ${counts['inline-italic']} inline italic; ` +
     `${skipped.blockquote + skipped['inline-italic']} allowlisted), ` +
-    `${failures.length} unverified${stale.length > 0 ? `, ${stale.length} stale allowlist entries` : ''}.`;
+    `${failures.length} unverified${stale.length > 0 ? `, ${stale.length} stale allowlist entries` : ''}.` +
+    (contributors ? `\n  quotes by file: ${contributors}` : '');
 
   if (failures.length > 0 || stale.length > 0) {
     console.error(`\n${summary}`);
     console.error(
-      'Every quote in CLAUDE.md must appear in PROMPTS.md verbatim, typos intact,\n' +
-        'as one contiguous run inside a single prompt. Fix CLAUDE.md to match the log,\n' +
+      'Every quote in this repository must appear in PROMPTS.md verbatim, typos intact,\n' +
+        'as one contiguous run inside a single prompt. Fix the file to match the log,\n' +
         'or — only if the owner really said it and it was never logged — append it to\n' +
-        'PROMPTS.md, which is append-only.',
+        'PROMPTS.md, which is append-only. If the span is not a citation at all (a\n' +
+        'README admonition, a UI string, somebody else’s button label), add it to\n' +
+        'ALLOWLIST in this script with a reason.',
     );
     process.exit(1);
   }

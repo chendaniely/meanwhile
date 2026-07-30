@@ -6,19 +6,36 @@ owner, and the record of who asked for what is part of the project rather than
 a footnote to it — several of the decisions below reversed something Claude had
 already built, and the reasons are worth keeping.
 
-## Unreleased
+## 0.3.1 — 2026-07-30 — the gate turned on itself, then on its own guards
 
-### The pre-release gate, run four times
+### The pre-release gate, run five times
 
 > "can you dispatch some secutiry and privacy independent subagents to review?"
 
 The same review that produced 0.3.0, turned on the release itself and then —
-this is the part worth keeping — **turned on its own previous pass**, three
+this is the part worth keeping — **turned on its own previous pass**, four
 times over. Each pass's findings were, largely, things the pass before it
 introduced or missed while fixing that pass's findings: one sentence about
-what this app fetches was rewritten by every one of the four. Every item
+what this app fetches was rewritten by every one of the five. Every item
 below was reproduced by execution before it was fixed, and every fix was then
 broken again to confirm a test catches it.
+
+**And then on the guards themselves (`f08e3d2`)**
+
+> "let's also do passes on the guards themselves and make sure we do an
+> analysis of the actual guards. treat it like you don't really trust the
+> guards at all"
+
+The gate had grown two mechanical guards and was reading their output as
+evidence they worked. Two failures already argued otherwise: pass 1's quote
+checker found nine bad quotes and was never committed — it lived in a scratch
+directory and vanished with the agent — and its committed successor was real,
+green, and half-blind, checking `> ` blockquotes but not the inline `*"…"*`
+form where all four surviving bad citations were. So every pass now plants a
+violation of each guard, confirms it is caught, reverts, and asks what the
+guard silently permits. A check that is not committed is not a check; a guard
+never shown to fail is not known to work. Recorded as a standing rule in
+`CLAUDE.md`.
 
 **Data loss, found by running the gate (`71333d3`)**
 
@@ -106,12 +123,16 @@ Run against pass 2 the same way pass 2 was run against pass 1.
   panel shown for a Strava link told people "the map tiles on this page load
   from other servers automatically" — but that panel only renders when there
   is *no* track, and every map in the app needs one, so no tile is fetched
-  there at all. It now says what is true of that page: nothing on it reaches
-  another server except the Strava iframe, which still waits for a click.
+  there at all. Its replacement said "nothing on it reaches another server
+  except the Strava iframe" — which was itself false on the deployed build,
+  and pass 4 had to walk the absolute back a third time. (See below; the copy
+  that ships now names the analytics tag rather than denying it.)
 - **Tiles: two gates, not one.** Pass 2's "every view" missed that Feed and
-  Swimlanes also need a time range, which does not exist until a photo is
-  placed or a note is written. A folder holding a track and nothing else gets
-  tiles on the Course view alone. Corrected in all six places, along with
+  Swimlanes also need a time range, which pass 3 said "does not exist until a
+  photo is placed or a note is written". Half right: a note is not enough
+  either, which pass 4 corrected to a placed *photograph* — see below. A
+  folder holding a track and nothing else gets tiles on the Course view
+  alone. Corrected in all six places, along with
   "four external hosts unconditionally" — at most two are fetched at a time,
   the chosen basemap plus the optional hillshade, and Thunderforest needs a
   build key it does not have by default.
@@ -162,6 +183,58 @@ canonicalisations nothing was holding**
 - The data repository quoted a parser output that had changed under it,
   dropping exactly the "the row is kept" reassurance pass 1 added — so the
   prose around it read as silent loss.
+
+**Pass 5: the guards, taken at their word and then tested**
+
+The first pass run under the new rule, and it found the README making a
+promise the tooling does not keep plus three guards that could be walked
+past.
+
+- **The README told a non-JS reader that `package.json` "enforces" the Node
+  floor. It does not.** npm's `engines` field is advisory: on Node v25.8.2
+  with the floor set to `>=99.0.0`, `npm install` prints `npm warn
+  EBADENGINE` and then installs, exit 0. Nothing anywhere checked the running
+  version, so the promised stop never came and `make inspect` failed later
+  with `Unknown file extension ".ts"` instead. The README now says npm only
+  warns, and the check sits where the requirement actually is: `make inspect`
+  runs `scripts/require-node.mjs` first and refuses in plain English.
+  **`engine-strict=true` was measured and rejected** — it enforces every
+  package's engines, not ours, and 19 installed packages declare ranges with
+  gaps (`^20.19.0 || ^22.12.0 || >=24.0.0`), so a Node that clears this
+  project's own floor would be refused an install by a transitive
+  dependency's opinion. The 22.18 floor belongs to one optional command; the
+  site builds and runs below it.
+- **The copy guard on the privacy sentence was aimed at six words, not at the
+  claim.** It required one of three nouns near one of three verbs, so a
+  differently-worded falsehood — "no analytics or anything else is ever sent
+  anywhere from this page" — passed all five tests in the file. It now tests
+  the property instead: a clause may deny outbound contact only if it names
+  what the denial is limited to, tiles or the local `make dev` build. Proved
+  by putting that exact sentence back into the component and watching the
+  guard fail.
+- **The owner-quote checker only ever read `CLAUDE.md`.** `CHANGELOG.md`
+  quotes a prompt for every release (24 citations), and `README.md`, `TODO.md`
+  and `docs/` quote too — none of it checked. Widened to every tracked
+  markdown file except `PROMPTS.md`, and it immediately found **an unsourced
+  quotation in `TODO.md`**: the 12/24-hour clock deferral was written as a
+  direct quote and attributed explicitly, and no prompt in the log contains
+  it. Withdrawn to a paraphrase rather than tidying the log to fit. The 24
+  `CHANGELOG.md` citations all check out. (Narrowing the scan to blockquotes
+  that open with a quotation mark was tried, and rejected: measured across
+  every file it silently drops a real citation that opens with an elision
+  marker.)
+- **The test-count check could be satisfied without being true, two ways.**
+  It read `numPassedTests`, which excludes skipped tests — so `.skip` plus a
+  decrement in `CLAUDE.md` passed while the coverage vanished. And it matched
+  only the *first* `**N tests pass**`, so a second, stale copy could sit there
+  forever. It now refuses any skipped or todo test outright, and requires
+  exactly one such line.
+- `package-lock.json` said `0.1.0` while `package.json` said `0.3.0`, three
+  releases stale, because npm only rewrites it on install. `make release`
+  checks both copies of the version in the lockfile now.
+- The README's `make inspect` sample was hand-written and omitted the header
+  row, the rule and the summary the real command prints. Replaced with real
+  output.
 
 ## 0.3.0 — 2026-07-30 — hardened before it carries anything irreversible
 

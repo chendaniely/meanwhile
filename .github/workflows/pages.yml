@@ -43,10 +43,15 @@ jobs:
       # number cannot drift on a branch that never ran `make check` locally.
       - run: node scripts/check-test-count.mjs
 
-      # Same argument, applied to the owner quotes CLAUDE.md cites from
+      # Same argument, applied to every owner quote in every tracked markdown
+      # file (CLAUDE.md, CHANGELOG.md, README.md, TODO.md, docs/) against
       # PROMPTS.md. The 2026-07-30 gate found four wrong ones — including a
       # quote spliced from two prompts — because the previous pass's checker
-      # was never committed and so never ran again.
+      # was never committed and so never ran again; widening it past CLAUDE.md
+      # then found an unsourced quote in TODO.md.
+      #
+      # This shells out to `git ls-files`, which needs the checkout above to
+      # be a real git clone. actions/checkout gives one.
       - run: node scripts/check-owner-quotes.mjs
 
       - run: npm run build

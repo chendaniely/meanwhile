@@ -1425,3 +1425,43 @@ So each pass now plants a violation of every guard, confirms it is caught, and
 asks the harder question — what does this guard silently permit? A check that
 is not committed is not a check, and a guard never shown to fail is not known
 to work.
+
+---
+
+Pass 5 of the pre-release gate, and the first run under the standing rule
+above — the guards taken at their word and then tested. Directed by the owner
+as a single task with six items, of which the first was the only blocking one:
+`README.md` told a reader that `package.json`'s `engines` field **enforces**
+the Node floor.
+
+It does not. npm's `engines` is advisory: with the floor set to `>=99.0.0` on
+Node v25.8.2, `npm install` prints `npm warn EBADENGINE` and installs anyway,
+exit 0. Nothing anywhere checked the running version, so the promised stop
+never came and `make inspect` failed much later with a cryptic
+`Unknown file extension ".ts"`.
+
+The owner left the remedy open — make the claim true with a committed
+`.npmrc`, or leave it advisory and say so — and named the trade on both sides.
+**Measured, and left advisory**: `engine-strict=true` enforces every package's
+engines, not this project's, and 19 installed packages declare ranges with
+gaps (`^20.19.0 || ^22.12.0 || >=24.0.0`), so a Node clearing this project's
+own floor could be refused an install by a transitive dependency. The 22.18
+floor also belongs to one optional command — `make inspect` — while the site
+itself builds and runs below it. So the check went where the requirement is:
+`make inspect` runs `scripts/require-node.mjs` first and refuses in plain
+English, and the README now says npm only warns.
+
+The other five items were guard work, and each fix was proved by planting the
+violation it is meant to catch: the `CourseFallback` copy guard was aimed at
+six words rather than at the claim, and a differently-worded falsehood walked
+past all five tests; the owner-quote checker read `CLAUDE.md` alone and so had
+never seen `CHANGELOG.md`'s 24 citations; and the test-count check read a
+number that excludes skipped tests, and matched only the first of its pattern.
+
+Widening the quote checker to every tracked markdown file found **an unsourced
+quotation in `TODO.md`** — the 12/24-hour clock deferral, written as a direct
+quote and attributed explicitly, with no prompt in this log containing it.
+Per the owner's instruction to report what the widened checker found rather
+than quietly fixing quotes to match, it was withdrawn to a paraphrase rather
+than reverse-engineered into this file. **If the owner recognises the words,
+they belong here as a labelled recovery entry and it can be a quote again.**

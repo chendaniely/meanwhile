@@ -40,12 +40,20 @@ try {
   process.exit(1);
 }
 
-const actual = report.numPassedTests;
+// `numPassedTests` alone is not the suite. It EXCLUDES skipped and todo
+// tests, so `.skip` on a test plus a decrement in CLAUDE.md used to pass
+// this check with the coverage silently gone. The verdict refuses any
+// non-zero skip/todo count; see test-count-verdict.ts.
+const counts = {
+  passed: report.numPassedTests,
+  skipped: report.numPendingTests ?? 0,
+  todo: report.numTodoTests ?? 0,
+};
 
 const claudeMdPath = new URL('../CLAUDE.md', import.meta.url);
 const claudeMd = readFileSync(claudeMdPath, 'utf8');
 
-const verdict = verdictForTestCount(claudeMd, actual);
+const verdict = verdictForTestCount(claudeMd, counts);
 
 if (!verdict.ok) {
   console.error(verdict.message);

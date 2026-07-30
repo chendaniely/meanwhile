@@ -236,9 +236,15 @@ captions — they are author work, not metadata read from a file.
 - An aid station visited twice on a lollipop course is two markers at two
   distances with one label. Do not assume labels are unique.
 
-- **A 12/24-hour clock setting.** Everything is 24-hour today, which the owner
-  asked for explicitly: *"we could have a setting somewhere to toggle the time,
-  but for now let's keep it 24-hour."* It would belong in the manifest's
+- **A 12/24-hour clock setting.** Everything is 24-hour today, deferred by the
+  owner during the UI pass. **The wording of that deferral is not in
+  `PROMPTS.md`**, so what stood here as a quotation — a setting to toggle the
+  clock could come later, but for now keep it 24-hour — is recorded as a
+  paraphrase instead. It was written as a quote and attributed explicitly, and
+  the 2026-07-30 gate found no prompt containing it once the quote checker was
+  widened past `CLAUDE.md`; rather than tidy the log to fit, the citation is
+  withdrawn. If the owner confirms the words, append them to `PROMPTS.md` as a
+  labelled recovery entry and this can be a quote again. It would belong in the manifest's
   `event`, so a shared link reads the way its author meant it to. Note that
   `<input type="datetime-local">` cannot be made to follow it — Chrome formats
   that control from the browser's locale and ignores `lang` — which is why the
