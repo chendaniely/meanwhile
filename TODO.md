@@ -72,6 +72,22 @@ file; see `TODO-completed.md` for why.
   `mvhd − duration` would recover the start. Not generalized because Apple's
   `mvhd` means something else again; the filename covers Android today.
 
+## Deploy and process (2026-07-30)
+
+- **Enable GitHub Pages** — *the owner's click, not Claude's.* Settings →
+  Pages → Source → **GitHub Actions**. Everything else is done: `main` is
+  pushed, `v0.2.0` is tagged, and the workflow's build job passes on GitHub's
+  runners (install, typecheck, 504 tests, count guard, build). The deploy step
+  fails on exactly one thing and names it: Pages is not enabled, so
+  `actions/deploy-pages` 404s. Re-run the workflow after flipping it.
+- **Restore commit signing, if wanted.** The original root commit was
+  GPG-signed; `git filter-repo` strips signatures, so the rewritten history
+  and everything since is unsigned.
+- **Google Analytics is build-only** (`googleAnalytics()` in
+  `vite.config.ts`, `apply: 'build'`). If a consent banner is ever needed —
+  EU visitors, say — it belongs here, and note the project has no cookie
+  banner today.
+
 ## Housekeeping
 
 - ~~`CHANGELOG.md` once there is a release to describe.~~ **Struck

@@ -1201,6 +1201,56 @@ A fresh agent per task, reviewed between tasks. It is why plans in
 implementer sees only their own task and has to learn neighbouring names and
 types from the plan rather than from context they do not have.
 
+### Reviews are LOOPED, and never trust a comment *(2026-07-30)*
+
+> "we do a series of bug and documentation loop passes where we use subagents
+> to do independent reviews of the code, comments, and documentaiton. never
+> assume the comments and docs are correct, confirm it. we will run multiple
+> sub agents each doing multiple loop passes until everythign is resolved"
+
+**One careful pass is not enough, and that is measured rather than assumed.**
+Eight passes over this repo found 22, 39, 33, 24, 21, 21, 20 and 3
+discrepancies — and *every* pass found errors introduced by the previous
+pass's own fixes, including a false claim written by the pass that was
+correcting false claims. Keep looping until a pass returns clean.
+
+How to run one:
+
+- **Several subagents per pass, on DISJOINT files**, so they run in parallel
+  without racing each other's commits. Say explicitly which files each owns.
+- **A finding is real only when verified against the code.** Require agents to
+  report DISPUTED with evidence rather than fixing on suspicion — a
+  meaningful fraction of findings each pass are themselves wrong, and one
+  agent disputing a correction I had asked for was right to.
+- **For any test that claims to guard something, break the production code and
+  confirm the test fails.** Tests that assert nothing are this repo's most
+  common defect: `it('only ever requests one seek')` asserted only that a
+  promise resolved.
+- **The recurring failure is a claim fixed in one place while copies survive.**
+  After correcting one, grep the whole repo for its MEANING, not its wording —
+  then check each hit in context. Two of five hits for "a few kilobytes" were
+  about a different subject, and "correcting" them would have added two errors
+  while fixing three.
+- **Prefer a mechanical guard to fixing drift again.**
+  `scripts/check-test-count.mjs` retired a number that had gone stale four
+  times; it now gates `make check` and CI.
+- **Audit surface, not just claims.** Each pass tends to re-read whatever the
+  last pass named. The two categories that stayed unexamined longest were the
+  highest-yield: claims that can be EXECUTED (every documented CSV row,
+  duration and command actually run — this is how `PT-4S`, silently rejected
+  by `parseDuration`, was found), and imperative `must`/`never` rules with
+  nothing enforcing them.
+
+### Releases are semantic, and the changelog is written as you go
+
+> "let's make sure going forward we are doing semantic releases, updating the
+> changelog"
+
+Every shippable change gets a version. Write into the `## Unreleased` section
+in the same commit as the work — reconstructing it later from `git log` loses
+exactly the reasoning the file exists to keep. `make release VERSION=x.y.z`
+refuses unless the changelog, `package.json` and a clean tree agree.
+
 ## Architecture rules
 
 - `src/core/` is a **pure TypeScript kernel**: schema and validation, clock

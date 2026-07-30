@@ -1000,3 +1000,41 @@ the same way `Feed`'s caller already excludes it, so it does not appear twice.
 Clicking a mark moves the shared cursor to the note's own time, not the pixel
 clicked. See `tests/swimlanes-notes.test.tsx` and CLAUDE.md's "Notes in the
 swimlanes" entry.
+
+
+---
+
+> push everything! make it live. let's make sure going forward we are doing
+> semantic releases, updating the changelog. and we do a series of bug and
+> documentation loop passes where we use subagents to do independent reviews
+> of the code, comments, and documentaiton. never assume the comments and docs
+> are correct, confirm it. we will run multiple sub agents each doing multiple
+> loop passes until everythign is resolved. document things as needed in TODO
+> and other prompts/claude files to save context and memory
+
+Pushed. The remote had held a single commit since the start; local history had
+been rewritten by `git filter-repo` and so shared no hashes with it, which
+made a force push necessary. Worth recording why that was safe rather than
+merely convenient: the remote commit's file tree was **byte-identical** to the
+local root, with the same author, committer, message and both dates. The only
+difference was a GPG signature, which `filter-repo` strips. Nothing private
+was ever on the remote — the redaction had touched later commits that were
+never pushed. Checking that before forcing was the whole job; "force push"
+and "safe" are not usually the same sentence.
+
+CI is green on GitHub's runners — install, typecheck, 504 tests, the
+test-count guard, build. The deploy step fails on one thing only, and says so:
+Pages has to be enabled in repository settings, which is the owner's click.
+
+Analytics went in **build-only**, following the owner's own phrasing ("when we
+push and deploy"). `make dev` loads no tag at all. That is a privacy decision
+rather than a performance one: local mode reads a folder of somebody's private
+photographs off their own disk, and the README's promise that nothing leaves
+the machine has to keep meaning something for exactly that person. The claims
+that were made false by adding it — "zero external requests" in CLAUDE.md and
+`fonts.css`, "nothing leaves your computer" in the README — were corrected in
+the same commit. Adding a tracker and leaving a privacy promise standing would
+have been the precise failure the eight-pass audit existed to remove.
+
+The loop-review and semantic-release expectations are now standing process in
+CLAUDE.md's "How work gets executed" rather than a thing to re-derive.
