@@ -8,6 +8,27 @@ already built, and the reasons are worth keeping.
 
 ## Unreleased
 
+## 0.2.0 — 2026-07-30 — notes in CSV, an audited codebase, and a live site
+
+Everything below shipped between 0.1.0 and this release. The headline is that
+notes and the people roster moved out of `manifest.json` into spreadsheet-
+editable CSV, that the whole codebase went through eight passes of
+documentation and comment auditing, and that the site now deploys to GitHub
+Pages.
+
+### The site goes live, and is measured
+
+> "i think we should also be pushing these up to github, with releases, tags,
+> and changelogs updates. i want to be able to test this on github actions +
+> github pages."
+
+Published to GitHub Pages from `main`. The deployed page loads Google
+Analytics; `make dev` does not, because local mode reads private photographs
+off your own disk and the promise that nothing leaves the machine has to keep
+meaning something for the person it protects. The README and CLAUDE.md now
+enumerate every external request the page makes rather than claiming there
+are none.
+
 ### Notes now appear in the swimlanes
 
 > "what i did notice is when i create a note i do not see it in the swimlane"

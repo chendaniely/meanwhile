@@ -1363,11 +1363,22 @@ rather than trust these if the tokens change.)
 
 Atkinson Hyperlegible is **self-hosted** (`src/viewer/fonts/`, SIL OFL, 52,380
 bytes across four files, measured)
-so the app shell itself makes zero external requests. That does not describe
-the whole page: the course view's map tiles (OpenTopoMap, Esri/ArcGIS, OSM,
-and optionally Thunderforest — see `src/viewer/map/basemaps.ts`) are external
-and load unconditionally on every render, and the optional Strava embed
-iframe is external too, though it is click-to-load.
+so no font is fetched from a third party. That does NOT mean the page makes
+no external requests — three things do:
+
+1. **Map tiles**, on the course view (OpenTopoMap, Esri/ArcGIS, OSM, and
+   optionally Thunderforest — see `src/viewer/map/basemaps.ts`), loaded
+   unconditionally whenever a course is shown.
+2. **Google Analytics**, on the DEPLOYED site only — `googleAnalytics()` in
+   `vite.config.ts` is `apply: 'build'`, so `make dev` loads no tag at all.
+   That split is deliberate: local mode reads somebody's private photographs
+   off their own disk, and the README promises nothing leaves the machine.
+   The published page does contact `googletagmanager.com`, and Google sees
+   each visitor's IP.
+3. **The Strava embed** iframe, which is external but click-to-load.
+
+Keep this list honest. A claim that this app phones nobody is the kind of
+thing a reader will believe and act on.
 
 ## Scale target *(session 2)*
 

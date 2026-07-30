@@ -1,10 +1,11 @@
 /* Atkinson Hyperlegible, self-hosted (SIL OFL 1.1).
  *
- * Self-hosted rather than loaded from Google Fonts so the APP SHELL makes
- * zero external requests. That is not true of the whole page: the course
- * view's map tiles (OpenTopoMap, Esri, OSM, and optionally Thunderforest —
- * see src/viewer/map/basemaps.ts) are external and load unconditionally, and
- * an optional Strava embed iframe is external too, though only on a click.
+ * Self-hosted rather than loaded from Google Fonts, so no FONT is fetched
+ * from a third party. The page as a whole does make external requests: the
+ * course view's map tiles (OpenTopoMap, Esri, OSM, and optionally
+ * Thunderforest — see src/viewer/map/basemaps.ts) load unconditionally;
+ * Google Analytics loads on the deployed build only (see vite.config.ts);
+ * and an optional Strava embed iframe loads on a click.
  *
  * Latin subset only (52,380 bytes total across four files, measured). */
 

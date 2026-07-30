@@ -76,8 +76,16 @@ photos stay wherever you keep them.
 Two ways to use it:
 
 - **On your own machine.** Point it at a folder of photos and it reads them
-  straight off your disk. Nothing is uploaded; nothing leaves your computer,
-  even though the site itself is public.
+  straight off your disk. **No photo, video, note or timestamp is ever
+  uploaded** — the site has nowhere to put them, and reads the files locally
+  even though it is served from the public web.
+
+  Being precise about what *does* leave, since "nothing leaves your computer"
+  would be too strong: the published site loads **Google Analytics**, so
+  Google sees that a page was opened and from which IP — never anything about
+  your photos. The course view also fetches **map tiles** from OpenTopoMap,
+  Esri and OpenStreetMap. If you would rather not be measured at all, run it
+  locally with `make dev`, which loads no analytics whatsoever.
 - **Shared with others.** Publish the description file with links to your
   photos, and anyone you send it to can open the timeline on their phone.
 
