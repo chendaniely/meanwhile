@@ -303,7 +303,12 @@ export type ValidationResult =
   | { ok: true; manifest: Manifest; warnings: string[] }
   | { ok: false; errors: string[]; warnings: string[] };
 
-const ROLES: readonly string[] = ['runner', 'crew', 'friend', 'other'];
+/**
+ * Exported so `people-csv.ts` validates against this exact list rather than
+ * hand-copying it — a second copy is a second notion of what a manifest is,
+ * which this project forbids outright (see the module doc comment).
+ */
+export const ROLES: readonly string[] = ['runner', 'crew', 'friend', 'other'];
 const KINDS: readonly string[] = ['photo', 'video'];
 
 function isObject(v: unknown): v is Record<string, unknown> {

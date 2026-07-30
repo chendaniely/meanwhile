@@ -291,7 +291,14 @@ export function assembleManifest(files: readonly IngestedFile[], opts: AssembleO
     items.push(item);
   }
 
-  const people: Person[] = [...seenPeople].sort().map((id) => {
+  // `seenPeople` only holds ids that own a FILE — so a roster row for someone
+  // who shot nothing (a crew member added to people.csv by hand, the first
+  // and most obvious thing to do with an editable roster) would otherwise be
+  // silently dropped here and then written OUT of people.csv on the next
+  // Save. A person the author put in the roster is kept even with zero
+  // items, the same way an empty swimlane is drawn rather than omitted.
+  const rosterOnlyIds = [...byId.keys()].filter((id) => !seenPeople.has(id));
+  const people: Person[] = [...seenPeople, ...rosterOnlyIds].sort().map((id) => {
     const existing = byId.get(id);
     if (existing) return existing;
     return { id, name: displayNameFor(id) };

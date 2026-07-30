@@ -7,55 +7,77 @@
  */
 
 import { parseCsv, formatCsv } from './csv.ts';
-import type { Person, PersonId } from './schema.ts';
+import { ROLES, type Person, type PersonId, type Role } from './schema.ts';
+import { parseDuration } from './time.ts';
 
 export const PEOPLE_HEADERS = ['id', 'name', 'role', 'clock_offset'] as const;
 
 /**
  * Parse a CSV roster into Person objects.
  *
- * A row missing `id` or `name` becomes a problem string rather than a person.
- * Optional fields like `role` and `clockOffset` are omitted when blank — an
- * empty string would fail the manifest validator.
+ * There is deliberately no local interface describing a "person row" —
+ * `Person` from `schema.ts` is the one and only notion of what a person is,
+ * per the project's architecture rule. A row that cannot satisfy that shape
+ * becomes a problem string, or has the one bad field dropped and reported,
+ * rather than a value the validator would later reject wholesale. That
+ * matters because `validateManifest` refuses the ENTIRE manifest on one bad
+ * `role` or one duplicated `id` — silently letting either through here would
+ * corrupt `manifest.json` on the next save and lose the crop, the course
+ * reference, and every hand-placed time on the next open.
  */
 export function parsePeopleCsv(text: string): { people: Person[]; problems: string[] } {
   const { rows } = parseCsv(text);
   const people: Person[] = [];
   const problems: string[] = [];
+  const seenIds = new Set<string>();
 
   rows.forEach((row, i) => {
+    const line = i + 2; // header is row 1; spreadsheets are 1-indexed.
     const id = row['id']?.trim();
     const name = row['name']?.trim();
 
-    // Check for missing id or name
     if (!id || !name) {
-      problems.push(`Row ${i + 2}: missing ${!id ? 'id' : ''} ${!name ? 'name' : ''}`.trim());
+      const missing = [!id && 'id', !name && 'name'].filter(Boolean).join(' and ');
+      problems.push(`Row ${line}: missing ${missing}`);
+      return;
+    }
+    // A duplicated id is the other way this file corrupts the manifest:
+    // `validateManifest` refuses two people sharing an id, so letting a
+    // second row with the same id through would take the whole manifest down
+    // with it on the next save. Keep the first row, drop the rest, say so.
+    if (seenIds.has(id)) {
+      problems.push(`Row ${line}: id "${id}" is already used by an earlier row; this row was skipped`);
       return;
     }
 
-    // Build object incrementally to omit optional fields when blank
+    // Built incrementally to omit optional fields when blank or invalid
     // (exactOptionalPropertyTypes forbids setting them to undefined).
-    interface PersonBuilder {
-      id: string;
-      name: string;
-      role?: any;
-      clockOffset?: string;
-    }
-    const person: PersonBuilder = { id, name };
+    const person: Person = { id, name };
 
-    // Add role if present
     const roleStr = row['role']?.trim();
     if (roleStr) {
-      person.role = roleStr;
+      if ((ROLES as readonly string[]).includes(roleStr)) {
+        person.role = roleStr as Role;
+      } else {
+        problems.push(
+          `Row ${line}: role "${roleStr}" is not one of ${ROLES.join(', ')}; left blank rather than saved wrong`,
+        );
+      }
     }
 
-    // Add clockOffset if present (mapped from clock_offset column)
-    const clockOffset = row['clock_offset']?.trim();
-    if (clockOffset) {
-      person.clockOffset = clockOffset;
+    const clockOffsetStr = row['clock_offset']?.trim();
+    if (clockOffsetStr) {
+      if (parseDuration(clockOffsetStr) !== null) {
+        person.clockOffset = clockOffsetStr;
+      } else {
+        problems.push(
+          `Row ${line}: clock_offset "${clockOffsetStr}" is not an ISO-8601 duration (e.g. "-PT47S"); left blank`,
+        );
+      }
     }
 
-    people.push(person as Person);
+    seenIds.add(id);
+    people.push(person);
   });
 
   return { people, problems };

@@ -195,6 +195,31 @@ describe('assembleManifest', () => {
     expect(sam?.role).toBe('runner');
   });
 
+  /**
+   * IMPORTANT 3 from the whole-branch review: `people` used to be built ONLY
+   * from `seenPeople` — ids that own a file — so a roster row for a crew
+   * member who shot nothing (the obvious first thing to do with an editable
+   * `people.csv`) was silently dropped here, and then written OUT of
+   * `people.csv` on the next Save. Fixed the same way an empty swimlane is
+   * drawn rather than omitted: a person the author put in the roster stays,
+   * with zero items.
+   */
+  it('keeps a roster person who owns no media, rather than deleting them', () => {
+    const existingPeople: Person[] = [
+      { id: 'sam', name: 'Sam' },
+      { id: 'crew-jo', name: 'Jo', role: 'crew' },
+    ];
+    const manifest = assembleManifest(files, { title: 'x', existingPeople });
+    expect(manifest.people.map((p) => p.id)).toContain('crew-jo');
+    expect(manifest.people.find((p) => p.id === 'crew-jo')).toEqual({
+      id: 'crew-jo', name: 'Jo', role: 'crew',
+    });
+    // Still validates, and still gets a lane color from `assignLaneColors`
+    // (which reads off `manifest.people` alone) — both fall out of simply
+    // being present in the array, so this is the load-bearing assertion.
+    expect(validateManifest(manifest).ok).toBe(true);
+  });
+
   it('keeps captions and hand-placed times on re-ingest', () => {
     // The author's work is not the file's. Re-reading bytes must not undo it.
     const existingItems = [
