@@ -20,12 +20,17 @@
   --mw-z-float: 1200;     /* the note dock — must beat Leaflet's 1000 */
   --mw-z-modal: 2000;     /* the lightbox, above everything  */
 
-  /* .app__header's rendered height: its own top+bottom padding and bottom
-     border, plus its tallest child (.button — a line of body text plus the
-     button's own padding and border). Derived from the same tokens those
-     rules use, so it tracks them instead of drifting the way a second,
-     independently-guessed number would. .app__header below asserts this as
-     a min-height and .rail reads it to sit just under the header. */
+  /* PRE-MEASUREMENT FALLBACK ONLY. This calc() approximates a button-only
+     header (padding, border, one line of body text) but is not the real
+     height once a person is loaded: .app__author stacks PersonPicker's
+     label over its input rather than sitting on one line, and the
+     header's own flex-wrap adds another row once a chip list wraps at a
+     narrow width. Neither is reachable from CSS alone, so App.tsx's
+     `headerRef` measures the rendered .app__header with a ResizeObserver
+     and overwrites this custom property with the live height on the root
+     element. .app__header below asserts this as a min-height (a floor,
+     so it never shrinks below the fallback) and .rail reads the same
+     variable to sit just under the header, whichever value is current. */
   --mw-header-h: calc(
     2 * var(--mw-space-3) + 1px +
     (var(--mw-text-base) * var(--mw-line-height) + 2 * var(--mw-space-2) + 2px)

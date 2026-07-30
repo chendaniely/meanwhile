@@ -864,6 +864,38 @@ export function App() {
     URL.revokeObjectURL(url);
   };
 
+  /**
+   * `--mw-header-h` (App.css) sizes `.rail`'s sticky `top` so it sits just
+   * under the sticky header rather than tucking beneath it. The CSS
+   * `calc()` there was sized for a button-only header and undercounts it
+   * once a person is loaded: `.app__author` renders `PersonPicker`'s
+   * `.field`, which stacks a label over an input rather than sitting on
+   * one line, and `flex-wrap` on the header adds a further row once a
+   * chip list wraps at a narrow width. Rather than chase every
+   * combination through CSS, measure the rendered header and publish its
+   * real height here; the `calc()` stays only as the pre-measurement
+   * fallback for the first paint.
+   *
+   * THE OBSERVER IS CREATED AND TORN DOWN BY THE REF CALLBACK, per
+   * `useInView.ts` (see its comment for why): disconnecting from a bare
+   * `useEffect(..., [])` cleanup fires on StrictMode's synthetic
+   * mount/unmount/mount and leaves nothing left to re-observe with.
+   */
+  const headerRef = useCallback((node: HTMLElement | null) => {
+    if (!node) return undefined;
+    const root = document.documentElement;
+    const publish = () => {
+      root.style.setProperty('--mw-header-h', `${node.getBoundingClientRect().height}px`);
+    };
+    const observer = new ResizeObserver(publish);
+    observer.observe(node);
+    publish();
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty('--mw-header-h');
+    };
+  }, []);
+
   return (
     <div className="app">
       {/*
@@ -872,7 +904,7 @@ export function App() {
         * put them a couple of thousand pixels down a 200-photo feed — the
         * content region is unbounded, so nothing persistent can live after it.
         */}
-      <header className="app__header">
+      <header className="app__header" ref={headerRef}>
         <h1 className="app__title">meanwhile</h1>
         {stage.name === 'loaded' ? (
           <>
@@ -1177,6 +1209,7 @@ export function App() {
                     })
                   }
                   onOpen={(entry) => setOpenId(entry.item.id)}
+                  lightboxOpen={openIndex >= 0}
                   {...(bounds ? { bounds } : {})}
                   onRange={setWindow}
                   captionByItem={captionByItem}

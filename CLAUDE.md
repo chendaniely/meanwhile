@@ -1182,8 +1182,17 @@ Installed and why:
   download. Only a **writer** is needed — import stays loose files, so
   nothing has to inflate anything — and a store-only (uncompressed) ZIP is
   local file headers, a central directory, and CRC-32: under 90 lines,
-  `src/viewer/media/zip.ts`. Compression would be the largest thing in the
-  project for a payload that is a few kilobytes of CSV.
+  `src/viewer/media/zip.ts`. **The payload is not "a few kilobytes of
+  CSV"** — `notes.csv` and `people.csv` are, but `manifest.json`
+  (pretty-printed at 2 spaces — see `saveEvent` in `App.tsx`) scales with
+  item count and dominates: measured against the fields `assemble.ts`
+  actually populates (`id`, `person`, `type`, `src`, `at`, `timeSource`,
+  `width`, `height`, `orientation`, `bytes`, and `gps` on roughly half of
+  photos), that's about **350 bytes per item**, so ~80KB at the real
+  folder's 231 items and ~680KB at the project's 2,000-file target. The
+  conclusion is unaffected — compression would still be the largest thing
+  in the project for a payload this size, and store-only is still correct
+  — only the size claim was wrong.
 
 FIT is binary and would need a real dependency, which is why it is deferred.
 

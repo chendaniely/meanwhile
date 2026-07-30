@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { StrictMode, act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Manifest } from '../src/core/schema.ts';
 import { SCHEMA_VERSION } from '../src/core/schema.ts';
 import { INITIAL_STATE } from '../src/core/state.ts';
@@ -70,7 +70,7 @@ afterEach(() => {
   container.remove();
 });
 
-function mount() {
+function mount(extra: { lightboxOpen?: boolean } = {}) {
   act(() => {
     root.render(
       <StrictMode>
@@ -81,6 +81,7 @@ function mount() {
           state={{ ...INITIAL_STATE, cursor: CURSOR }}
           onCursor={() => {}}
           onTogglePerson={() => {}}
+          {...extra}
         />
       </StrictMode>,
     );
@@ -89,6 +90,24 @@ function mount() {
   const track = container.querySelector('.lanes__track');
   if (!(track instanceof HTMLElement)) throw new Error('track not found');
   return { track };
+}
+
+function rerender(extra: { lightboxOpen?: boolean } = {}) {
+  act(() => {
+    root.render(
+      <StrictMode>
+        <Swimlanes
+          manifest={MANIFEST}
+          placed={PLACED}
+          range={RANGE}
+          state={{ ...INITIAL_STATE, cursor: CURSOR }}
+          onCursor={() => {}}
+          onTogglePerson={() => {}}
+          {...extra}
+        />
+      </StrictMode>,
+    );
+  });
 }
 
 function lockButton(): HTMLButtonElement {
@@ -120,15 +139,91 @@ describe('Swimlanes: Escape releases a pinned moment strip', () => {
   });
 
   it('does not listen for Escape while not pinned', () => {
+    // The previous version of this test only asserted a false -> false
+    // `aria-pressed` transition after dispatching Escape while unpinned —
+    // that holds whether or not `useEffect`'s `if (!locked) return;` guard
+    // in Swimlanes.tsx exists at all, since an unregistered listener and a
+    // registered-but-no-op listener are indistinguishable by that
+    // assertion. Spy on `document.addEventListener` instead, so the test
+    // fails if a `keydown` listener is ever registered while unpinned.
+    const addSpy = vi.spyOn(document, 'addEventListener');
+
     mount();
     // No lock chip is rendered before the cursor produces an `at`... but the
     // cursor is pre-set here, so the strip is already visible and unpinned.
     expect(lockButton().getAttribute('aria-pressed')).toBe('false');
 
+    const keydownRegistrations = addSpy.mock.calls.filter(([type]) => type === 'keydown');
+    expect(keydownRegistrations).toHaveLength(0);
+
     act(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
     // Still unpinned; nothing to release, and nothing should throw.
+    expect(lockButton().getAttribute('aria-pressed')).toBe('false');
+
+    addSpy.mockRestore();
+  });
+
+  it('registers the document keydown listener only while pinned, and removes it on unpin', () => {
+    const addSpy = vi.spyOn(document, 'addEventListener');
+    const removeSpy = vi.spyOn(document, 'removeEventListener');
+    const { track } = mount();
+
+    expect(addSpy.mock.calls.filter(([type]) => type === 'keydown')).toHaveLength(0);
+
+    act(() => {
+      track.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 10 }));
+    });
+    expect(lockButton().getAttribute('aria-pressed')).toBe('true');
+    expect(addSpy.mock.calls.filter(([type]) => type === 'keydown').length).toBeGreaterThan(0);
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(lockButton().getAttribute('aria-pressed')).toBe('false');
+    expect(removeSpy.mock.calls.filter(([type]) => type === 'keydown').length).toBeGreaterThan(0);
+
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
+});
+
+describe('Swimlanes: Escape does not fight the lightbox for a pinned strip', () => {
+  it('stays pinned when Escape arrives while the lightbox is open', () => {
+    // `Lightbox` binds its own Escape-to-close on `window`. A `keydown`
+    // reaches `document` (where the lanes listen) before it reaches
+    // `window`, so with no guard, pressing Escape to close the lightbox
+    // also silently unpinned the strip underneath — destroying a pin the
+    // user set on purpose. `lightboxOpen` tells the lanes to leave that
+    // keydown alone.
+    const { track } = mount({ lightboxOpen: true });
+
+    act(() => {
+      track.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 10 }));
+    });
+    expect(lockButton().getAttribute('aria-pressed')).toBe('true');
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    // Still pinned: the lanes ceded this Escape to the lightbox.
+    expect(lockButton().getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('resumes handling Escape once the lightbox closes', () => {
+    const { track } = mount({ lightboxOpen: true });
+    act(() => {
+      track.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 10 }));
+    });
+    expect(lockButton().getAttribute('aria-pressed')).toBe('true');
+
+    // Lightbox closes.
+    rerender({ lightboxOpen: false });
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
     expect(lockButton().getAttribute('aria-pressed')).toBe('false');
   });
 });

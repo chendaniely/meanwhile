@@ -1,10 +1,14 @@
 /**
  * A store-only ZIP writer — about sixty lines, and no dependency.
  *
- * Compression is pointless here: the payload is a few kilobytes of CSV, and a
- * deflate implementation would be the largest thing in the project. Storing
- * means the archive is legal ZIP that every operating system opens, and the
- * writer is small enough to read in one sitting.
+ * Compression is pointless here: `notes.csv`/`people.csv` really are a few
+ * kilobytes, but the archive's third file, `manifest.json`, is pretty-printed
+ * at 2 spaces and scales with item count — roughly 350 bytes per item, so
+ * tens to hundreds of KB across the project's real folders. Even at that
+ * size a deflate implementation would still be the largest thing in the
+ * project for what compression would save. Storing means the archive is
+ * legal ZIP that every operating system opens, and the writer is small
+ * enough to read in one sitting.
  *
  * Only a writer is needed. Import stays loose files, so nothing has to
  * inflate anything.

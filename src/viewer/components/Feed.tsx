@@ -183,7 +183,14 @@ export function Feed({ manifest, items, onOpen, onActive, notes = [], captionByI
     };
   }, [onActive, byId, moments]);
 
-  if (moments.length === 0) {
+  // Notes are not items: `App.tsx` filters `feedNotes` by the time window
+  // alone, never by which lanes are visible, so a note can be the only
+  // thing left in range once every lane is hidden or the window is narrowed
+  // past the last photograph. Returning early on `moments.length === 0`
+  // alone discarded that note and showed "Nothing to show" while it was
+  // sitting right there — the exact "write a note and watch it vanish"
+  // outcome CLAUDE.md calls out as the one worth spending UI on.
+  if (moments.length === 0 && notes.length === 0) {
     return (
       <p className="callout">
         Nothing to show &mdash; either the time window is too narrow or every

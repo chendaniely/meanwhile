@@ -40,6 +40,15 @@ interface Props {
   onCursor: (instant: Instant | null) => void;
   onTogglePerson: (person: PersonId) => void;
   onOpen?: (entry: PlacedItem) => void;
+  /**
+   * Whether the lightbox is currently open over this view. `Lightbox` binds
+   * its own Escape-to-close on `window`; without this, the lanes' Escape
+   * listener on `document` sees the same keydown and silently unpins the
+   * moment strip underneath — destroying a pin the user set deliberately so
+   * the strip would hold still while they reached for a photo. See
+   * `onKey`'s effect below.
+   */
+  lightboxOpen?: boolean;
   /** The whole timeline, so zooming out cannot go past the data. */
   bounds?: TimeWindow;
   /** Zooming the lanes changes the crop everything else is showing. */
@@ -60,6 +69,7 @@ export function Swimlanes({
   onCursor,
   onTogglePerson,
   onOpen,
+  lightboxOpen,
   bounds,
   onRange,
   captionByItem,
@@ -182,15 +192,22 @@ export function Swimlanes({
    * Bound on `document` instead — the same pattern the lightbox uses for its
    * own Escape-to-close — and only while pinned, so it is not listening for
    * no reason the rest of the time.
+   *
+   * ALSO bails while the lightbox is open. `Lightbox` binds its own Escape
+   * on `window`, and a `keydown` reaches `document` before it reaches
+   * `window` on the way up — so with no guard here, Escape meant to close
+   * the lightbox also silently unpinned the strip underneath, destroying a
+   * pin the user set on purpose. The lightbox is opened FROM the lanes, so
+   * this is the common case, not an edge one.
    */
   useEffect(() => {
-    if (!locked) return;
+    if (!locked || lightboxOpen) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setLocked(false);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [locked]);
+  }, [locked, lightboxOpen]);
 
   const at = scrub ?? state.cursor;
   const radius = momentRadius(total);
