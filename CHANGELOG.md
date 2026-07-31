@@ -6,7 +6,7 @@ owner, and the record of who asked for what is part of the project rather than
 a footnote to it — several of the decisions below reversed something Claude had
 already built, and the reasons are worth keeping.
 
-## Unreleased
+## 0.4.0 — 2026-07-30 — a role says what someone was, and a course URL has to earn its link
 
 ### A role is free text; a new `pinned` column decides whose lane goes on top
 
