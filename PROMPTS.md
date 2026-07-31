@@ -1590,3 +1590,17 @@ runner is derived from `role` once, at read time, and written down properly on
 the next Save. That derivation is keyed on whether the FILE mentions pinning
 at all, never on the row, so an author who deliberately unpins somebody does
 not have it forced back on by their own role cell.
+
+> yes push it. sure delete. i cleared the test-people dataset, and cleared teh
+> test-notes dataset both from google sheets
+
+`SUGGESTED_ROLES` — the four-value vocabulary left behind when `ROLES` stopped
+validating anything — was kept on the theory that a suggestion UI might one day
+want it. Nothing read it, and a constant with no reader in a decision record
+that tells future sessions to check before citing is a claim waiting to go
+stale. Deleted, and the two documents that still pointed at it corrected in the
+same commit.
+
+Released as **0.4.0** and pushed: the free-text role and `pinned` split above,
+the `https:`-only course-URL allowlist, the `unguard` correction, and the
+course-URL box committing on blur rather than on every keystroke.
