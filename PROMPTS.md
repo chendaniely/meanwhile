@@ -1546,3 +1546,47 @@ The second finding was ours alone and worse in practice: making a bad
 `manifest.json` on the next Open folder, taking the crop, the aid-station
 markers and every hand-placed photograph with it. It is a warning now; the
 manifest loads, the URL is kept verbatim, and the reader refuses to draw it.
+
+---
+
+> ok i've updated the roles now. feel free to use sentence / title case when
+> displaying
+
+> ok we can generalize "runner" in the future and allow more roles. for example
+> if i want to use this same system for a wedding we'd have more roles to
+> highlight or add
+
+The owner had typed real roles into `people.csv` — `crew chief`, `runner`,
+`pacer` — and two of the three were being thrown away. `Role` was a four-value
+enum (`'runner' | 'crew' | 'friend' | 'other'`) enforced in two places, so
+`parsePeopleCsv` blanked the unrecognised two and reported a problem, and one
+Save then wrote both cells empty. CLAUDE.md's own rule, "Refusing to READ a
+row is not permission to DELETE it", violated one level down — at a cell
+rather than at a row.
+
+Measured before touching anything: `crew`, `friend` and `other` had ZERO reads
+anywhere in the repository outside the enum's own validation, and the runner
+toggle in the ingest report could only ever produce `runner` or no role at
+all. The enum cost real data and bought nothing.
+
+> we should then add a column in the people csv that just indicates if that
+> person should be pinned. then the roles don't matter and we can deal with
+> that later. we just care about who gets pinned
+
+This is what made the change simple rather than merely safe. The first plan
+kept `runner` as a reserved, case-insensitively matched role — which meant
+free-text roles and lane pinning still shared one field, and one shared field
+needs a rule kept in step across five call sites. Splitting them instead:
+`role` becomes free text carrying no behaviour at all, and a new
+`Person.pinned` (a `pinned` column in `people.csv`, written as the integer
+`1`) is the only thing that decides whose lane goes on top.
+
+Several pinned people become legal, which is the wedding case above and the
+relay case underneath it, so `orderPeople` now moves ALL of them to the front
+in roster order and the `N people have role "runner"; only the first will be
+pinned` warning is gone — it described a loss that no longer happens.
+A `people.csv` or a `manifest.json` with no `pinned` anywhere still works: the
+runner is derived from `role` once, at read time, and written down properly on
+the next Save. That derivation is keyed on whether the FILE mentions pinning
+at all, never on the row, so an author who deliberately unpins somebody does
+not have it forced back on by their own role cell.

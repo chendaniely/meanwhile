@@ -1,7 +1,7 @@
 import { scaleTime } from 'd3-scale';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { assignLaneColors, orderPeople, OVERFLOW_COLOR } from '../../core/palette.ts';
-import { displayName, resolvePersonNames } from '../../core/people-csv.ts';
+import { displayName, displayRole, resolvePersonNames } from '../../core/people-csv.ts';
 import type { Manifest, PersonId } from '../../core/schema.ts';
 import { isVisible, type AppState } from '../../core/state.ts';
 import { laneBins } from '../../core/timeline.ts';
@@ -422,7 +422,15 @@ export function Swimlanes({
                     aria-hidden="true"
                   />
                   <span className="lanes__name-text">{displayName(person)}</span>
-                  {person.role === 'runner' && <span className="report__tag">runner</span>}
+                  {/* Their role if they have one, then a marker for a pinned
+                      lane. Two different facts: "pacer" says what they were,
+                      the pin says why their lane is at the top. The pin says
+                      "pinned" rather than "runner" because it is no longer a
+                      role at all — see `Person.pinned` in core/schema.ts. */}
+                  {displayRole(person.role) && (
+                    <span className="lanes__role">{displayRole(person.role)}</span>
+                  )}
+                  {person.pinned && <span className="report__tag">pinned</span>}
                 </button>
                 {/* The headline number for a lane. A six-hour hole is the
                     story of the night section, so it is stated, not left to

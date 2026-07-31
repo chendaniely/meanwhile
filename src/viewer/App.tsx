@@ -508,8 +508,8 @@ export function App() {
                 sessionNotes: notesRef.current,
                 deletedNoteIds: deletedNoteIds.current,
                 deletedNoteFingerprints: deletedNoteFingerprints.current,
-                // The same rule, one seam further along. A rename, a role, a
-                // Strava link and the crop are all unsaved authoring work
+                // The same rule, one seam further along. A rename, a pinned
+                // lane, a Strava link and the crop are all unsaved authoring work
                 // that only exists in memory until Save, and "Add files" used
                 // to re-read the folder straight over the top of every one of
                 // them. Omitted on 'replace' for the same reason the notes
@@ -663,25 +663,22 @@ export function App() {
     [stage, editManifest],
   );
 
-  const setRole = useCallback(
-    (id: PersonId, role: 'runner' | undefined) =>
+  const setPinned = useCallback(
+    (id: PersonId, pinned: boolean) =>
       editManifest((m) => ({
         ...m,
-        // Exactly one runner. Marking a second moves the badge rather than
-        // creating two spines, since the role owns the course.
+        // Nobody else is touched. This used to clear any OTHER person's
+        // `runner` role when marking one, because `orderPeople` could only
+        // pin a single lane and a second one was silently ignored. Several
+        // pinned lanes are legal now — a wedding pins two people — so
+        // enforcing exclusivity here would be taking away the thing the
+        // field was added for.
         people: m.people.map((p) => {
-          if (p.id === id) {
-            const next = { ...p };
-            if (role) next.role = role;
-            else delete next.role;
-            return next;
-          }
-          if (role && p.role === 'runner') {
-            const cleared = { ...p };
-            delete cleared.role;
-            return cleared;
-          }
-          return p;
+          if (p.id !== id) return p;
+          const next = { ...p };
+          if (pinned) next.pinned = true;
+          else delete next.pinned;
+          return next;
         }),
       })),
     [editManifest],
@@ -1343,7 +1340,7 @@ export function App() {
                   grouping={stage.grouping}
                   {...(range ? { range } : {})}
                   onRename={renamePerson}
-                  onRole={setRole}
+                  onPinned={setPinned}
                 />
 
                 {placement && (

@@ -297,17 +297,44 @@ describe('summarize', () => {
 });
 
 describe('lane colors', () => {
+  // `role` is deliberately free text here and pins nothing — `pinned` is the
+  // only field `orderPeople` reads. "crew chief" is one of the exact strings
+  // the old four-value enum blanked out of the owner's real roster.
   const people: Person[] = [
-    { id: 'dan', name: 'Dan', role: 'crew' },
-    { id: 'sam', name: 'Sam', role: 'runner' },
+    { id: 'dan', name: 'Dan', role: 'crew chief' },
+    { id: 'sam', name: 'Sam', role: 'runner', pinned: true },
     { id: 'ali', name: 'Ali', role: 'friend' },
   ];
 
-  it('pins the runner to the top lane', () => {
+  it('pins a pinned lane to the top', () => {
     expect(orderPeople(people).map((p) => p.id)).toEqual(['sam', 'dan', 'ali']);
   });
 
-  it('gives the runner slot 1', () => {
+  it('pins EVERY pinned person, not just the first, in roster order', () => {
+    // The wedding case, and the reason `pinned` exists rather than a reserved
+    // role: `orderPeople` used to move the first `role: 'runner'` and
+    // silently leave a second one where it was.
+    const wedding: Person[] = [
+      { id: 'guest', name: 'Guest' },
+      { id: 'bride', name: 'Bride', role: 'bride', pinned: true },
+      { id: 'photog', name: 'Photographer', role: 'photographer' },
+      { id: 'groom', name: 'Groom', role: 'groom', pinned: true },
+    ];
+    expect(orderPeople(wedding).map((p) => p.id)).toEqual(['bride', 'groom', 'guest', 'photog']);
+  });
+
+  it('does not pin a lane on the strength of a role alone', () => {
+    // A role is a label. Someone whose role happens to read "runner" in a
+    // file that DOES declare pinning is not pinned by it — see
+    // `pinLegacyRunners` for the one migration case where it is.
+    const roleOnly: Person[] = [
+      { id: 'dan', name: 'Dan' },
+      { id: 'sam', name: 'Sam', role: 'runner' },
+    ];
+    expect(orderPeople(roleOnly).map((p) => p.id)).toEqual(['dan', 'sam']);
+  });
+
+  it('gives a pinned person slot 1', () => {
     expect(assignLaneColors(people).get('sam')).toBe(LANE_COLORS[0]);
   });
 
@@ -316,7 +343,7 @@ describe('lane colors', () => {
     // by POSITION in that walk. Filtering the list before calling it (here,
     // dropping dan) therefore reshuffles everyone after the gap: ali moves
     // from slot 2 to slot 1 and gets a different color. Only sam is immune,
-    // and only because orderPeople always pins the runner to slot 0.
+    // and only because orderPeople always puts a pinned person in slot 0.
     //
     // This is exactly WHY the app-level rule holds ("color follows the
     // person, never their position" — see palette.ts and CLAUDE.md): every
@@ -325,6 +352,9 @@ describe('lane colors', () => {
     // what's RENDERED, never the list handed to assignLaneColors. The
     // invariant is a calling convention enforced by every call site, not a
     // property of this function in isolation.
+    //
+    // "Only sam is immune" above holds because `orderPeople` always puts a
+    // PINNED person in slot 0, whoever else is in the list.
     const withoutDan = people.filter((p) => p.id !== 'dan');
     expect(assignLaneColors(withoutDan).get('sam')).toBe(assignLaneColors(people).get('sam'));
     expect(assignLaneColors(withoutDan).get('ali')).not.toBe(assignLaneColors(people).get('ali'));
@@ -389,16 +419,19 @@ describe('re-ingest preserves the author\'s work', () => {
     expect(again.people[0]?.name).toBe('Priya');
   });
 
-  it('keeps a role, which carries behaviour rather than being a label', () => {
+  it('keeps a free-text role and a pinned lane across a re-ingest', () => {
+    // Both are authoring work that nothing in the media can regenerate. The
+    // role is deliberately one the old enum would have thrown away.
     const withRole: Manifest = {
       ...first,
-      people: first.people.map((p) => ({ ...p, role: 'runner' as const })),
+      people: first.people.map((p) => ({ ...p, role: 'crew chief', pinned: true })),
     };
     const again = assembleManifest(
       [file('a.jpg', '2026-07-24T12:00:00Z')],
       { title: 'Race', existingPeople: withRole.people, existingItems: withRole.items },
     );
-    expect(again.people[0]?.role).toBe('runner');
+    expect(again.people[0]?.role).toBe('crew chief');
+    expect(again.people[0]?.pinned).toBe(true);
   });
 
   it('keeps a hand-placed time but RE-READS an automatic one', () => {

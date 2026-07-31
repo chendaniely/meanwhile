@@ -437,6 +437,17 @@
   padding: 0 var(--mw-space-2);
 }
 
+/* What someone was, as typed in people.csv. Muted, not tag-shaped: it is a
+   readout, and the only tag-shaped thing on this row is the pin, which is a
+   control. `--mw-fg-muted` (8.34:1), never `--mw-fg-faint` (3.98:1), which is
+   below AA for text. */
+.report__role {
+  color: var(--mw-fg-muted);
+  font-size: var(--mw-text-sm);
+  white-space: nowrap;
+  flex: none;
+}
+
 .report__count,
 .bars__count {
   color: var(--mw-fg-muted);
@@ -1326,6 +1337,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The lane's own copy of `.report__role`. A lane label is tight on width, so
+   this one shrinks before the name does — the name identifies the lane, the
+   role only describes it. */
+.lanes__role {
+  color: var(--mw-fg-muted);
+  font-size: var(--mw-text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .lanes__swatch {

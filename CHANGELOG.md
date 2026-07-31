@@ -8,6 +8,61 @@ already built, and the reasons are worth keeping.
 
 ## Unreleased
 
+### A role is free text; a new `pinned` column decides whose lane goes on top
+
+> "ok i've updated the roles now. feel free to use sentence / title case when
+> displaying"
+
+`Person.role` was a four-value enum — `runner`, `crew`, `friend`, `other` —
+checked by both `validateManifest` and `parsePeopleCsv`. The owner typed real
+roles into `people.csv` (`crew chief`, `runner`, `pacer`) and two of the three
+were refused to `undefined` with a problem reported; **executing one Save then
+wrote both cells blank.** That is CLAUDE.md's own "Refusing to READ a row is
+not permission to DELETE it", violated at a cell rather than a row.
+
+The enum bought nothing to set against that, measured rather than assumed:
+`crew`, `friend` and `other` had zero reads anywhere in the repository outside
+the check itself, and the report's runner toggle could only ever produce
+`runner` or no role at all.
+
+It had lasted because `runner` was quietly doing a second job — deciding whose
+lane pinned to the top — and a field cannot be both free text and a switch.
+The owner split it:
+
+> "we should then add a column in the people csv that just indicates if that
+> person should be pinned. then the roles don't matter and we can deal with
+> that later. we just care about who gets pinned"
+
+- **`role` is any string, kept exactly as typed**, and carries no behaviour
+  anywhere. `ROLES` is now `SUGGESTED_ROLES` and validates nothing.
+- **`Person.pinned`, and a `pinned` column in `people.csv`** holding the
+  integer `1` — never `TRUE`, because a spreadsheet rewrites anything that
+  looks like a yes/no and leaves a bare number alone.
+- **Any number of people can be pinned**, which is the point rather than an
+  edge case:
+
+  > "ok we can generalize "runner" in the future and allow more roles. for
+  > example if i want to use this same system for a wedding we'd have more
+  > roles to highlight or add"
+
+  `orderPeople` moves them all to the front in roster order, where it used to
+  move the first `role === 'runner'` and silently ignore the rest. The
+  `N people have role "runner"; only the first will be pinned` warning is
+  deleted — it described a loss that no longer happens — and `App.tsx` no
+  longer clears anybody else's flag when you pin someone.
+- **Roles are displayed in sentence case** by one function, `displayRole`:
+  `crew chief` → `Crew chief`, never `Crew Chief`, and `DJI operator` is left
+  alone rather than becoming `Dji operator`. Shown beside the name in the
+  ingest report and in each lane label, separately from the pin, because they
+  are now two different facts. There is no role input in the app: that is what
+  `people.csv` is for.
+- **Existing files migrate themselves.** A `people.csv` or `manifest.json`
+  with no `pinned` anywhere derives it once from `role: runner`
+  (case-insensitively) and writes a real column on the next Save. The
+  derivation is keyed on whether the FILE mentions pinning at all, never on
+  the row, so unpinning somebody deliberately is not undone by their own role
+  cell.
+
 Both items below came out of one question the owner asked about the note
 composer — whether letting people type free text anywhere was a risk:
 

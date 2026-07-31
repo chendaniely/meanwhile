@@ -57,9 +57,9 @@ export const MAX_DISTINCT_PEOPLE = LANE_COLORS.length;
 /**
  * Assign a color to every person.
  *
- * The runner is always slot 1. Everyone else follows in manifest order, which
- * is stable across reloads because the manifest is a file. An explicit
- * `person.color` wins over both.
+ * Pinned people take the first slots. Everyone else follows in manifest
+ * order, which is stable across reloads because the manifest is a file. An
+ * explicit `person.color` wins over both.
  */
 export function assignLaneColors(people: readonly Person[]): Map<PersonId, string> {
   const ordered = orderPeople(people);
@@ -77,19 +77,23 @@ export function assignLaneColors(people: readonly Person[]): Map<PersonId, strin
 }
 
 /**
- * Lane order: the runner on top, then everyone else as the manifest lists
- * them.
+ * Lane order: everyone pinned on top, then everyone else, each group in the
+ * order the roster lists them.
  *
- * The runner's lane is pinned because the swimlanes tell the race, and the
- * race is their story — every other lane is read in relation to it. Only the
- * first person with role "runner" is pinned; the validator warns if there is
- * more than one.
+ * A lane is pinned because the swimlanes tell one story and every other lane
+ * is read in relation to it — the runner in an ultra, the couple at a
+ * wedding, the whole team in a relay.
+ *
+ * **All of them, not just the first.** This used to move the first person
+ * whose `role` was exactly `"runner"` and silently leave any others where
+ * they were, which is why `validateManifest` had to warn about a second one.
+ * `Person.pinned` replaced that: several pinned people are legal, ordinary,
+ * and the reason the field exists at all. See `Person.pinned` in `schema.ts`.
  */
 export function orderPeople(people: readonly Person[]): Person[] {
-  const runnerIndex = people.findIndex((p) => p.role === 'runner');
-  if (runnerIndex <= 0) return [...people];
-  const runner = people[runnerIndex] as Person;
-  return [runner, ...people.filter((_, i) => i !== runnerIndex)];
+  const pinned = people.filter((p) => p.pinned);
+  if (pinned.length === 0) return [...people];
+  return [...pinned, ...people.filter((p) => !p.pinned)];
 }
 
 /**

@@ -533,3 +533,53 @@ property of the list rather than of who appended last. That is a small
 refactor of a channel several call sites write to, and it should be done once,
 deliberately, rather than by inserting a second sort.
 
+
+## `SUGGESTED_ROLES` has no reader *(2026-07-30, left deliberately)*
+
+When `role` became free text, `ROLES` was renamed `SUGGESTED_ROLES` and
+stopped validating anything. **Nothing in `src/` reads it now** — it survives
+as a documented vocabulary and as the thing a future suggestion UI (a
+`<datalist>` on a role field, say) would draw from.
+
+Left rather than deleted because the alternative was worse in a specific way:
+a constant that still exists is one a future session can *see* and reason
+about, and the rename makes its new job unmistakable at every glance. A
+deleted one comes back as an inline array in whatever file next wants a list
+of example roles, and that is how a check gets quietly re-promoted from a
+suggestion into a gate.
+
+Two honest ways to close this, and no third: build the suggestion UI (which
+means answering whether a role should be editable in the app at all — today
+it is not, on purpose, because `people.csv` is the spreadsheet that owns it),
+or delete the constant. **Do not** wire it back into `parsePeopleCsv` or
+`validateManifest`; that is the change this replaced, and it deleted the
+owner's real data.
+
+## A role is shown but cannot be edited in the app *(2026-07-30, by design — recorded so it is not "fixed" by accident)*
+
+The ingest report and each lane label DISPLAY a person's role; nothing in the
+viewer sets one. That is deliberate — a role is free text, `people.csv` is a
+spreadsheet, and "one action, one name, one control" says the place to author
+it is the file rather than a second box in the report. The pin toggle beside
+it is a different thing: pinning changes what the app draws, so it belongs to
+the app.
+
+Worth re-asking the owner only if editing `people.csv` by hand turns out to be
+a real obstacle in practice. If it is ever added, it needs the same
+committed-on-blur discipline `RenameInput` has — a per-keystroke role edit
+would write nineteen roles the way the first rename box wrote nineteen
+aliases.
+
+## `MomentStrip` shows a name without its role or pin *(2026-07-30, minor)*
+
+`MomentStrip.tsx` renders one `.lanes__name-text` per person, aligned under
+the swimlanes it mirrors, and shows the name alone. The lane label above it
+now also carries the role and a pin marker.
+
+Left alone on purpose: the strip's rows are aligned with the lanes directly
+above them, so the label is already on screen a few pixels away, and the strip
+is the one part of the swimlanes whose height is pinned to the millimetre
+("The moment strip must not change the page's height" in CLAUDE.md). Adding
+text to those rows is exactly the kind of change that quietly reintroduces the
+jank. If it is picked up, measure the page height across a full scrub sweep
+before and after.

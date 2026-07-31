@@ -20,7 +20,7 @@ import {
   type PreservedRow,
 } from './csv.ts';
 import type { Note } from './notes.ts';
-import { ROLES, type Person, type PersonId, type Role } from './schema.ts';
+import { type Person, type PersonId } from './schema.ts';
 import { parseDuration } from './time.ts';
 
 export const PEOPLE_HEADERS = [
@@ -29,6 +29,7 @@ export const PEOPLE_HEADERS = [
   'role',
   'clock_offset',
   'also_known_as',
+  'pinned',
   'schema',
 ] as const;
 
@@ -135,17 +136,21 @@ function cleanAliases(name: string, aliases: readonly string[]): string[] {
  * per the project's architecture rule. A row that cannot satisfy that shape
  * becomes a problem string, or has the one bad field dropped and reported,
  * rather than a value the validator would later reject wholesale. That
- * matters because `validateManifest` refuses the ENTIRE manifest on one bad
- * `role` or one duplicated `id` — silently letting either through here would
- * corrupt `manifest.json` on the next save and lose the crop, the course
- * reference, and every hand-placed time on the next open.
+ * matters because `validateManifest` refuses the ENTIRE manifest on one
+ * duplicated `id` — silently letting that through here would corrupt
+ * `manifest.json` on the next save and lose the crop, the course reference,
+ * and every hand-placed time on the next open.
+ *
+ * `role` was once on that list and is not any more: it is free text, and the
+ * check that used to guard it is what erased `crew chief` and `pacer` from
+ * the owner's real roster. See `Role` in `schema.ts`.
  */
 export function parsePeopleCsv(
   text: string,
   /** Named in `preserved`, so a caller can point at the row a person must fix. */
   file = 'people.csv',
 ): { people: Person[]; problems: string[]; extra: PeopleExtra; preserved: PreservedRow[] } {
-  const { rows, rowLines } = parseCsv(text);
+  const { headers, rows, rowLines } = parseCsv(text);
   const people: Person[] = [];
   const problems: string[] = [];
   const extra: PeopleExtra = new Map();
@@ -155,9 +160,9 @@ export function parsePeopleCsv(
    * A row this build refused, kept verbatim so the next Save writes it back.
    *
    * Only the three branches below that DROP a row take this path. The others
-   * — an unrecognised `role`, an unparseable `clock_offset`, a `;` in a name —
-   * keep the person and degrade one field, so the row is already saved through
-   * the ordinary roster and preserving it too would write it twice.
+   * — an unparseable `clock_offset`, a `;` in a name — keep the person and
+   * degrade one field, so the row is already saved through the ordinary
+   * roster and preserving it too would write it twice.
    */
   const keep = (row: Record<string, string>, line: number, problem: string): void => {
     preserved.push({ file, line, cells: row });
@@ -206,8 +211,8 @@ export function parsePeopleCsv(
     // value, not a list), but it becomes dangerous the moment this name is
     // later used as an alias or matched against a note's `people`/`author`
     // column — both `;`-separated lists. Reported and repaired here, the
-    // same way an unrecognised `role` is: the row survives, the one bad
-    // field is degraded and named.
+    // same way an unparseable `clock_offset` is: the row survives, the one
+    // bad field is degraded and named.
     if (hasSemicolon(name)) {
       const repaired = name.replace(/;/g, ' ').replace(/\s+/g, ' ').trim();
       problems.push(
@@ -229,16 +234,15 @@ export function parsePeopleCsv(
     // (exactOptionalPropertyTypes forbids setting them to undefined).
     const person: Person = { id, name };
 
+    // Free text, kept exactly as typed. It used to be checked against a
+    // four-value list and BLANKED when it did not match, which is how `crew
+    // chief` and `pacer` were erased from the owner's own roster by pressing
+    // Save. Nothing reads a role to decide anything now — `pinned` below is
+    // the field that carries behaviour — so there is nothing left to check.
     const roleStr = row['role']?.trim();
-    if (roleStr) {
-      if ((ROLES as readonly string[]).includes(roleStr)) {
-        person.role = roleStr as Role;
-      } else {
-        problems.push(
-          `Row ${line}: role "${roleStr}" is not one of ${ROLES.join(', ')}; left blank rather than saved wrong`,
-        );
-      }
-    }
+    if (roleStr) person.role = roleStr;
+
+    if (isPinnedCell(row['pinned'])) person.pinned = true;
 
     const clockOffsetStr = row['clock_offset']?.trim();
     if (clockOffsetStr) {
@@ -276,7 +280,71 @@ export function parsePeopleCsv(
     people.push(person);
   });
 
-  return { people, problems, extra, preserved };
+  return { people: pinLegacyRunners(people, headers.includes('pinned')), problems, extra, preserved };
+}
+
+/**
+ * The role that used to mean "pin this lane", before `Person.pinned` existed.
+ *
+ * Read on migration only (`pinLegacyRunners`). Nothing else in this project
+ * compares a role to anything — that is the whole point of the split.
+ */
+const LEGACY_PINNED_ROLE = 'runner';
+
+/**
+ * Migrate a roster written before the `pinned` column existed.
+ *
+ * Every `people.csv` in existence today says who the runner was in the `role`
+ * column and nothing else, so reading one without this hands back a roster
+ * with nobody pinned — the runner's lane quietly drops out of first place on
+ * a file that has not changed. The next Save writes the real `pinned` column,
+ * so this repairs itself the same way the `schema` and `utc_offset_min`
+ * columns did.
+ *
+ * **`declaresPinned` is the whole safety of it, and it is per FILE, never per
+ * row.** Once the column exists, a blank cell is an author saying "not
+ * pinned" — someone who deliberately unpins the runner must not have it
+ * forced back on by their own `role` cell on the next read. So the two
+ * callers answer that question from their own format:
+ *
+ *   - `parsePeopleCsv`, from whether the header row names `pinned` at all;
+ *   - `ingestFolder` (`viewer/media/ingest.ts`), for a roster taken from an
+ *     imported `manifest.json`, from whether any person object carries a
+ *     `pinned` key.
+ *
+ * Case-insensitive, because `Runner` in a sentence-cased spreadsheet column
+ * is the same person as `runner`.
+ */
+export function pinLegacyRunners(
+  people: readonly Person[],
+  declaresPinned: boolean,
+): Person[] {
+  if (declaresPinned) return [...people];
+  return people.map((p) =>
+    (p.role ?? '').trim().toLowerCase() === LEGACY_PINNED_ROLE ? { ...p, pinned: true } : p,
+  );
+}
+
+/**
+ * Read the `pinned` cell.
+ *
+ * Written as the integer `1`, blank for everyone else — no other format
+ * survives a spreadsheet, the same rule the five date integers in
+ * `notes*.csv` follow. But this is READ generously, because a person typing
+ * into the column by hand will write whatever their spreadsheet offers, and
+ * a value this build could not interpret would be rewritten blank on the next
+ * Save — which is precisely the data loss the `role` column was just rescued
+ * from.
+ *
+ * So: blank, `0`, `false` and `no` mean not pinned; any other non-blank value
+ * means pinned. Nothing is reported, because a flag column carries no
+ * information beyond yes-or-no and there is therefore nothing a message could
+ * tell someone to repair. The write normalises whatever it was to `1`.
+ */
+function isPinnedCell(raw: string | undefined): boolean {
+  const value = (raw ?? '').trim().toLowerCase();
+  if (value === '' || value === '0' || value === 'false' || value === 'no') return false;
+  return true;
 }
 
 /**
@@ -326,6 +394,11 @@ export function formatPeopleCsv(
     role: p.role ?? '',
     clock_offset: p.clockOffset ?? '',
     also_known_as: cleanAliases(p.name, p.alsoKnownAs ?? []).join(';'),
+    // The integer `1`, never `true` or `TRUE`: a spreadsheet rewrites a
+    // boolean-looking cell on save (and localises it), and leaves a bare
+    // integer alone. Blank rather than `0` for everyone else, so the column
+    // reads as a list of who is pinned rather than as a wall of zeroes.
+    pinned: p.pinned ? '1' : '',
     schema: String(CSV_SCHEMA),
   }));
   for (const row of preserved) rows.push(row.cells);
@@ -351,6 +424,31 @@ export function displayName(person: Person): string {
   const aka = (person.alsoKnownAs ?? []).find((a) => a.trim() !== '');
   if (aka !== undefined) return aka.trim();
   return displayNameFor(person.id);
+}
+
+/**
+ * A person's role, ready to show: sentence case, or `''` when they have none.
+ *
+ * The owner, on free-text roles: *"feel free to use sentence / title case when
+ * displaying"*. Sentence case rather than Title Case, and the difference is
+ * load-bearing — **only the first character is touched, and nothing is ever
+ * lowercased.** `crew chief` becomes `Crew chief`, not `Crew Chief`; and a
+ * role already carrying capitals is left exactly as typed, so `DJI operator`
+ * does not come back as `Dji operator`. A display rule that rewrites the
+ * middle of a word is a display rule that mangles initialisms, and this file
+ * is edited by hand.
+ *
+ * Returns `''` rather than a placeholder for a blank or absent role: a person
+ * with no role should render nothing, not the word "none". Callers test the
+ * string.
+ *
+ * The `u` flag makes `.` match a whole code point, so a role starting with an
+ * astral character is not split down the middle of a surrogate pair.
+ */
+export function displayRole(role: string | undefined): string {
+  const trimmed = nfc(role ?? '').trim();
+  if (trimmed === '') return '';
+  return trimmed.replace(/^./u, (first) => first.toUpperCase());
 }
 
 /**

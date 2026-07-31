@@ -231,18 +231,80 @@ describe('course variants', () => {
   });
 });
 
-describe('warnings do not block loading', () => {
-  it('warns when more than one person is the runner', () => {
+/**
+ * `role` was a four-value enum, and `validateManifest` refused a manifest
+ * naming anything else. What that cost was measured against the owner's real
+ * `people.csv`: `crew chief` and `pacer` were rejected, blanked, and written
+ * out empty on the next Save. What it bought was nothing — no code anywhere
+ * read `crew`, `friend` or `other`, and the only role that did anything,
+ * `runner`, has been replaced by `Person.pinned`.
+ */
+describe('role is free text', () => {
+  const withRoles = (...roles: string[]): unknown =>
+    minimal({ people: roles.map((role, i) => ({ id: `p${i}`, name: `P${i}`, role })), items: [] });
+
+  it('accepts the exact roles the owner typed and the enum threw away', () => {
+    const input = withRoles('crew chief', 'runner', 'pacer');
+    expect(errorsOf(input)).toEqual([]);
+    const r = validateManifest(input);
+    expect(r.ok).toBe(true);
+    // Kept as typed, not normalised into some vocabulary.
+    expect(r.ok && r.manifest.people.map((p) => p.role)).toEqual([
+      'crew chief', 'runner', 'pacer',
+    ]);
+  });
+
+  it('accepts a role no vocabulary would have listed', () => {
+    expect(validateManifest(withRoles('mother of the bride')).ok).toBe(true);
+  });
+
+  it('still refuses a role that is not a string, which would render as garbage', () => {
+    const errs = errorsOf(minimal({ people: [{ id: 'p', name: 'P', role: 7 }], items: [] }));
+    expect(errs.some((e) => e.includes('role'))).toBe(true);
+  });
+
+  it('normalises a blank role away, so blank and absent are one thing', () => {
+    // Otherwise `''` reaches `reportUnsavedRosterEdits`, which compares
+    // `mine.role !== p.role` and would announce a roster edit nobody made.
+    const input = minimal({ people: [{ id: 'p', name: 'P', role: '   ' }], items: [] });
+    const r = validateManifest(input);
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.manifest.people[0]).not.toHaveProperty('role');
+  });
+});
+
+describe('pinned', () => {
+  it('accepts several pinned people without warning — a wedding pins two', () => {
+    // The `N people have role "runner"; only the first will be pinned`
+    // warning is gone because it describes nothing now: `orderPeople` pins
+    // all of them. A warning on an ordinary configuration trains people to
+    // ignore the channel.
     const r = validateManifest(
       minimal({
         people: [
-          { id: 'sam', name: 'Sam', role: 'runner' },
-          { id: 'ali', name: 'Ali', role: 'runner' },
+          { id: 'sam', name: 'Sam', pinned: true },
+          { id: 'ali', name: 'Ali', pinned: true },
         ],
+        items: [],
       }),
     );
     expect(r.ok).toBe(true);
-    expect(r.warnings.join(' ')).toMatch(/pinned to the top lane/);
+    expect(r.warnings).toEqual([]);
+  });
+
+  it('refuses a pinned that is not a boolean', () => {
+    const errs = errorsOf(minimal({ people: [{ id: 'p', name: 'P', pinned: 1 }], items: [] }));
+    expect(errs.some((e) => e.includes('pinned'))).toBe(true);
+  });
+});
+
+describe('warnings do not block loading', () => {
+  it('loads a manifest whose course URL it will not render, and says so', () => {
+    const r = validateManifest(
+      minimal({ course: { kind: 'strava-link', url: 'strava.com/activities/1' } }),
+    );
+    expect(r.ok).toBe(true);
+    expect(r.warnings.join(' ')).toMatch(/course\.url/);
   });
 });
 

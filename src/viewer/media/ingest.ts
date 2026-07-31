@@ -20,7 +20,7 @@ import {
   resolveNotePhotos, type Note, type NoteRowIdentity,
 } from '../../core/notes.ts';
 import {
-  displayName, parsePeopleCsv, resolvePersonNames, type PeopleExtra,
+  displayName, parsePeopleCsv, pinLegacyRunners, resolvePersonNames, type PeopleExtra,
 } from '../../core/people-csv.ts';
 import type { PreservedRow } from '../../core/csv.ts';
 import {
@@ -234,9 +234,11 @@ export interface IngestResult {
    * Three problems KEEP the row and degrade only the field at fault: an
    * ambiguous `photo` match — a filename fitting more than one item — leaves
    * the note in place with its photo link unresolved (`resolveNotePhotos` in
-   * ./core/notes.ts); and a roster row with an unrecognised `role` or an
-   * unparseable `clock_offset` keeps the person, blanking just that column
-   * rather than saving it wrong (`parsePeopleCsv`).
+   * ./core/notes.ts); and a roster row with an unparseable `clock_offset`, or
+   * a `;` in its `name`, keeps the person, blanking or repairing just that
+   * column rather than saving it wrong (`parsePeopleCsv`). An unrecognised
+   * `role` was once a fourth: there is no such thing now, since a role is
+   * free text — see `Role` in ./core/schema.ts.
    *
    * **It is no longer only about rows**, after a security review found three
    * things going wrong in complete silence. Also reported here: a second
@@ -332,11 +334,14 @@ export async function ingestFolder(
          *
          * `validateManifest` has always collected these and NOTHING in
          * `src/viewer` had ever read them — verified by grep before this was
-         * written. That was survivable while every warning was advisory ("two
-         * people have role runner"), and stopped being survivable the moment a
-         * refused `course.url` became a warning rather than an error: the
-         * whole point of that change is that the manifest still loads, which
-         * only works if the reader is told why the link is missing.
+         * written. That was survivable while every warning was advisory (the
+         * example at the time was "two people have role runner", a warning
+         * since deleted outright — several pinned lanes are legal now, see
+         * `Person.pinned` in ./core/schema.ts), and stopped being survivable
+         * the moment a refused `course.url` became a warning rather than an
+         * error: the whole point of that change is that the manifest still
+         * loads, which only works if the reader is told why the link is
+         * missing.
          *
          * Routed into the same problems callout that carries `importError`
          * and every other silent-outcome report, because this project already
@@ -452,7 +457,16 @@ export async function ingestFolder(
   const ingested = results.filter((r): r is IngestedFile => r !== null);
   // A people.csv, then a manifest from the folder, then whatever is in
   // memory — each one is the author handing over more recent work on purpose.
-  const rosterFromDisk = peopleFromCsv ?? imported?.people ?? opts.existingPeople;
+  //
+  // The manifest branch gets the same `pinned` migration `parsePeopleCsv`
+  // applies to a roster file, because a manifest saved before that field
+  // existed says who the runner was in `role` and nowhere else. "Did this
+  // source say anything about pinning" is asked of the JSON the way
+  // `parsePeopleCsv` asks it of the header row — see `pinLegacyRunners`.
+  const importedPeople = imported?.people
+    ? pinLegacyRunners(imported.people, imported.people.some((p) => p.pinned !== undefined))
+    : undefined;
+  const rosterFromDisk = peopleFromCsv ?? importedPeople ?? opts.existingPeople;
   // ...and, on "Add files", the live session on top of all of it. See
   // `sessionPeople` and `mergeSessionPeople`.
   const existingPeople = mergeSessionPeople(opts.sessionPeople, rosterFromDisk);
@@ -649,6 +663,12 @@ export function reportUnsavedRosterEdits(
     // the one phrase here that is plural.
     const columns: string[] = [];
     if (mine.role !== p.role) columns.push('a different role');
+    // `??` on both sides: `undefined` and `false` both mean "not pinned", and
+    // only one of them is what the toggle leaves behind when a lane is
+    // unpinned. Comparing them raw announces an edit nobody made.
+    if ((mine.pinned ?? false) !== (p.pinned ?? false)) {
+      columns.push(mine.pinned ? 'their lane pinned' : 'their lane not pinned');
+    }
     if (mine.clockOffset !== p.clockOffset) columns.push('a different clock offset');
     if ((mine.alsoKnownAs ?? []).join(';') !== (p.alsoKnownAs ?? []).join(';')) {
       columns.push('different earlier names');

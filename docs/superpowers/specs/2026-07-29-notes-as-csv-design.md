@@ -250,6 +250,19 @@ headers. `PEOPLE_HEADERS` in `core/people-csv.ts` is six —
 `id,name,role,clock_offset,also_known_as,schema`, `schema` last — matching
 the earlier correction, not this block's own example.
 
+**Corrected, 2026-07-30 — `role` is free text, and a `pinned` column decides
+the lanes.** The sentence above saying `role` "is one of `runner`, `crew`,
+`friend`, `other`, or blank" describes a check that no longer exists, and
+that check was actively harmful: the owner typed `crew chief` and `pacer`
+into this file and both were blanked on the next save. `role` is now any
+string, kept exactly as typed and displayed in sentence case; `ROLES` was
+renamed `SUGGESTED_ROLES` and validates nothing. Whose lane pins to the top
+is a separate `pinned` column — the integer `1`, blank otherwise — and any
+number of people may be pinned. `PEOPLE_HEADERS` is therefore seven:
+`id,name,role,clock_offset,also_known_as,pinned,schema`. A file with no
+`pinned` column at all is migrated once from `role: runner`. See CLAUDE.md's
+"A role says what someone WAS; `pinned` says whose lane goes on top".
+
 This is the fix for a gap the design above didn't anticipate: `name` is
 mutable (the whole point of "rename each lane to whoever was carrying it"),
 but `notes*.csv` refers to people by NAME, not `id` — deliberately, since an

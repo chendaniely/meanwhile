@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyRename, displayName, formatPeopleCsv, nameKey, parsePeopleCsv, resolvePersonNames,
+  applyRename, displayName, displayRole, formatPeopleCsv, nameKey, parsePeopleCsv,
+  pinLegacyRunners, resolvePersonNames,
 } from '../src/core/people-csv.ts';
 import {
   PEOPLE_CSV_BEFORE, PEOPLE_CSV_WITH_UNKNOWN_COLUMNS,
@@ -37,8 +38,11 @@ describe('people.csv', () => {
 
   it('reads role and clock offset, leaving blanks absent rather than empty', () => {
     const { people } = parsePeopleCsv(
-      'id,name,role,clock_offset\npixel8,Priya,runner,\n',
+      'id,name,role,clock_offset,pinned\npixel8,Priya,runner,,\n',
     );
+    // `pinned` is declared and blank, so the `runner` role pins nothing —
+    // see `pinLegacyRunners` for the one case where a file with no `pinned`
+    // column at all is migrated instead.
     expect(people[0]).toEqual({ id: 'pixel8', name: 'Priya', role: 'runner' });
   });
 
@@ -49,19 +53,55 @@ describe('people.csv', () => {
   });
 
   /**
-   * IMPORTANT 4 from the whole-branch review: an invalid `role` used to be
-   * cast straight through to `Person`, so a typo like "runer" reached
-   * `manifest.json` and failed `validateManifest` on the NEXT open — taking
-   * the crop, the course reference, markers, and every hand-placed time down
-   * with it, because a refused manifest is refused wholesale. Same for a
-   * duplicated `id`. Neither was reported. These pin the fix: the bad field
-   * is dropped and reported, the person (and the rest of the file) survives.
+   * A duplicated `id` still reaches `validateManifest` as an error that
+   * refuses the WHOLE manifest — taking the crop, the course reference,
+   * markers and every hand-placed time with it — so it is still caught here
+   * and reported rather than passed through. See the duplicate-id tests
+   * below.
+   *
+   * `role` used to be on that list and is not any more. It was checked
+   * against a four-value enum and BLANKED when it did not match, which
+   * against the owner's real roster meant `crew chief` and `pacer` were
+   * erased by pressing Save. These pin the replacement: whatever is in the
+   * cell is what comes back.
    */
-  it('keeps the person but drops and reports an unrecognised role', () => {
-    const { people, problems } = parsePeopleCsv('id,name,role\npixel8,Priya,runer\n');
-    expect(people).toEqual([{ id: 'pixel8', name: 'Priya' }]);
-    expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('runer');
+  it('keeps a free-text role exactly as typed', () => {
+    const { people, problems } = parsePeopleCsv(
+      'id,name,role,pinned\np1,Dan,runner,1\np2,Ali,crew chief,\np3,Sam,pacer,\n',
+    );
+    expect(problems).toEqual([]);
+    expect(people.map((p) => p.role)).toEqual(['runner', 'crew chief', 'pacer']);
+  });
+
+  /**
+   * The exact file the owner had, and the exact failure: two of three roles
+   * were refused to `undefined` with a problem reported, and ONE Save then
+   * wrote both cells blank. The round trip is the assertion, not the read —
+   * reading it correctly and writing it wrong is what actually happened.
+   */
+  it("round-trips the owner's own roles, 'crew chief' and 'pacer', through a save", () => {
+    const csv = [
+      'id,name,role,clock_offset,also_known_as,pinned,schema',
+      'p1,Dan,runner,,,1,',
+      'p2,Ali,crew chief,,,,',
+      'p3,Sam,pacer,,,,',
+      '',
+    ].join('\n');
+    const first = parsePeopleCsv(csv);
+    expect(first.problems).toEqual([]);
+
+    const written = formatPeopleCsv(first.people, first.extra, first.preserved);
+    const rows = parseCsv(written).rows;
+    expect(rows.map((r) => r['role'])).toEqual(['runner', 'crew chief', 'pacer']);
+    expect(parsePeopleCsv(written).people).toEqual(first.people);
+  });
+
+  it('keeps a role no vocabulary would ever have listed', () => {
+    const { people, problems } = parsePeopleCsv(
+      'id,name,role,pinned\np1,Jo,mother of the bride,\n',
+    );
+    expect(problems).toEqual([]);
+    expect(people[0]?.role).toBe('mother of the bride');
   });
 
   it('keeps the person but drops and reports an unparseable clock_offset', () => {
@@ -120,7 +160,9 @@ describe('people.csv', () => {
   // --- also_known_as -------------------------------------------------------
 
   it('reads a file with no also_known_as column at all, unchanged', () => {
-    const { people, problems } = parsePeopleCsv('id,name,role,clock_offset\npixel8,Priya,runner,\n');
+    const { people, problems } = parsePeopleCsv(
+      'id,name,role,clock_offset,pinned\npixel8,Priya,runner,,\n',
+    );
     expect(problems).toEqual([]);
     expect(people).toEqual([{ id: 'pixel8', name: 'Priya', role: 'runner' }]);
     expect(people[0]).not.toHaveProperty('alsoKnownAs');
@@ -474,7 +516,10 @@ describe('people.csv keeps columns it does not understand', () => {
 
     const written = formatPeopleCsv(people, extra);
     expect(parseCsv(written).headers)
-      .toEqual(['id', 'name', 'role', 'clock_offset', 'also_known_as', 'pronouns', 'shirt', 'schema']);
+      .toEqual([
+        'id', 'name', 'role', 'clock_offset', 'also_known_as', 'pinned',
+        'pronouns', 'shirt', 'schema',
+      ]);
     const back = parsePeopleCsv(written);
     expect(back.extra.get('samsung-sm-f721w')).toEqual({ pronouns: 'they/them', shirt: 'L' });
     expect(back.people).toEqual(people);
@@ -561,7 +606,7 @@ describe('names match across Unicode normalisation forms', () => {
  * regenerated.
  */
 describe('a people.csv written before the schema column existed', () => {
-  it('reads exactly as it always did', () => {
+  it('reads the same names, roles, aliases and clock offsets it always did', () => {
     const { people, problems, extra } = parsePeopleCsv(PEOPLE_CSV_BEFORE);
     expect(problems).toEqual([]);
     expect(extra.size).toBe(0);
@@ -571,6 +616,12 @@ describe('a people.csv written before the schema column existed', () => {
         name: 'Priya',
         role: 'runner',
         alsoKnownAs: ['Google Pixel 8 Pro'],
+        // The ONE thing that reads differently than it did, and deliberately:
+        // this file predates the `pinned` column, so `role: runner` is the
+        // only record it has of whose lane went on top. Dropping that would
+        // silently demote the runner on a file nobody touched. See
+        // `pinLegacyRunners`, and the two tests below for the boundary.
+        pinned: true,
       },
       { id: 'samsung-sm-f721w', name: 'Sam', clockOffset: '-PT4S' },
     ]);
@@ -580,7 +631,100 @@ describe('a people.csv written before the schema column existed', () => {
     const { people, extra } = parsePeopleCsv(PEOPLE_CSV_BEFORE);
     const written = formatPeopleCsv(people, extra);
     expect(written).toContain('schema');
+    // The migration is written down, not re-derived: `pinned` is now a real
+    // column carrying `1`, so the roster no longer depends on the word
+    // "runner" appearing in a role cell.
+    expect(parseCsv(written).rows.map((r) => r['pinned'])).toEqual(['1', '']);
     expect(parsePeopleCsv(written).people).toEqual(people);
+  });
+});
+
+/**
+ * The migration boundary, both directions. Getting either wrong is silent:
+ * one demotes the runner on every file written to date, the other overrides
+ * an author who deliberately unpinned somebody.
+ */
+describe('pinned', () => {
+  it('pins a legacy role: runner when the file has no pinned column at all', () => {
+    const { people } = parsePeopleCsv('id,name,role\np1,Priya,Runner\np2,Sam,crew\n');
+    // Case-insensitive: `Runner` in a sentence-cased column is the same
+    // person as `runner`.
+    expect(people.map((p) => p.pinned)).toEqual([true, undefined]);
+  });
+
+  it('does NOT pin a role: runner once the file declares a pinned column', () => {
+    // An author who unpins the runner must not have it forced back on by
+    // their own role cell. The decision is per FILE, never per row.
+    const { people } = parsePeopleCsv('id,name,role,pinned\np1,Priya,runner,\np2,Sam,crew,1\n');
+    expect(people.map((p) => p.pinned)).toEqual([undefined, true]);
+  });
+
+  it('writes the integer 1 and a blank, never true/false', () => {
+    // No format survives a spreadsheet except a plain integer, and a
+    // boolean-looking cell is exactly what Excel rewrites and localises.
+    const written = formatPeopleCsv([
+      { id: 'p1', name: 'Priya', pinned: true },
+      { id: 'p2', name: 'Sam' },
+    ]);
+    expect(parseCsv(written).rows.map((r) => r['pinned'])).toEqual(['1', '']);
+    expect(written).not.toMatch(/true/i);
+  });
+
+  it('reads a hand-typed flag rather than erasing it on the next save', () => {
+    // Someone editing by hand writes whatever their spreadsheet offers. A
+    // value this build could not interpret would be rewritten blank on the
+    // next Save — the same loss the role column was just rescued from.
+    const { people } = parsePeopleCsv(
+      'id,name,pinned\np1,A,TRUE\np2,B,yes\np3,C,x\np4,D,0\np5,E,false\np6,F,\n',
+    );
+    expect(people.map((p) => p.pinned)).toEqual([true, true, true, undefined, undefined, undefined]);
+  });
+
+  it('migrates a roster taken from a manifest the same way, keyed on any pinned field', () => {
+    // The second call site (`ingestFolder`): a manifest.json has no header
+    // row, so "did this source say anything about pinning" is asked of the
+    // objects instead. Same rule, same function.
+    const legacy: Person[] = [
+      { id: 'p1', name: 'Priya', role: 'runner' },
+      { id: 'p2', name: 'Sam', role: 'crew' },
+    ];
+    expect(pinLegacyRunners(legacy, false).map((p) => p.pinned)).toEqual([true, undefined]);
+    // Someone already unpinned in a manifest that knows about the field.
+    const modern: Person[] = [
+      { id: 'p1', name: 'Priya', role: 'runner' },
+      { id: 'p2', name: 'Sam', role: 'crew', pinned: true },
+    ];
+    expect(pinLegacyRunners(modern, true).map((p) => p.pinned)).toEqual([undefined, true]);
+  });
+
+  it('round-trips several pinned people', () => {
+    const wedding: Person[] = [
+      { id: 'bride', name: 'Bride', role: 'bride', pinned: true },
+      { id: 'groom', name: 'Groom', role: 'groom', pinned: true },
+      { id: 'guest', name: 'Guest' },
+    ];
+    expect(parsePeopleCsv(formatPeopleCsv(wedding)).people).toEqual(wedding);
+  });
+});
+
+describe('displayRole', () => {
+  it('capitalises the first letter only, so "crew chief" is not "Crew Chief"', () => {
+    expect(displayRole('crew chief')).toBe('Crew chief');
+  });
+
+  it('never lowercases the rest, so an initialism survives', () => {
+    expect(displayRole('DJI operator')).toBe('DJI operator');
+    expect(displayRole('MC')).toBe('MC');
+  });
+
+  it('is blank for a blank or absent role, so nothing renders', () => {
+    expect(displayRole(undefined)).toBe('');
+    expect(displayRole('   ')).toBe('');
+  });
+
+  it('trims, and leaves an already-capitalised role alone', () => {
+    expect(displayRole('  pacer ')).toBe('Pacer');
+    expect(displayRole('Pacer')).toBe('Pacer');
   });
 });
 
@@ -624,11 +768,14 @@ describe('roster rows this build cannot read are kept, not dropped', () => {
   });
 
   it('does NOT preserve a row it kept and merely degraded', () => {
-    // An unrecognised role keeps the person, so preserving the raw row too
-    // would write that person into the file twice.
-    const text = [HEADER, 'p1,Priya,sherpa,,,'].join('\n');
-    const { people, preserved } = parsePeopleCsv(text);
-    expect(people).toHaveLength(1);
+    // An unparseable clock_offset keeps the person and drops that one field,
+    // so preserving the raw row too would write that person into the file
+    // twice. (This used to be demonstrated with an unrecognised `role`;
+    // there is no such thing now — a role is free text.)
+    const text = [HEADER, 'p1,Priya,sherpa,forty-seven seconds,,'].join('\n');
+    const { people, problems, preserved } = parsePeopleCsv(text);
+    expect(people).toEqual([{ id: 'p1', name: 'Priya', role: 'sherpa' }]);
+    expect(problems).toHaveLength(1);
     expect(preserved).toEqual([]);
   });
 

@@ -1020,6 +1020,47 @@ describe('ingestFolder — one manifest and one roster per folder, the shallowes
     expect(manifest.event.title).toBe('Real race');
   });
 
+  /**
+   * A manifest written before `Person.pinned` existed says who the runner was
+   * in the `role` column and nowhere else. Without this the runner's lane
+   * quietly stops being first on a file nobody has touched — and unlike
+   * `people.csv`, a manifest has no header row to read the answer off, so
+   * `ingestFolder` has to ask the question of the objects. See
+   * `pinLegacyRunners`.
+   */
+  it('pins the runner from a manifest that predates the pinned field', async () => {
+    const legacy = JSON.stringify({
+      schema: SCHEMA_VERSION,
+      event: { title: 'Race', timezone: 'UTC' },
+      people: [{ id: 'crew', name: 'Ali', role: 'crew' }, { id: 'sam', name: 'Sam', role: 'Runner' }],
+      items: [],
+    });
+    const { manifest } = await ingestFolder([textFile('manifest.json', legacy)], { title: 'x' });
+    expect(manifest.people.map((p) => [p.id, p.pinned])).toEqual([
+      ['crew', undefined],
+      ['sam', true],
+    ]);
+  });
+
+  it('does not re-pin from a role once the manifest declares pinning', async () => {
+    // Someone deliberately unpinned the runner. Their own role cell must not
+    // force it back on.
+    const modern = JSON.stringify({
+      schema: SCHEMA_VERSION,
+      event: { title: 'Race', timezone: 'UTC' },
+      people: [
+        { id: 'crew', name: 'Ali', role: 'crew', pinned: true },
+        { id: 'sam', name: 'Sam', role: 'runner' },
+      ],
+      items: [],
+    });
+    const { manifest } = await ingestFolder([textFile('manifest.json', modern)], { title: 'x' });
+    expect(manifest.people.map((p) => [p.id, p.pinned])).toEqual([
+      ['crew', true],
+      ['sam', undefined],
+    ]);
+  });
+
   it('keeps the root roster, clock offsets and all', async () => {
     const { manifest } = await ingestFolder([
       textFile('people.csv', 'id,name,role,clock_offset\np,Priya,runner,\n'),
@@ -1406,6 +1447,28 @@ describe('reportUnsavedRosterEdits', () => {
         [{ id: 'p1', name: 'Google Pixel 8 Pro', clockOffset: '-PT4S' }], disk, 'people.csv',
       ),
     ).toHaveLength(1);
+  });
+
+  it('notices a lane pinned in this session but not on disk, and says which way', () => {
+    // Pinning is now the one roster edit that changes what the app DOES, so
+    // an unsaved one is exactly the kind worth naming.
+    const problems = reportUnsavedRosterEdits(
+      [{ id: 'p1', name: 'Google Pixel 8 Pro', pinned: true }], disk, 'people.csv',
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('their lane pinned');
+    expect(problems[0]).not.toContain('is now');
+  });
+
+  it('does not mistake an absent pinned for an unpinned one', () => {
+    // `undefined` and `false` both mean "not pinned", and unpinning a lane
+    // leaves one of them behind. Comparing them raw announced an edit
+    // nobody made.
+    expect(
+      reportUnsavedRosterEdits(
+        [{ id: 'p1', name: 'Google Pixel 8 Pro', pinned: false }], disk, 'people.csv',
+      ),
+    ).toEqual([]);
   });
 
   // The message used to be a rename either way, so a change that left the

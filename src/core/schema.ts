@@ -17,10 +17,21 @@ export type PersonId = string;
 export type ItemId = string;
 
 /**
- * Roles carry behavior, not just labeling: the runner's lane is pinned to
- * the top of the swimlanes and owns the course spine.
+ * What someone was at this event, in their own words.
+ *
+ * **Free text, and it carries NO behavior at all.** This was a four-value
+ * enum (`'runner' | 'crew' | 'friend' | 'other'`) whose only measurable
+ * effect was DESTROYING what the owner typed: a `people.csv` carrying `crew
+ * chief`, `runner` and `pacer` parsed to `runner` plus two blanks, and one
+ * Save then wrote those two cells empty.
+ *
+ * The enum survived as long as it did because `runner` was doing a second,
+ * unrelated job — deciding whose lane pinned to the top. That job now belongs
+ * to `Person.pinned`, which is why this can be free text safely: nothing reads
+ * a role to decide anything. See `SUGGESTED_ROLES` below, and CLAUDE.md's "A
+ * role says what someone WAS; `pinned` says whose lane goes on top".
  */
-export type Role = 'runner' | 'crew' | 'friend' | 'other';
+export type Role = string;
 
 export type MediaKind = 'photo' | 'video';
 
@@ -198,7 +209,34 @@ export type CourseRef =
 export interface Person {
   id: PersonId;
   name: string;
+  /**
+   * What they were — free text, purely descriptive. See `Role`.
+   *
+   * Deliberately NOT what decides whose lane is pinned; that is `pinned`
+   * below. Keeping the two apart is what lets this be anything a person
+   * types.
+   */
   role?: Role;
+  /**
+   * Whether this person's lane pins to the top of the swimlanes.
+   *
+   * The one field on a person that changes what the app DOES. It exists
+   * because `role` was doing two jobs at once — saying what someone was, and
+   * saying whose story the timeline tells — and only the second is something
+   * the app can act on. An ultra pins the runner; a wedding pins two people;
+   * a relay pins the whole team. None of that is expressible in a vocabulary
+   * of roles, and every attempt to express it there deletes somebody's label.
+   *
+   * **Several pinned people are legal**, and that is the point rather than a
+   * tolerated edge case: `orderPeople` (`./palette.ts`) moves all of them to
+   * the front, in roster order.
+   *
+   * In `people.csv` this is a `pinned` column holding the integer `1`, blank
+   * for everyone else — an integer because no other format survives a
+   * spreadsheet, the same rule the five date integers follow (see
+   * `./notes.ts`).
+   */
+  pinned?: boolean;
   /**
    * ISO-8601 duration to ADD to this person's device timestamps to reach true
    * time, e.g. "-PT47S" for a camera running 47 seconds fast. Applied only to
@@ -359,11 +397,24 @@ export type ValidationResult =
   | { ok: false; errors: string[]; warnings: string[] };
 
 /**
- * Exported so `people-csv.ts` validates against this exact list rather than
- * hand-copying it — a second copy is a second notion of what a manifest is,
- * which this project forbids outright (see the module doc comment).
+ * Roles this project's own vocabulary suggests — a SUGGESTION, never a gate.
+ *
+ * It was `ROLES`, and it was enforced: `validateManifest` refused a manifest
+ * naming any other role, and `parsePeopleCsv` blanked the cell and reported a
+ * problem. What that bought, measured across the whole repository, was
+ * nothing — `crew`, `friend` and `other` had zero reads anywhere outside the
+ * check itself, and the runner-toggle UI could only ever produce `runner` or
+ * no role at all. What it cost was real: the owner typed `crew chief` and
+ * `pacer` into `people.csv` and one Save wrote both cells blank.
+ *
+ * Renamed rather than repurposed in place, so no call site can keep treating
+ * it as a permitted-values list by accident. **Nothing in `src/` reads it
+ * today** — it is a documented vocabulary for the docs and for any future
+ * suggestion UI, and if that never arrives it should be deleted rather than
+ * quietly re-promoted into a check. Adding a value here does not make it
+ * special; removing one does not make it refused.
  */
-export const ROLES: readonly string[] = ['runner', 'crew', 'friend', 'other'];
+export const SUGGESTED_ROLES: readonly string[] = ['runner', 'crew', 'friend', 'other'];
 const KINDS: readonly string[] = ['photo', 'video'];
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -455,8 +506,27 @@ export function validateManifest(input: unknown): ValidationResult {
       if (typeof p['name'] !== 'string' || p['name'] === '') {
         errors.push(`${at}.name must be a non-empty string`);
       }
-      if (p['role'] !== undefined && !ROLES.includes(p['role'] as string)) {
-        errors.push(`${at}.role must be one of ${ROLES.join(', ')}`);
+      /*
+       * A role is any non-empty string — see `Role`. The only check left is
+       * the type, because a role that is a number or an object would render
+       * as garbage rather than as a label.
+       *
+       * A blank one is NORMALISED AWAY rather than reported, so "blank" and
+       * "absent" stay one thing. This mutates `input`, which is also what
+       * gets returned as `manifest` below, and that is the intent: the
+       * alternative is `''` reaching `reportUnsavedRosterEdits`
+       * (`viewer/media/ingest.ts`), which compares `mine.role !== p.role` and
+       * would announce a roster edit nobody made.
+       */
+      if (p['role'] !== undefined) {
+        if (typeof p['role'] !== 'string') {
+          errors.push(`${at}.role must be a string, e.g. "runner" or "crew chief"`);
+        } else if (p['role'].trim() === '') {
+          delete p['role'];
+        }
+      }
+      if (p['pinned'] !== undefined && typeof p['pinned'] !== 'boolean') {
+        errors.push(`${at}.pinned must be true or false`);
       }
       if (p['clockOffset'] !== undefined && typeof p['clockOffset'] !== 'string') {
         errors.push(`${at}.clockOffset must be an ISO-8601 duration, e.g. "-PT47S"`);
@@ -468,12 +538,16 @@ export function validateManifest(input: unknown): ValidationResult {
         }
       }
     });
-    const runners = peopleRaw.filter((p) => isObject(p) && p['role'] === 'runner');
-    if (runners.length > 1) {
-      warnings.push(
-        `${runners.length} people have role "runner"; only the first will be pinned to the top lane`,
-      );
-    }
+    /*
+     * There is deliberately NO warning about more than one pinned person.
+     *
+     * One used to fire for a second `role: "runner"`, because `orderPeople`
+     * pinned only the first and silently ignored the rest — the warning was
+     * describing a real loss. `pinned` does not lose anyone: every pinned
+     * person moves to the front, in roster order. A wedding pins two people
+     * and a relay pins the whole team, so this is the ordinary case now, and
+     * a warning on an ordinary case trains people to ignore the channel.
+     */
   }
 
   // ---- course ----

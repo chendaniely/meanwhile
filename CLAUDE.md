@@ -4,7 +4,7 @@
 
 As of 2026-07-30 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **872 tests pass** (`make check`).
+the race. **904 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -22,8 +22,8 @@ DIR=...`), and two doc guards that gate `make check`:
 `PROMPTS.md`). `make inspect` is additionally gated on the Node floor by
 `scripts/require-node.mjs`, because npm's `engines` field only warns.
 
-Also built: in-viewer notes and captions, people renaming and the runner
-role, and the Strava link/embed fallback. The Pages workflow is committed at
+Also built: in-viewer notes and captions, people renaming, free-text roles
+and pinned lanes, and the Strava link/embed fallback. The Pages workflow is committed at
 `.github/workflows/pages.yml`, and the deployed build carries Google
 Analytics gated to which of the three views is open and nothing else
 (`src/viewer/analytics.ts#trackView`, `make dev` sends none of it — see
@@ -495,7 +495,7 @@ Two controls for one action, under two names. The rules that came out of
 auditing every user-visible string:
 
 - **One control per action.** Opening, adding and saving all live in the top
-  bar. The reference panel has buttons of its own — rename, the runner-role
+  bar. The reference panel has buttons of its own — rename, the pinned-lane
   toggle, the unplaced tray's disclosure and "Copy the list", a note's jump
   and delete — but the rule is not "no buttons in the report," it is that
   none of them duplicates a top-bar action. A second control for the SAME
@@ -1037,8 +1037,8 @@ plain integer*, so every column added here is an integer or an IANA name.
 `notes*.csv`: `id, year, month, day, hour, minute, duration, tz,
 utc_offset_min, people, photo, author, text, written, deleted` then any
 column you added, then `schema`.
-`people.csv`: `id, name, role, clock_offset, also_known_as`, then any column
-you added, then `schema`.
+`people.csv`: `id, name, role, clock_offset, also_known_as, pinned`, then any
+column you added, then `schema`.
 
 **A per-row `schema` integer, and the check, in both files.** Blank means
 "the version this reader knows", so a hand-added row needs nothing typed. A
@@ -1215,7 +1215,7 @@ own `unguard` fix had just introduced:
    emits the full `NOTE_HEADERS` list, so a file that never had
    `utc_offset_min` comes back with it — blank on preserved rows, filled on
    readable ones. Same for `people.csv`'s `role`/`clock_offset`/
-   `also_known_as`.
+   `also_known_as`/`pinned`.
 5. **A foreign leading apostrophe is re-guarded on write.** A cell someone
    else typed as `'twas` now READS as `'twas` (that is the fix below) and is
    written back as `''twas`, because `cell()` must guard anything a
@@ -1460,8 +1460,8 @@ so a manifest migrates itself the first time it is saved after being opened.
 `items[].note` but does **not** strip `people` — a saved `manifest.json`
 still carries the full roster, `clockOffset` included, redundantly alongside
 `people.csv`. Nothing is silently lost: on load, `people.csv` wins when both
-are present (`peopleFromCsv ?? imported?.people ?? opts.existingPeople` in
-`ingestFolder()`). But the roster today lives in two files instead of one,
+are present (`peopleFromCsv ?? importedPeople ?? opts.existingPeople` in
+`ingestFolder()`, where `importedPeople` is the manifest's own roster). But the roster today lives in two files instead of one,
 unlike notes, which the design's own "What changes" table says should not be
 true. Worth closing the same way notes were closed, if picked up.
 
@@ -1886,6 +1886,101 @@ but an opaque string key (`Map`/`Set` keys throughout `state.ts`,
 existing ids keep their exact spelling, since a suffix would only ever be
 minted for a NEW colliding device, never retrofitted onto one already in
 use.
+
+### A role says what someone WAS; `pinned` says whose lane goes on top *(2026-07-30)*
+
+> "ok i've updated the roles now. feel free to use sentence / title case when
+> displaying"
+
+`Role` was a four-value enum — `'runner' | 'crew' | 'friend' | 'other'` —
+enforced in two places. The owner typed real roles into `people.csv` (`crew
+chief`, `runner`, `pacer`) and **two of the three were thrown away**:
+`parsePeopleCsv` blanked them and reported a problem, and executing one Save
+then wrote both cells empty. That is this file's own rule, "Refusing to READ a
+row is not permission to DELETE it", violated one level down — at a cell
+rather than at a row.
+
+**Measured before anything was changed, and it is the whole argument:**
+`crew`, `friend` and `other` had **zero** reads anywhere in the repository
+outside the enum's own validation, and the runner toggle in the ingest report
+could only ever produce `runner` or no role at all — so three of the four
+values were unreachable from the UI and inert in the code. The enum destroyed
+data and bought nothing.
+
+It survived as long as it did because `runner` was quietly doing a **second,
+unrelated job**: deciding whose lane pinned to the top of the swimlanes. That
+is what made "just make it free text" look risky — a free-text field cannot
+also be a switch. The owner cut it:
+
+> "we should then add a column in the people csv that just indicates if that
+> person should be pinned. then the roles don't matter and we can deal with
+> that later. we just care about who gets pinned"
+
+So they are two fields now:
+
+- **`role` is free text and carries NO behaviour.** Nothing anywhere compares
+  it to anything. `SUGGESTED_ROLES` (was `ROLES`) is a documented vocabulary
+  with **no reader in `src/`** — renamed rather than repurposed so no call
+  site can drift back into treating it as a gate. If no suggestion UI ever
+  wants it, delete it rather than quietly re-promoting it.
+- **`Person.pinned` is the one field on a person that changes what the app
+  does.** In `people.csv` it is a `pinned` column holding the integer `1`,
+  blank otherwise — never `true`/`TRUE`, per the standing rule that no format
+  survives a spreadsheet except a plain integer.
+
+**Several pinned people are legal, and that is the point rather than a
+tolerated edge case.** `orderPeople` (`palette.ts`) moves ALL of them to the
+front in roster order, where it used to move the first `role === 'runner'` and
+silently ignore the rest. The owner's stated case:
+
+> "ok we can generalize "runner" in the future and allow more roles. for
+> example if i want to use this same system for a wedding we'd have more roles
+> to highlight or add"
+
+Two consequences that are easy to undo by accident:
+
+- **The `N people have role "runner"; only the first will be pinned` warning
+  is DELETED**, not reworded. It described a real loss; there is no loss now,
+  and a warning that fires on an ordinary configuration — a wedding, a relay
+  — trains people to ignore the channel.
+- **`App.tsx` no longer clears anybody else's flag when you pin someone.** The
+  old handler enforced exactly one runner. Restoring that exclusivity would
+  take away the only thing this field was added for; `tests/roles-and-pinning.test.tsx`
+  mounts the real `App` and fails if it comes back.
+
+**Migration is derived once and then written down.** Every `people.csv` and
+`manifest.json` in existence says who the runner was in `role` and nowhere
+else, so `pinLegacyRunners` (`people-csv.ts`) pins a case-insensitive
+`runner` at read time and the next Save writes a real `pinned` column.
+**Keyed on whether the FILE mentions pinning at all, never per row** — once
+the column exists, a blank cell is an author saying "not pinned", and forcing
+it back on from their own role cell would be overriding a deliberate edit.
+`parsePeopleCsv` asks that of the header row; `ingestFolder` asks it of the
+JSON objects. The frozen fixture `tests/fixtures/csv-before-2026-07-30.ts`
+now reads with `pinned: true` on Priya — the one thing about it that reads
+differently than it used to, deliberately, and the fixture is still not
+regenerated.
+
+**Roles are displayed in SENTENCE case, through one function.**
+`displayRole` (`people-csv.ts`, beside `displayName`) uppercases the first
+character and touches nothing else: `crew chief` → `Crew chief`, never `Crew
+Chief`, and `DJI operator` is left alone rather than becoming `Dji operator`.
+A display rule that rewrites the middle of a word mangles initialisms, and
+this file is edited by hand. Shown beside the name in the ingest report's
+roster and in each lane label, **separately from the pin**, because they are
+now different facts. There is deliberately **no role input in the app**: a
+role is edited in `people.csv`, which is the entire reason that file is a
+spreadsheet.
+
+**Reversing this** means re-deriving both halves. Putting the vocabulary back
+means accepting that a hand-typed role is deleted by pressing Save — measured,
+not theoretical. Folding `pinned` back into `role` means one field doing two
+jobs again, which is what made the enum unremovable in the first place, and
+costs the wedding and relay cases outright. A per-person flag was the cheaper
+of the two designs considered: the alternative, an event-level
+`event.leadRoles?: string[]` naming which roles are pinned, keeps "whose lane
+is on top" as a property of a *label*, so renaming somebody's role silently
+unpins them.
 
 ### Analytics learns the view, and nothing else *(2026-07-30)*
 
@@ -2417,7 +2512,9 @@ Ask these. Do not answer them unilaterally.
 
 ### Answered in session 2 — do not re-ask
 
-`role` carries behavior (runner pinned top, owns the spine) · no-timestamp
+`role` carries behavior (runner pinned top, owns the spine) — **superseded
+2026-07-30**: a role is free text and carries nothing, and `Person.pinned` is
+what pins a lane; see "A role says what someone WAS" above · no-timestamp
 media goes to an unplaced tray · notes are written in-viewer and exported ·
 aesthetic is the brand's dark ramp · CLI is deferred so its language is moot ·
 lots of short video, treated as points with `duration` in the schema · 8

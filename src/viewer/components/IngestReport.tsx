@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { summarize, type GroupingInfo, type IngestSummary } from '../../core/assemble.ts';
 import { assignLaneColors, isOvercrowded, MAX_DISTINCT_PEOPLE } from '../../core/palette.ts';
-import { displayName } from '../../core/people-csv.ts';
+import { displayName, displayRole } from '../../core/people-csv.ts';
 import type { Manifest, Person, PersonId, TimeSource } from '../../core/schema.ts';
 import { TIME_SOURCE_RANK } from '../../core/schema.ts';
 import { formatDateTime, formatSpan } from '../../core/time.ts';
@@ -51,12 +51,21 @@ interface Props {
    * quietly doing nothing.
    */
   onRename?: (person: PersonId, name: string) => string | undefined;
-  onRole?: (person: PersonId, role: 'runner' | undefined) => void;
+  /**
+   * Pin or unpin a lane. Several people may be pinned at once — see
+   * `Person.pinned` in `core/schema.ts` — so this sets one person's flag and
+   * never clears anybody else's.
+   *
+   * There is deliberately no `onRole`. A role is free text edited in
+   * `people.csv`, which is the entire reason that file is a spreadsheet; the
+   * report shows it and does not offer to retype it here.
+   */
+  onPinned?: (person: PersonId, pinned: boolean) => void;
 }
 
 export function IngestReport({ manifest, grouping, range,
   onRename,
-  onRole,
+  onPinned,
 }: Props) {
   const summary = summarize(manifest, range);
   const colors = assignLaneColors(manifest.people);
@@ -108,20 +117,30 @@ export function IngestReport({ manifest, grouping, range,
                     rename these, and for a long time there was nowhere to do
                     it — an instruction with no control is worse than neither. */}
                 <RenameInput person={person} {...(onRename ? { onRename } : {})} />
+                {/* What they were, shown and not editable here: a role is
+                    free text and belongs to people.csv, where it can be typed
+                    in a spreadsheet. Separate from the pin beside it, because
+                    they are separate things now — "crew chief" says what
+                    somebody did, pinning says whose lane the timeline is read
+                    against. */}
+                {displayRole(person.role) && (
+                  <span className="report__role">{displayRole(person.role)}</span>
+                )}
                 <button
                   type="button"
-                  className={person.role === 'runner' ? 'report__tag report__tag--on' : 'report__tag'}
-                  aria-pressed={person.role === 'runner'}
-                  // `role` carries behaviour, not decoration: the runner's
-                  // lane pins to the top and owns the course spine.
+                  className={person.pinned ? 'report__tag report__tag--on' : 'report__tag'}
+                  aria-pressed={person.pinned === true}
+                  // The one field on a person that changes what the app does:
+                  // a pinned lane sits at the top of the swimlanes. Says "a"
+                  // rather than "the" because several lanes may be pinned.
                   title={
-                    person.role === 'runner'
-                      ? 'Runner — pins their lane to the top. Click to unmark.'
-                      : 'Mark as the runner — pins their lane to the top'
+                    person.pinned
+                      ? 'Pinned to the top of the swimlanes. Click to unpin.'
+                      : 'Pin their lane to the top of the swimlanes'
                   }
-                  onClick={() => onRole?.(person.id, person.role === 'runner' ? undefined : 'runner')}
+                  onClick={() => onPinned?.(person.id, person.pinned !== true)}
                 >
-                  runner
+                  pinned
                 </button>
                 <span className="report__count mw-mono">
                   {(perPerson.get(person.id) ?? 0).toLocaleString()}

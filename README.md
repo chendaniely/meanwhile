@@ -295,10 +295,12 @@ Run `make dev`, click **Open folder**, and:
    and follows what you scroll past, so you can see where each photo was
    taken without leaving the timeline.
 
-11. **Name people, mark the runner, caption photos.** The lanes start out
-   named after the phones that shot them; rename each one in the report.
-   Marking someone the runner pins their lane to the top. Any photo can be
-   captioned from the lightbox.
+11. **Name people, pin the lanes that matter, caption photos.** The lanes
+   start out named after the phones that shot them; rename each one in the
+   report. **Pinned** moves someone's lane to the top &mdash; the runner in a
+   race, both halves of a couple at a wedding, the whole team in a relay. You
+   can pin as many people as you like. Any photo can be captioned from the
+   lightbox.
 12. **Write a note at any time, with or without a photo.** Something happened
    that nobody photographed &mdash; a wrong turn, a nap in the car, a rough
    patch at 3am. Add it under the timeline and it appears in the feed in
@@ -398,7 +400,7 @@ rather than silently merging it into the original or losing it.
 tell which photos have something written about them without opening each one.
 
 **Getting your work back.** Click **Save** and you get a single zip file
-containing `notes.csv`, `people.csv` — the list of names, who's the runner,
+containing `notes.csv`, `people.csv` — the list of names, who's pinned,
 and any clock corrections, in the same spreadsheet-editable style — and
 `manifest.json`. Unzip it and drop all three into the folder with your
 photos. Next time you open that folder, every note, caption, name, and
@@ -416,9 +418,10 @@ The roster lives in its own spreadsheet, **`people.csv`**, right next to
 |---|---|
 | `id` | A stable identifier — the device slug meanwhile worked out (`google-pixel-8-pro`) or a folder name. Don't edit this by hand; renaming someone changes `name`, never `id`, which is what lets their notes and lane stay attached across a rename. |
 | `name` | The display name — what shows on the lane, the feed, the map, everywhere. Starts out as the phone model; rename it in the report to whoever was carrying it. |
-| `role` | `runner` for the one person whose lane pins to the top and who owns the course. Blank for everyone else. |
+| `role` | What this person was, in your own words — `runner`, `crew chief`, `pacer`, `mother of the bride`. Anything you type is kept exactly as typed; there is no list to pick from. It is shown beside their name and does nothing else. Blank is fine. |
 | `clock_offset` | How far this person's camera clock was off, as an ISO-8601 duration — `-PT47S` for a clock running 47 seconds fast. Leave it blank if you don't know. |
 | `also_known_as` | Earlier names this person has answered to, separated by semicolons, same as `people`/`author` in `notes.csv`. meanwhile fills this in for you the moment you rename someone (see below); you can also add to it by hand, e.g. if a crew member spells a name differently. |
+| `pinned` | Put a `1` here for anyone whose lane should sit at the top &mdash; the runner in a race, both halves of a couple at a wedding. Leave it blank for everyone else. As many people as you like can be pinned. Deliberately a plain `1` rather than `TRUE`, because a spreadsheet rewrites anything that looks like a yes/no and leaves a bare number alone. |
 | `schema` | Which version of this file layout the row is written in. Leave it blank on a row you add by hand and the site treats it as the current one. |
 
 **Any other column you add is kept.** Put a `pronouns` or `shirt_size`
