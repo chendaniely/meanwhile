@@ -99,6 +99,56 @@ hand-repairing a row has to find — `wallClockToInstant` builds a naive
 timestamp ending `:00` so there is nowhere for a `second` to go, and these are
 times a person types, where minute precision is the right precision.
 
+### `event.csv`, as a codec — nothing reads it yet
+
+The second step of replacing `manifest.json` with a set of CSVs. `event.csv`
+carries the event itself: its title, its timezone, the crop, and how the course
+is supplied. `src/core/event-csv.ts` is a pure `parseEventCsv` /
+`formatEventCsv` pair with 51 tests, and **nothing imports it** — `ingest.ts`,
+`App.tsx` and the save path are untouched, so the site still keeps all of this
+in `manifest.json`. Wiring is a later step.
+
+Two columns, `key` and `value`, one setting per row, rather than the single
+wide row every other file in the set would imply. There is exactly one event,
+and a wide file would put twenty-odd headers side by side and make somebody
+scroll horizontally to find `timezone`; a new setting also appends a row rather
+than a column, so a hand-added key lands somewhere obvious.
+
+The crop is the same seven timestamp columns `notes*.csv` uses, twice, prefixed
+`range_from_` and `range_to_`, resolved through the `wallclock.ts` ladder above
+with a noun of `event` so a problem names this file rather than `notes.csv`.
+
+The rule the module exists for: **a key this build knows the name of but cannot
+interpret is preserved, not just an unknown one.** A `range_from_day` of 32, a
+`range_to_` block missing an integer, a `course_kind` that is not one of the
+three — each is reported and written straight back out, because the alternative
+is that the reader drops it, the writer only writes what parsed, and one Save
+puts the crop or the course off disk. That is the same failure
+`src/core/schema.ts` already records for `course.url`, whose cost it names as
+the crop, every marker, the title, the timezone and every `timeSource: 'manual'`
+placement. The crop is preserved as a pair, since `event.range` is two instants
+or it is nothing and preserving only the broken end would take the good one
+with it.
+
+Also: unknown keys round-trip including blank ones; a duplicated key takes the
+last value and says so, because silently picking one is how an edit disappears;
+`schema` is per file here rather than per row, since `event.csv` is not
+row-bound; a missing header row is reported and read as data, because in a
+two-column key/value file the header is the one line that can be mistaken for a
+setting; a `course_url` failing the `https:` allowlist stays a warning, via the
+same `course-url.ts` the manifest validator uses; and there is no `media_base`
+key, because `manifest.media` is read nowhere in `src/` and a key that
+configures nothing is one somebody fills in and expects to work.
+
+`instantPartsInZone` moved from `notes.ts` into `wallclock.ts` alongside it.
+The read half of the format was already shared; keeping the write half private
+to one file is how one file's midnight gets written as the other's 24:00.
+
+No owner prompt is quoted here because there was none to quote — this step was
+specified in a task brief rather than asked for directly, and inventing a
+quotation would poison the source `scripts/check-owner-quotes.mjs` checks
+against.
+
 ## 0.4.0 — 2026-07-30 — a role says what someone was, and a course URL has to earn its link
 
 ### A role is free text; a new `pinned` column decides whose lane goes on top

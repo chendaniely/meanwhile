@@ -289,3 +289,71 @@ export function wallClockToInstant(
     `T${pad(parts.h, 2)}:${pad(parts.mi, 2)}:00`;
   return zonedToInstant(naive, zone);
 }
+
+/**
+ * The other direction: an instant back into the five calendar integers, read
+ * in `timeZone` and unpadded — the exact inverse of the naive-string
+ * construction in `wallClockToInstant`.
+ *
+ * Here rather than private to one writer for the same reason `resolveZoned` is:
+ * `notes*.csv` and `event.csv` both have to turn an instant into these five
+ * cells, and a second copy of this is how one file's 00:00 is written as the
+ * other's 24:00. The read half of the format already lives in this module; the
+ * write half belongs beside it or the two drift apart a fix at a time.
+ *
+ * Two details about the options, both MEASURED here rather than assumed — the
+ * comment this replaced said `hour: 'numeric'` is "what keeps these unpadded",
+ * and that is false:
+ *
+ *   - **`year: 'numeric'` is the load-bearing one.** `'2-digit'` renders 2026
+ *     as `"26"`, which survives the `Number` below as 26 and is then refused by
+ *     `readCalendarParts` (which demands four digits, because a year of 26 is
+ *     the single most likely mistype and `Date.UTC(26, …)` silently means
+ *     1926).
+ *   - **The other four do NOT control padding; returning numbers does.** Under
+ *     `hourCycle: 'h23'` this runtime renders `hour: 'numeric'` as `"07"`
+ *     already — padded — and `'2-digit'` changes nothing for month, day, hour
+ *     or minute once `Number` has been through it. What actually writes `7`
+ *     rather than `07` into the file is the caller's `String()` over the number
+ *     this returns. Callers must therefore keep returning these as integers;
+ *     the format options will not save them.
+ *
+ * `% 24` is defensive and is NOT exercised on this runtime: midnight under
+ * `hourCycle: 'h23'` measures as `"00"` here. It guards the claim that some ICU
+ * builds render it as `"24"`, which would be refused by `readCalendarParts`
+ * (hour runs 0–23) and so would write a crop edge or a note landing exactly on
+ * midnight in a shape this same module cannot read back. Unverified against
+ * such a build; cheap enough to keep, and no test can bite on it here.
+ *
+ * Callers must check the zone is resolvable FIRST — `Intl.DateTimeFormat`
+ * throws a bare `RangeError` on something like `MDT`, and a save that fails
+ * with a stack trace leaves no file and no message. `zoneOffsetMinutes`
+ * returning null is that check; see `noteToRow` and `formatEventCsv`.
+ */
+export function instantPartsInZone(
+  instant: number,
+  timeZone: string,
+): { year: number; month: number; day: number; hour: number; minute: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+  }).formatToParts(new Date(instant));
+
+  const get = (type: string): number => {
+    const p = parts.find((x) => x.type === type);
+    return p ? Number(p.value) : NaN;
+  };
+
+  return {
+    year: get('year'),
+    month: get('month'),
+    day: get('day'),
+    hour: get('hour') % 24,
+    minute: get('minute'),
+  };
+}

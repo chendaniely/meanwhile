@@ -4,16 +4,21 @@
 
 As of 2026-07-30 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **930 tests pass** (`make check`).
+the race. **984 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
 `metadata.ts`, `assemble.ts`, `palette.ts`, `window.ts`, `state.ts`,
 `course.ts`, `course-url.ts`, `csv.ts`, `wallclock.ts`, `notes.ts`,
-`people-csv.ts`, `timeline.ts` — `wallclock.ts` is the seven spreadsheet-safe
-timestamp columns (`year, month, day, hour, minute, tz, utc_offset_min`) and
-the ladder that resolves them, lifted out of `notes.ts` so every CSV in the
-set reads one wall clock as one instant. Viewer: folder/file
+`people-csv.ts`, `event-csv.ts`, `timeline.ts` — `wallclock.ts` is the seven
+spreadsheet-safe timestamp columns (`year, month, day, hour, minute, tz,
+utc_offset_min`), the ladder that resolves them, and `instantPartsInZone` for
+the write direction, lifted out of `notes.ts` so every CSV in the set reads
+and writes one wall clock as one instant. **`event-csv.ts` is a tested pure
+codec and NOTHING READS IT YET** — `ingest.ts`, `App.tsx` and the save path
+are untouched, so `event.csv` is not a format this site loads or writes; see
+"`event.csv` is a codec, not yet a file" in the decision record. Viewer:
+folder/file
 picking, ingest report, the media pipeline, the two-handle time window with
 density histogram, the feed, the swimlanes with a moment strip and notes in
 the lanes, the lightbox, the unplaced tray, and the **course view** — Leaflet map with
@@ -1166,6 +1171,74 @@ they still produce the same instants, ids and text — then that saving them
 repairs the shape while saying the same thing. **Do not regenerate it:** a
 test that rebuilds its own input cannot catch a reader and a writer drifting
 together.
+
+### `event.csv` is a codec, not yet a file *(2026-07-31)*
+
+`src/core/event-csv.ts` reads and writes the event itself — title, timezone,
+crop, course — as a two-column `key,value` CSV. **Nothing imports it.**
+`ingest.ts`, `App.tsx` and the save path are untouched, so this site still
+loads and writes `manifest.json` for all of that and no `event.csv` is
+produced or read anywhere. Wiring is a later task. Do not cite this as a
+shipped format.
+
+Key/value rather than one wide row, which every other file in the set uses:
+there is exactly one event, and a single-row file would put twenty-odd
+headers side by side and make somebody scroll horizontally to find
+`timezone`. It also means a new setting appends a ROW rather than a column,
+so a hand-added key lands somewhere obvious.
+
+**The crop is the same seven timestamp columns `notes*.csv` uses**, twice,
+prefixed `range_from_` and `range_to_`, resolved through `resolveZoned` with
+a `noun` of `event` so a problem names this file rather than `notes.csv`.
+`resolveZoned` reads `row.tz` and `row.utc_offset_min` by literal name — that
+is deliberate, per `wallclock.ts`, so `utc_offset_min` has one spelling
+across the whole file set — so the reader maps `range_from_tz` onto `tz`
+before calling. No `second`: `wallClockToInstant` builds a naive timestamp
+ending `:00`, and these are times a person types.
+
+Five decisions worth keeping:
+
+- **A key this build KNOWS but cannot interpret is preserved, not just an
+  unknown one.** `range_from_day,32`, a `range_to_` block missing an integer,
+  a `course_kind` that is not one of the three — each is reported AND kept
+  verbatim in `preserved`, and written straight back. This is the same rule
+  as "Refusing to READ a row is not permission to DELETE it" below, and the
+  loss it prevents is the one `schema.ts` already names: the crop, every
+  marker, the title, the timezone and every `timeSource: 'manual'` placement.
+  **The crop is preserved as a PAIR** — preserving only the broken end would
+  leave the good one with nothing to be written from, since `event.range` is
+  two instants or it is nothing, so half the crop would go off disk while the
+  file still reported a problem about the other half.
+- **On write the model wins and `preserved` only fills the gaps it leaves**,
+  because a preserved value exists precisely where the model has none;
+  overriding a value the author has since set would be the opposite of
+  preservation. `schema` is the single exception, and inverted: a file that
+  declared a version this build refused must come back declaring it, or the
+  save both asserts something untrue and erases the marker that made the
+  refusal legible.
+- **`schema` is per FILE here, not per row.** `notes*.csv` and `people.csv`
+  merge by row-bind, so a row from an older copy has to carry its own
+  version; there is exactly one event and one `event.csv`, so one declaration
+  governs it. `schemaCellProblem` is still reused rather than reimplemented.
+- **A missing header row is reported and read as data.** In a two-column
+  key/value file the header is the one line that can be mistaken for a
+  setting, so a file that lost it would otherwise have its first setting
+  silently eaten as column names by `parseCsv`.
+- **A `course_url` failing the `https:` allowlist stays a WARNING**, via
+  `course-url.ts`. Do not re-promote it — `schema.ts:577` records the commit
+  where it was an error and what that cost.
+
+**There is no `media_base` key.** `manifest.media` is read nowhere in `src/`,
+and a key that configures nothing is one somebody fills in and then expects
+to work. Unknown keys round-trip, so it can be added later with no migration.
+
+**One asymmetry, recorded rather than fixed:** `EventInfo.range` is a pair of
+ISO instants with nowhere to keep a zone NAME, so the crop is written in
+`event.timezone` and a hand-typed `range_from_tz` naming a different zone is
+rewritten to the event's on the next save. The instant round-trips exactly —
+`utc_offset_min` is computed from the instant in that zone — so nothing moves;
+only the label changes. `notes*.csv` does not have this, because `Note.tz`
+exists. Closing it means adding a field to `EventInfo` in `schema.ts`.
 
 ### Refusing to READ a row is not permission to DELETE it *(pre-release gate)*
 

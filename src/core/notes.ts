@@ -39,8 +39,8 @@ import {
   CSV_SCHEMA, nfc, parseCsv, preservedHeaders, schemaCellProblem, type PreservedRow,
 } from './csv.ts';
 import {
-  nonEmpty, readCalendarParts, readOffsetCell, resolveZoned, wallClockToInstant,
-  type Resolved,
+  instantPartsInZone, nonEmpty, readCalendarParts, readOffsetCell, resolveZoned,
+  wallClockToInstant, type Resolved,
 } from './wallclock.ts';
 import type { Item } from './schema.ts';
 
@@ -595,41 +595,6 @@ export function noteToRow(note: Note, eventTimezone?: string): Record<string, st
 
   if (note.extra) Object.assign(row, note.extra);
   return row;
-}
-
-/**
- * Render an instant as calendar integers in `timeZone`, unpadded — the
- * inverse of the naive-string construction in `resolveInstant`.
- *
- * `hour: 'numeric'` (not `'2-digit'`) is what keeps these unpadded; `% 24`
- * folds away the "24" some ICU builds render for midnight under `h23`.
- */
-function instantPartsInZone(
-  instant: number,
-  timeZone: string,
-): { year: number; month: number; day: number; hour: number; minute: number } {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-  }).formatToParts(new Date(instant));
-
-  const get = (type: string): number => {
-    const p = parts.find((x) => x.type === type);
-    return p ? Number(p.value) : NaN;
-  };
-
-  return {
-    year: get('year'),
-    month: get('month'),
-    day: get('day'),
-    hour: get('hour') % 24,
-    minute: get('minute'),
-  };
 }
 
 // ---------------------------------------------------------------------------
