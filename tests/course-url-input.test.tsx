@@ -44,13 +44,30 @@ afterEach(() => {
  * loop is the whole mechanism of the bug, so the harness has to reproduce it
  * rather than stub it out.
  */
-function mount(): { stored: () => string; input: () => HTMLInputElement } {
-  let stored = '';
+function mount(initial = ''): {
+  stored: () => string;
+  input: () => HTMLInputElement;
+  commits: string[];
+} {
+  let stored = initial;
+  const commits: string[] = [];
 
   function Harness() {
-    const [value, setValue] = useState('');
+    const [value, setValue] = useState(initial);
     stored = value;
-    return <CourseUrlInput value={value} onCommit={(url) => setValue(normalizeCourseUrl(url))} />;
+    return (
+      <CourseUrlInput
+        value={value}
+        onCommit={(url) => {
+          // Mirrors `updateCourse`: normalise, store, and return what was
+          // stored so the box can resync even when nothing re-renders.
+          const stored = normalizeCourseUrl(url);
+          setValue(stored);
+          commits.push(url);
+          return stored;
+        }}
+      />
+    );
   }
 
   act(() => root.render(<StrictMode><Harness /></StrictMode>));
@@ -59,7 +76,7 @@ function mount(): { stored: () => string; input: () => HTMLInputElement } {
     if (!(el instanceof HTMLInputElement)) throw new Error('input not found');
     return el;
   };
-  return { stored: () => stored, input };
+  return { stored: () => stored, input, commits };
 }
 
 /**
@@ -94,6 +111,10 @@ function typeText(el: HTMLInputElement, text: string) {
  */
 function blur(el: HTMLInputElement) {
   act(() => el.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
+}
+
+function focus(el: HTMLInputElement) {
+  act(() => el.focus());
 }
 
 function press(el: HTMLInputElement, key: string) {
@@ -166,16 +187,90 @@ describe('the course URL box', () => {
     typeText(input(), 'strava.com/x');
     blur(input());
 
+    // FOCUS FIRST. Without it this test could not see the thing it names:
+    // `.blur()` on an unfocused element is a no-op in jsdom, so planting
+    // `e.currentTarget.blur()` in the Escape handler passed the whole suite.
+    // Focused, the planted call fires a real focusout, React's onBlur runs
+    // `commit` in the same event-handling pass, and — because React batches
+    // the `setDraft` this handler just queued — `commit` reads the ABANDONED
+    // draft from this render's closure and commits exactly what Escape was
+    // meant to discard. That is the trap `RenameInput` documents.
+    focus(input());
     typeText(input(), '/oops');
     press(input(), 'Escape');
     expect(input().value).toBe('https://strava.com/x');
     expect(stored()).toBe('https://strava.com/x');
 
-    // The trap `RenameInput` documents: Escape must not blur, or the blur
-    // handler commits the abandoned draft from the stale closure. A blur
-    // arriving afterwards commits the reverted value, which is a no-op.
+    // A blur arriving afterwards commits the reverted value, which is a
+    // no-op — and must not re-fire `onCommit` either.
     blur(input());
     expect(stored()).toBe('https://strava.com/x');
+  });
+
+  it('leaves a GPX course alone when focused and blurred with no edit', () => {
+    /*
+     * `courseUrlOf` puts a GPX `src` into this same box, so the value sitting
+     * in it is often `route.gpx` — which contains a dot, and therefore
+     * normalises to `https://route.gpx`. Without `commit`'s
+     * `draft === value` guard, merely tabbing through the field replaces the
+     * whole GPX course with a Strava link:
+     *   {kind:'gpx', src:'route.gpx'} -> {kind:'strava-link', url:'https://route.gpx'}
+     * Removing that guard passed all 869 tests before this one existed.
+     */
+    const { stored, input, commits } = mount('route.gpx');
+
+    focus(input());
+    blur(input());
+    press(input(), 'Enter');
+
+    expect(commits).toEqual([]);
+    expect(stored()).toBe('route.gpx');
+    expect(input().value).toBe('route.gpx');
+  });
+
+  it('resyncs the box when the committed value normalises to what is stored', () => {
+    /*
+     * The resync effect watches `value`, so it only runs when `value`
+     * CHANGES. When a commit normalises back to the value already held,
+     * nothing re-renders — and the box kept the un-normalised text
+     * permanently, with `draft !== value` true forever so every later
+     * focusout re-fired `onCommit`. Not lossy, but the field misreported what
+     * Save would write.
+     */
+    const { stored, input, commits } = mount();
+
+    // Case B from the report: trailing whitespace, which normalises away.
+    typeText(input(), 'https://www.strava.com/activities/1');
+    blur(input());
+    expect(stored()).toBe('https://www.strava.com/activities/1');
+
+    typeText(input(), '   ');
+    blur(input());
+    expect(stored()).toBe('https://www.strava.com/activities/1');
+    expect(input().value).toBe('https://www.strava.com/activities/1');
+
+    // Two distinct edits, two commits — not four.
+    expect(commits).toHaveLength(2);
+
+    // And a further blur with nothing changed adds none.
+    blur(input());
+    expect(commits).toHaveLength(2);
+  });
+
+  it('resyncs after retyping a value that normalises to the stored one', () => {
+    // Case A from the report: retype `strava.com/x` over `https://strava.com/x`.
+    const { stored, input, commits } = mount();
+    typeText(input(), 'strava.com/x');
+    blur(input());
+    expect(stored()).toBe('https://strava.com/x');
+
+    act(() => setValue(input(), 'strava.com/x'));
+    blur(input());
+    expect(input().value).toBe('https://strava.com/x');
+    expect(stored()).toBe('https://strava.com/x');
+
+    blur(input());
+    expect(commits).toHaveLength(2);
   });
 
   it('leaves placeholder words alone rather than making them links', () => {

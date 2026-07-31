@@ -95,6 +95,13 @@ export function CourseFallback({ course }: Props) {
    * `target="_blank"`, so the address bar never changed to give it away. The
    * visible text must name the destination the guard actually permitted, not
    * the one the field is usually used for.
+   *
+   * `hostOf` reports the authority AS WRITTEN, which is not always the host
+   * the browser dials: numeric IPv4 forms like `010.010.010.010` (8.8.8.8) or
+   * `0x7f.1` (127.0.0.1) resolve elsewhere. Not a bypass — none can equal
+   * strava.com, so the embed allowlist is unaffected — but the label can
+   * differ from the destination for those. See `core/course-url.ts` and
+   * `TODO.md`.
    */
   const host = hostOf(course.url);
 

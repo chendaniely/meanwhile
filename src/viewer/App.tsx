@@ -103,18 +103,44 @@ function courseUrlOf(manifest: Manifest): string {
  * in the same event-handling pass, and React's batching means `commit` reads
  * the stale draft and commits the very edit Escape was meant to abandon.
  */
-export function CourseUrlInput({ value, onCommit }: { value: string; onCommit: (url: string) => void }) {
+export function CourseUrlInput({
+  value,
+  onCommit,
+}: {
+  value: string;
+  /** Applies the edit and returns what was actually stored. */
+  onCommit: (url: string) => string;
+}) {
   const [draft, setDraft] = useState(value);
 
-  // Picks up a commit that landed, or a re-ingest that replaced the course.
-  // Does NOT fire per keystroke: `value` only changes from OUTSIDE this
-  // component.
+  // Picks up a re-ingest that replaced the course, or any other change from
+  // OUTSIDE this component. Does NOT fire per keystroke.
+  //
+  // It is NOT enough on its own to keep the box honest after a commit: it
+  // watches `value`, so it only runs when `value` CHANGES. Commit
+  // `strava.com/x` when `https://strava.com/x` is already stored and the
+  // normalised result is identical, nothing re-renders, and the box would
+  // keep showing the un-normalised text for good — with `draft !== value`
+  // then true forever, so every later focusout re-fired `onCommit`. Trailing
+  // whitespace did the same. Never lossy (the stored value was always right)
+  // but the field misreported what Save would write, which is the whole class
+  // this control was rewritten to close.
   useEffect(() => {
     setDraft(value);
   }, [value]);
 
   const commit = () => {
-    if (draft !== value) onCommit(draft);
+    // The guard is load-bearing, not an optimisation. `courseUrlOf` puts a
+    // GPX `src` in this box, so a bare focus-and-blur with no edit at all
+    // would otherwise call `onCommit('route.gpx')` — and `route.gpx` contains
+    // a dot, so it normalises to `https://route.gpx` and REPLACES the whole
+    // GPX course with a Strava link. Pinned by "leaves a GPX course alone
+    // when the field is focused and blurred with no edit".
+    if (draft === value) return;
+    // Resync to what was stored, not to `draft`: `onCommit` normalises, and
+    // the box must show what will be saved. See the effect above for why this
+    // cannot be left to it.
+    setDraft(onCommit(draft));
   };
 
   return (
@@ -555,8 +581,14 @@ export function App() {
    * activity URL and the embed is an opaque iframe either way. Only a GPX
    * gives the spine. Setting one here at least records the reference.
    */
-  const updateCourse = (url: string) => {
-    if (stage.name !== 'loaded') return;
+  const updateCourse = (url: string): string => {
+    // Returns what was STORED, so `CourseUrlInput` can put the box back in
+    // step even when the normalised value happens to equal the one already
+    // held — in which case nothing re-renders and its resync effect, which
+    // watches `value`, never fires. Returning it keeps one normaliser rather
+    // than teaching the component to run its own.
+    const trimmed = normalizeCourseUrl(url);
+    if (stage.name !== 'loaded') return trimmed;
     const manifest: Manifest = { ...stage.manifest };
     // Normalised, not merely trimmed. The ordinary way to fill this box is to
     // copy the address bar and lose the scheme — `strava.com/activities/123` —
@@ -565,12 +597,12 @@ export function App() {
     // `https://` only when doing so turns something the guard refuses into
     // something it accepts, so an explicit `http://` is left exactly as typed
     // rather than silently upgraded to a different destination.
-    const trimmed = normalizeCourseUrl(url);
     if (!trimmed) delete manifest.course;
     else if (/\/embed\//.test(trimmed)) manifest.course = { kind: 'strava-embed', url: trimmed };
     else manifest.course = { kind: 'strava-link', url: trimmed };
     previous.current = manifest;
     setStage({ ...stage, manifest });
+    return trimmed;
   };
 
   /**

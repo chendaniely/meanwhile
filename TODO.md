@@ -453,3 +453,83 @@ an apostrophe at the start of a cell, and nothing else. See CLAUDE.md's
 was a third candidate, and it needed no migration at all. The bullet above
 had already proved why — a file meanwhile wrote carries `''twas`, not
 `'twas` — and the conclusion simply did not follow it through.)*
+
+## A link's LABEL can differ from where it dials *(accepted 2026-07-30)*
+
+`hostOf` (`src/core/course-url.ts`) reports a URL's authority **as written**,
+and `CourseFallback` renders that string as the link's visible text ("Open the
+activity on www.strava.com"). Numeric IPv4 forms stay ASCII, pass the
+authority charset, and resolve to something else entirely. Measured against
+the WHATWG parser over 41 hosts `hostOf` accepts, **22 differ**:
+
+| written | dialled |
+|---|---|
+| `010.010.010.010` | **8.8.8.8** |
+| `0300.0250.0.1` | **192.168.0.1** |
+| `0x7f.1` | 127.0.0.1 |
+| `2130706433` | 127.0.0.1 |
+| `0177.0.0.1` | 127.0.0.1 |
+| `1.2.3` | 1.2.0.3 |
+| `1.1` | 1.0.0.1 |
+| `0x8080808` | 8.8.8.8 |
+| `1234567890` | 73.150.2.210 |
+
+**Treat that count as a property of the sample, not of the code.** It is
+"how many numeric forms were in the list", and every ordinary hostname in it
+matched. The finding is the CLASS, which is: any authority the WHATWG parser
+reads as an IPv4 number — decimal, octal, hex, or short-form — displays one
+way and dials another.
+
+**This is not a security bypass and must not be written up as one.** None of
+these forms can equal `strava.com`, so the embed allowlist — the thing that
+decides what gets loaded *into* the page — is completely unaffected. What is
+affected is honesty of the label on a link the reader has to click
+deliberately.
+
+Not fixed because the fix is an IPv4 canonicaliser: a second address parser,
+in the security-sensitive module, for addresses nobody pastes into a field
+labelled "Strava activity". The cheaper half-measure — refusing any authority
+whose last label is all digits, or which contains `0x`/leading zeros — is
+worth considering if this is ever picked up, since no real course URL looks
+like that.
+
+## The course field shows a GPX path, and editing it destroys the reference *(found 2026-07-30, pre-existing)*
+
+`courseUrlOf` (`App.tsx`) returns `course.src` for a `gpx` course, so the box
+labelled `Strava activity (optional)` displays `route.gpx` whenever a
+track is loaded. Two problems, neither introduced by the URL-guard work:
+
+- the label is wrong for what is being shown;
+- a real edit commits through `updateCourse`, which only ever writes
+  `strava-link` or `strava-embed` — so typing in that box **replaces the GPX
+  course with a Strava reference**, discarding the spine.
+
+A bare focus-and-blur is safe: `CourseUrlInput`'s `draft === value` guard
+means an uncommitted visit writes nothing, and
+`tests/course-url-input.test.tsx` pins exactly that. It is a deliberate edit
+that does the damage.
+
+Fixing it properly is a question about what that control is *for* — show the
+track's filename read-only and keep the URL box separate, or make one field
+that understands both kinds — which is a design decision for the owner rather
+than a patch.
+
+## A rename report sorts behind a manifest advisory *(accepted 2026-07-30)*
+
+`ingest.ts` deliberately puts `manifestWarnings` LAST in `noteProblems`, so
+an advisory never buries a report that something was discarded. But
+`renamePerson` (`App.tsx`) appends `result.reassigned` to `noteProblems`
+*after* ingest has finished — and that IS a "something was overridden" report:
+it names both people and how many notes moved between them.
+
+So a session that renames someone into a name-collision, in a folder whose
+manifest also drew an advisory, reads the advisory first. The ordering test in
+`tests/ingest.test.ts` cannot see this, because it only exercises
+`ingestFolder`; the append happens a layer up.
+
+Not fixed because the honest fix is not a re-sort at the append site — it is
+for `noteProblems` to carry a severity or a kind per entry, so ordering is a
+property of the list rather than of who appended last. That is a small
+refactor of a channel several call sites write to, and it should be done once,
+deliberately, rather than by inserting a second sort.
+

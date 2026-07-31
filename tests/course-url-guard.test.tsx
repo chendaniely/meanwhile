@@ -282,7 +282,9 @@ describe('course-url: validateManifest', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     // Permitted by design — meanwhile does not claim to know which sites are
-    // safe to visit. The link's own TEXT names the host; see the render tests.
+    // safe to visit. The link's own TEXT names the host the URL parses to
+    // (not necessarily the host dialled — see `hostOf` on numeric IPv4);
+    // see the render tests.
     expect(r.warnings.join(' ')).not.toMatch(/connect\.garmin\.com/);
   });
 
@@ -327,7 +329,7 @@ describe('course-url: what CourseFallback actually renders', () => {
     );
   });
 
-  it('names the ACTUAL host in the link text, never a hardcoded "Strava"', () => {
+  it('names the host the URL parses to, never a hardcoded "Strava"', () => {
     // The phishing shape: an emailed manifest whose link reads "Open the
     // activity on Strava" and goes to evil.test, with target="_blank" so the
     // address bar never changes to give it away.

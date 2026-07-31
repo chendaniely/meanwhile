@@ -125,7 +125,8 @@ the author said to go.
 **Two user-visible strings were lying.** The link read "Open the activity on
 Strava" whatever the URL was, with `target="_blank"` so the address bar never
 corrected it — an emailed manifest could render a Strava-labelled link to
-`https://evil.test/login`. It names the actual host now. And an embed refused
+`https://evil.test/login`. It names the host the URL parses to now (not
+necessarily the host dialled — see the IPv4 note below). And an embed refused
 for its HOST also printed "a plain activity URL cannot be embedded", which is
 false of a URL containing `/embed/`; each refusal explains only itself.
 
@@ -189,6 +190,52 @@ not a bypass, since neither can equal strava.com, but a label/destination
 mismatch now that the host is shown as link text, and corrected rather than
 papered over with an IPv4 canonicaliser); and a mutation count in `TODO.md`
 had gone stale the same day it was written.
+
+#### Follow-ups after the review passed
+
+The scoped review returned ship; these are the four small things it found on
+the way, plus three gaps recorded rather than fixed.
+
+**The box could show a stale draft over the stored value.** Its resync effect
+watches `value`, so it only runs when `value` CHANGES — and a commit that
+normalises back to the value already stored changes nothing. The box then kept
+the un-normalised text for good, and because its "has this been edited" test
+compares draft against value, every later focusout re-fired the commit: four
+commits for two edits. Never lossy, but the field misreported what Save would
+write, which is the class this control was rewritten to close. It now resyncs
+to what was actually stored — `updateCourse` returns that, so there is still
+one normaliser rather than a second copy in the component.
+
+**The "has this been edited" test turned out to be load-bearing and
+untested.** The same box shows a GPX course's filename, so with a track loaded
+it holds `route.gpx` — which contains a dot, and therefore normalises to
+`https://route.gpx`. Without that test, tabbing through the field with no edit
+at all replaced the whole GPX course with a Strava link. Removing it passed
+all 869 tests; there is now one that fails.
+
+**The Escape test did not guard the trap it named.** It asserted that Escape
+must not blur — the trap that makes the commit handler read the abandoned
+draft — but never focused the field, so planting the bug was a no-op in the
+test environment and passed the entire suite. It focuses first now, and the
+planted bug fails it.
+
+**A corrected claim had survived in the decision record.** `CLAUDE.md` still
+said the link text "names the ACTUAL host", which the module comment already
+documents as false for numeric IPv4 forms — and it said it in the paragraph
+reasoning about phishing, where the caveat matters most. This is the "fixed in
+one place while copies survive" pattern `CLAUDE.md` names as its own recurring
+failure, so the fix was to grep for the meaning and check every hit: five
+sites carried it, in four files, and all five now say "the host the URL parses
+to".
+
+Recorded in `TODO.md` and deliberately not fixed: the IPv4 label/destination
+class in full (22 of 41 accepted hosts differ, and `010.010.010.010` dials
+8.8.8.8 while `0300.0250.0.1` dials 192.168.0.1 — neither can equal
+strava.com, so the embed allowlist is untouched); the fact that a field
+labelled "Strava activity (optional)" displays a GPX path at all, and that a
+deliberate edit to it discards the track reference; and that a rename's
+reassignment report is appended after ingest and so sorts behind the manifest
+advisory that ingest deliberately puts last.
 
 ### A leading apostrophe someone else typed is no longer eaten
 

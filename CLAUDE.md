@@ -4,7 +4,7 @@
 
 As of 2026-07-30 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **869 tests pass** (`make check`).
+the race. **872 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -1724,12 +1724,32 @@ Two things that make the warning real rather than decorative:
   a time. A pure test of a function a component feeds back into itself proves
   nothing about the loop.
 
-**The link text names the ACTUAL host.** `safeHref` permits any https host by
-design, but the anchor read "Open the activity on Strava" whatever the URL
-was, with `target="_blank"` so the address bar never corrected it: an emailed
-manifest could render a Strava-labelled link to `https://evil.test/login`.
-Text that asserts a destination the guard does not enforce is a phishing
-primitive, not a wording problem.
+**The link text names the host the URL PARSES to, not a hardcoded "Strava".**
+`safeHref` permits any https host by design, but the anchor read "Open the
+activity on Strava" whatever the URL was, with `target="_blank"` so the
+address bar never corrected it: an emailed manifest could render a
+Strava-labelled link to `https://evil.test/login`. Text that asserts a
+destination the guard does not enforce is a phishing primitive, not a wording
+problem.
+
+**It is NOT the host that will be dialled, and saying so is the same mistake
+one rung down.** `hostOf` reports the authority as written; numeric IPv4 forms
+stay ASCII and resolve elsewhere — `010.010.010.010` becomes **8.8.8.8**,
+`0300.0250.0.1` becomes **192.168.0.1**, `0x7f.1` and `2130706433` both become
+127.0.0.1, `1.2.3` becomes 1.2.0.3. Measured against the WHATWG parser over
+41 hosts `hostOf` accepts, 22 differ — though that count is a property of how
+many numeric forms are in the sample, not of the code; every ordinary
+hostname matched. The class is what matters: any authority the WHATWG parser
+reads as an IPv4 number, in any base. **Not a bypass** — none of them can equal
+`strava.com`, so the embed allowlist is untouched — but the label can differ
+from the destination, which is precisely the property this paragraph is
+about, so it has to be stated here and not only in `course-url.ts`. Left
+unfixed deliberately (see `TODO.md`): canonicalising IPv4 means a second
+address parser to get wrong.
+
+*(This caveat was written in `src/core/course-url.ts` and missed here for a
+round — the "fixed in one place while copies survive" pattern this file names
+as its recurring failure, landing on the very claim a reader would act on.)*
 
 **`sandbox` was NOT added to the iframe.** The host allowlist is the primary
 defence and it is in place; a sandbox that breaks Strava's own widget would
