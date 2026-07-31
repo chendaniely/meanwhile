@@ -1481,3 +1481,31 @@ timestamp read out of a photograph, and `who=`, the names of the people shown.
 Worth keeping: no test guards this. The setting lives in a console this
 repository cannot see, so if the property is ever recreated or the toggle
 flipped back, the leak returns silently and nothing here fails.
+
+---
+
+> maybe we can do some text validation when a user uses the web interface to
+> write a note so ' = @ and other symbols are warned that they are not allowed
+> before save. not too much i can do if they hand type it in there. but the
+> website is isolated from those errors. are there any security risks that
+> might happen becuase i have provided a way for random people to put in plain
+> text input?
+
+Asked about the note composer; the answer that came back ranked the real
+risks by severity, and the composer's own input was not the top one. The CSV
+layer already guards a formula on write and the app renders every note as
+text, so a `=` or an `@` typed into a note is safe where it lands and is
+needed as ordinary prose — "mile 60 = the wall". Warning about it would
+refuse valid writing to fix nothing.
+
+What the same question turned up in the fields nobody was typing into: an
+unvalidated `course.url` reaching `<a href>` and `<iframe src>`, which is a
+real same-origin XSS from a `manifest.json` someone emails over; and
+`unguard()` eating a leading apostrophe out of a file meanwhile did not
+write, which is silent data loss in the opposite direction.
+
+> yes do it in the order you've ranked them. nobody is using this app now. so
+> hard specing a version doesn't matter too much righ tnow
+
+So: the URL sink first, the apostrophe second. No version bump — the work
+lands in `## Unreleased` and the owner cuts the release separately.

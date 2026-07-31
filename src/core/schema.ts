@@ -9,6 +9,8 @@
  * define its own notion of what a manifest is.
  */
 
+import { embeddableHosts, embeddableSrc, hostOf } from './course-url.ts';
+
 export const SCHEMA_VERSION = 1;
 
 export type PersonId = string;
@@ -173,6 +175,13 @@ export interface MediaConfig {
  * which is precisely what meanwhile does. A GPX the athlete exports himself
  * is his own file and carries no such restriction — and works identically
  * for Garmin, COROS, or any other watch.
+ *
+ * **`url` is checked, not merely required.** It must be a plain `https://`
+ * address, and a `strava-embed` one must additionally be on strava.com —
+ * `validateManifest` refuses the manifest otherwise, and `CourseFallback.tsx`
+ * refuses to render it a second time for URLs that never went through the
+ * validator. Both call `./course-url.ts`; see that file for what a bare
+ * "non-empty string" let through.
  */
 export type CourseRef =
   | { kind: 'gpx'; src: string; person?: PersonId }
@@ -479,8 +488,31 @@ export function validateManifest(input: unknown): ValidationResult {
           errors.push('"course.src" must be a path or URL to a GPX or TCX file');
         }
       } else if (kind === 'strava-embed' || kind === 'strava-link') {
-        if (typeof course['url'] !== 'string' || course['url'] === '') {
+        const url = course['url'];
+        if (typeof url !== 'string' || url === '') {
           errors.push(`"course.url" is required for kind "${kind}"`);
+        } else if (hostOf(url) === null) {
+          // A manifest is a file people send each other, so this string is
+          // untrusted input that ends up in an `href` and, for an embed, an
+          // `iframe src`. `javascript:` in either one runs script in a page
+          // holding File System Access handles to the reader's photo folder.
+          // See `course-url.ts` for exactly what is refused and why.
+          errors.push(
+            `"course.url" must be a plain https:// address — this one is not, so it ` +
+              `was refused rather than turned into a link. Other schemes ` +
+              `("javascript:", "data:") run as code in the page when the link is ` +
+              `clicked, and a URL carrying a tab, a space, a backslash or a "@" ` +
+              `does not resolve to the host it appears to name.`,
+          );
+        } else if (kind === 'strava-embed' && embeddableSrc(url) === null) {
+          // An embed is loaded INTO this page, which a link is not, so it
+          // needs the host allowlist on top of the scheme check.
+          errors.push(
+            `"course.url" for kind "strava-embed" is on "${hostOf(url)}", but an embed ` +
+              `is loaded inside meanwhile's own page, so only ` +
+              `${embeddableHosts().join(' and ')} are accepted there. ` +
+              `Use kind "strava-link" to link out to it instead.`,
+          );
         }
         warnings.push(
           `course kind "${kind}" has no time-and-distance data, so the elevation ` +

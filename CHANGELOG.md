@@ -6,6 +6,71 @@ owner, and the record of who asked for what is part of the project rather than
 a footnote to it — several of the decisions below reversed something Claude had
 already built, and the reasons are worth keeping.
 
+## Unreleased
+
+Both items below came out of one question the owner asked about the note
+composer — whether letting people type free text anywhere was a risk:
+
+> "maybe we can do some text validation when a user uses the web interface to
+> write a note so ' = @ and other symbols are warned that they are not allowed
+> before save. not too much i can do if they hand type it in there. but the
+> website is isolated from those errors. are there any security risks that
+> might happen becuase i have provided a way for random people to put in plain
+> text input?"
+
+The answer to the literal question is no: the CSV layer already guards a
+formula on write and every note renders as text, so `=` and `@` are safe
+where a note lands and are ordinary prose besides — "mile 60 = the wall".
+Warning about them would refuse valid writing to fix nothing. What the
+question turned up was two problems in the fields nobody was typing into.
+
+> "yes do it in the order you've ranked them. nobody is using this app now. so
+> hard specing a version doesn't matter too much righ tnow"
+
+### `course.url` was an unvalidated URL sink — a real XSS
+
+`validateManifest` checked `course.url` was a non-empty string and nothing
+else, and `CourseFallback` handed it straight to `<a href>` and, for a
+`strava-embed`, to an `<iframe src>` with no host allowlist. A
+`manifest.json` — the file this project's whole collaboration model consists
+of emailing to people — carrying
+`{"kind":"strava-link","url":"javascript:…"}` therefore loaded cleanly and
+ran same-origin script on click. React does not block that; it logs a
+development warning and renders the attribute anyway. The page it runs in
+holds File System Access handles to the owner's entire photo folder, on an
+origin shared with everything else they publish to GitHub Pages — the same
+consequence as the Leaflet tooltip XSS fixed in 0.3.0, in a different field.
+
+Now: **a link must be a plain `https://` address, and an embed must
+additionally be on strava.com or www.strava.com.** A link merely offers to
+leave the page; a frame fetches on the reader's behalf and puts someone
+else's document inside it, so only the frame gets a host allowlist. Not an
+allowlist of sites to *visit* — a Garmin or COROS activity URL is a
+reasonable thing to link to.
+
+One copy of the rule, `src/core/course-url.ts`, imported by both the
+validator and the component; a second copy is how the weaker of two checks
+ends up being the one that decides. It is hand-rolled rather than
+`new URL(...)` because `URL` is a banned global in `tests/core-purity.test.ts`
+— the same answer as XML in `course.ts` and CSV in `csv.ts` — and it is
+therefore deliberately stricter than a browser's parser: no userinfo
+(`https://www.strava.com@evil.test/` has a host of `evil.test`), no non-ASCII
+host, and no whitespace, control character or backslash anywhere, since
+browsers delete tabs and newlines from a URL before resolving it.
+
+Both layers are needed and the second is not belt-and-braces: the
+event-settings box builds a course reference without going near the
+validator. A refused URL says so where the link or the embed would have been,
+rather than leaving a gap that reads as a bug in meanwhile.
+
+Proved by breaking it eleven ways, each run against the suite: drop the
+control-character refusal, allow `@` in the authority, accept `http:`,
+suffix-match the embed host instead of matching it exactly, make each guard
+return everything, disable each validator branch, put `course.url` back in
+the `href` and back in the `src`, and refuse in silence. Every one was
+caught. A test never seen to fail is not known to work, and this repository
+has shipped several that assert nothing.
+
 ## 0.3.1 — 2026-07-30 — the gate turned on itself, then on its own guards
 
 ### The analytics leak is shut

@@ -4,12 +4,13 @@
 
 As of 2026-07-30 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **787 tests pass** (`make check`).
+the race. **825 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
 `metadata.ts`, `assemble.ts`, `palette.ts`, `window.ts`, `state.ts`,
-`course.ts`, `csv.ts`, `notes.ts`, `people-csv.ts`, `timeline.ts`. Viewer: folder/file
+`course.ts`, `course-url.ts`, `csv.ts`, `notes.ts`, `people-csv.ts`,
+`timeline.ts`. Viewer: folder/file
 picking, ingest report, the media pipeline, the two-handle time window with
 density histogram, the feed, the swimlanes with a moment strip and notes in
 the lanes, the lightbox, the unplaced tray, and the **course view** — Leaflet map with
@@ -1545,6 +1546,80 @@ leading whitespace (TAB and CR are stripped by Excel before it evaluates, so
 unguarded), and a re-minted note id is derived from content rather than
 random, so a duplicated row converges instead of cloning on every merge —
 measured 2→3→4→5→6 before, 2 every round after.
+
+### `course.url` is `https:` only, and an EMBED is strava.com only *(2026-07-30)*
+
+The same threat model, applied to the one field nobody had looked at.
+`validateManifest` checked `course.url` was a non-empty string and nothing
+more, and `CourseFallback.tsx` put it straight into `<a href>` and — for a
+`strava-embed` — into an `<iframe src>` with no host allowlist. So a
+`manifest.json` carrying `{"kind":"strava-link","url":"javascript:…"}`
+validated cleanly and ran same-origin script on click, in the page holding
+File System Access handles to the owner's whole photo folder. **React does
+not stop this**: it logs a development warning and renders the attribute
+anyway. Same page and same consequence as the Leaflet tooltip XSS above; only
+the field was different.
+
+`src/core/course-url.ts` is the one copy of the rule, imported by the
+validator and by the component. Four decisions in it:
+
+1. **`https:` only, for a link.** Not an allowlist of sites — meanwhile does
+   not claim to know which sites are safe to *visit*, and a Garmin or COROS
+   activity URL is a perfectly reasonable thing to link to.
+2. **`https:` AND `strava.com`/`www.strava.com`, for an embed.** A link
+   offers to leave; a frame fetches on the reader's behalf and puts somebody
+   else's document *inside this page*. The extra check is that difference.
+   **Exact host matches, never `endsWith`** — that also accepts
+   `notstrava.com`.
+3. **Hand-rolled, not `new URL(...)`.** `URL` is in `BANNED_GLOBALS` in
+   `tests/core-purity.test.ts` (it has been since the first commit) and
+   CLAUDE.md forbids weakening that test, so this took the same answer as XML
+   in `course.ts` and CSV in `csv.ts`. It is therefore deliberately far
+   *stricter* than the WHATWG parser rather than an imitation of it: no
+   userinfo (`https://www.strava.com@evil.test/` has a host of `evil.test`),
+   no non-ASCII host (IDNA maps some characters onto ASCII during
+   resolution, so the host this file reads would not be the host dialled),
+   and **no whitespace, C0 control, DEL or backslash anywhere in the
+   string** — browsers delete TAB/CR/LF before resolving, so while any are
+   present the string being checked is not the string being used.
+4. **The guard returns the VALUE, not a boolean.** The call site is
+   `href={href}`, never `href={course.url}`, so the check travels with the
+   value; a surrounding `if` can be moved or inverted by a later refactor and
+   nothing would notice. `tests/course-url-guard.test.tsx` reads the
+   component's source and fails on `href={course.url}`, the same technique as
+   `tests/map-tooltip-xss.test.ts`.
+
+**Both layers are needed, and the second is not belt-and-braces.**
+`updateCourse` in `App.tsx` builds a `CourseRef` straight from the
+event-settings box, so a URL reaches the component having never been near
+`validateManifest`.
+
+**A refused URL is refused OUT LOUD.** The validator names the field and what
+is wrong with it; the component draws `.fallback__refused` where the link or
+the embed would have been. A control that is silently absent reads as a bug
+in meanwhile rather than as a refusal of somebody's file — the same rule as
+"a merge that discards anything must say so", above.
+
+**One deliberate departure from the design brief, recorded because it looks
+like an oversight.** The brief asked to prefer *dropping the course* over
+refusing the whole manifest. `validateManifest` cannot express that: it is
+strictly pass/fail, and on `ok: true` it returns the caller's own input
+object rather than a repaired copy — so dropping a field would mean either
+mutating untrusted input or adding a "here is a fixed-up manifest" channel
+that nothing else in the codebase has. Refusing matches what the two adjacent
+course checks already do (a missing `url`, an unknown `kind`), and it is not
+fatal in practice: `ingestFolder` catches the failure, reports it as
+`importError`, and carries on with the media.
+
+**`sandbox` was NOT added to the iframe.** The host allowlist is the primary
+defence and it is in place; a sandbox that breaks Strava's own widget would
+be discovered by the owner rather than by a test, since nothing here can
+exercise a third-party embed. Left off deliberately rather than forgotten.
+
+**Reversing any of this** means accepting that a `manifest.json` — a file
+whose entire purpose is to be emailed between crew members — can run script
+in a page holding directory handles to the recipient's photo library, or can
+frame an arbitrary site inside it.
 
 ### A rename is TOTAL, and committed — never per-keystroke *(format review)*
 

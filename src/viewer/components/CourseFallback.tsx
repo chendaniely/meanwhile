@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { embeddableHosts, embeddableSrc, safeHref } from '../../core/course-url.ts';
 import type { CourseRef } from '../../core/schema.ts';
 
 /**
@@ -47,6 +48,15 @@ import type { CourseRef } from '../../core/schema.ts';
  * googletagmanager.com script into dist/index.html. `make dev` injects none.
  * `tests/course-fallback.test.tsx` holds the substance of that so the fourth
  * flip cannot happen quietly.
+ *
+ * THE URL IS CHECKED HERE TOO, not only in `validateManifest`. That is not
+ * belt-and-braces: `updateCourse` in App.tsx builds a `CourseRef` straight
+ * from whatever is typed into the event-settings box, so a URL reaches this
+ * component without ever passing through the validator. `safeHref` and
+ * `embeddableSrc` (`core/course-url.ts`) are the single copy of the rule; the
+ * VALUES they return are what the attributes get, so the guard cannot be
+ * refactored away from the attribute the way a surrounding `if` can.
+ * `tests/course-url-guard.test.tsx` pins both the behaviour and that shape.
  */
 
 interface Props {
@@ -56,6 +66,12 @@ interface Props {
 export function CourseFallback({ course }: Props) {
   const [loadEmbed, setLoadEmbed] = useState(false);
   if (!course || course.kind === 'gpx') return null;
+
+  // Null means "this build will not act on it". Both are computed from the
+  // one rule in core/course-url.ts, and both are the VALUE the attribute
+  // gets — see the note at the top of this file.
+  const href = safeHref(course.url);
+  const embedSrc = course.kind === 'strava-embed' ? embeddableSrc(course.url) : null;
 
   return (
     <section className="fallback" aria-label="Course">
@@ -67,17 +83,37 @@ export function CourseFallback({ course }: Props) {
         or not there&rsquo;s a track.)
       </p>
 
-      <p>
-        <a className="fallback__link" href={course.url} target="_blank" rel="noreferrer noopener">
-          Open the activity on Strava
-        </a>
-      </p>
+      {href !== null ? (
+        <p>
+          <a className="fallback__link" href={href} target="_blank" rel="noreferrer noopener">
+            Open the activity on Strava
+          </a>
+        </p>
+      ) : (
+        <p className="fallback__refused">
+          <strong>This course link was not shown.</strong> It is not a plain{' '}
+          <code>https://</code> address, and meanwhile only makes a link out of
+          one. A manifest is a file people send each other, so another scheme
+          &mdash; <code>javascript:</code>, <code>data:</code> &mdash; would run
+          as code in this page the moment the link was clicked. Correct{' '}
+          <code>course.url</code> and open the folder again.
+        </p>
+      )}
 
-      {course.kind === 'strava-embed' &&
+      {course.kind === 'strava-embed' && href !== null && embedSrc === null && (
+        <p className="fallback__refused">
+          <strong>The embedded map was not loaded.</strong> An embed is put
+          inside this page rather than opened in a tab, so only{' '}
+          {embeddableHosts().join(' and ')} are accepted there, and this URL is
+          somewhere else. The link above still works.
+        </p>
+      )}
+
+      {embedSrc !== null &&
         (loadEmbed ? (
           <iframe
             className="fallback__embed"
-            src={course.url}
+            src={embedSrc}
             title="Strava activity"
             loading="lazy"
             frameBorder="0"
@@ -90,7 +126,7 @@ export function CourseFallback({ course }: Props) {
         ))}
 
       <p className="app__hint">
-        {course.kind === 'strava-embed'
+        {embedSrc !== null
           ? 'Strava’s widget is a sealed box — it cannot follow the cursor here, and it is the one thing on this page that waits for your click. With no track there is no map, so no tiles load at all; the published site’s analytics tag is the only other request this page makes on its own, and running it locally with make dev makes none.'
           : 'A plain activity URL cannot be embedded: the embed needs a code that only Strava’s share dialog produces.'}{' '}
         To light up the course view, ask the athlete for <strong>Export TCX</strong>
