@@ -599,3 +599,50 @@ is the one part of the swimlanes whose height is pinned to the millimetre
 text to those rows is exactly the kind of change that quietly reintroduces the
 jank. If it is picked up, measure the page height across a full scrub sweep
 before and after.
+
+## A zone-less row is re-pinned to whatever `event.timezone` is at SAVE time *(found 2026-07-31, reported not fixed)*
+
+`rowToNote` leaves `Note.tz` undefined for a row with a blank `tz` cell — a
+hand-added note, or any row written before `tz` was always emitted. `noteToRow`
+then falls back to whatever `event.timezone` is when Save is clicked. Edit the
+zone in between and the note keeps its INSTANT while the five integers the
+author typed are rewritten. Executed:
+
+```
+rowToNote({… hour: '15', minute: '45', tz: '' }, 'America/Denver')
+  -> at 2026-07-25T21:45:00.000Z, tz undefined
+noteToRow(that, 'America/New_York')
+  -> 2026 7 25 17 45  America/New_York  -240
+```
+
+15:45 becomes 17:45. This is the same class of loss the format hardening fixed
+on the write side ("`tz` is now ALWAYS written") and the identity fix of
+2026-07-31 fixed for the fingerprint — the reader is the one seam still leaving
+the zone unrecorded. **It causes no duplicate or resurrection**: identity is now
+the wall clock read in the note's own zone, and both sides of a re-ingest read
+their own, so the note keeps its id. What moves is only what a later Save
+writes down.
+
+The fix is one line — stamp the resolved zone onto the note in `rowToNote`, the
+same value `resolveZoned` already computes — but it changes what `Note.tz`
+means (from "the row named a zone" to "the zone this note is in"), which
+changes what a save emits for every pre-hardening file. Held back from the
+identity fix on purpose rather than bolted on to it.
+
+## `mergeSessionNotes` fingerprints STALE session notes in the CURRENT zone *(found 2026-07-31, latent)*
+
+`sessionFingerprints` is recomputed on every call from the live note list, and
+a note read before an `event.timezone` edit still carries the `at` it resolved
+to under the old zone. Fingerprinting it in the NEW zone reads a wall clock
+neither the row nor the author ever said.
+
+Latent, not visible: the id path catches every case that reaches it, because
+`rowIdentity` is keyed on the FRESH parse's fingerprint, which is zone-stable
+— pinned by "one hand-typed row is one note across a timezone edit" in
+`tests/note-identity-timezone.test.ts`. What is lost is the backstop
+`sessionFingerprints` exists for: two byte-identical blank-`id` rows in one
+file, whose ids churn between parses. Across a zone edit that backstop would
+not fire.
+
+Closed for free by the entry above — a note carrying its own zone is
+fingerprinted in that zone whenever it is read.

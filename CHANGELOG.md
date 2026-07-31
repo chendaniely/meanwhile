@@ -6,6 +6,68 @@ owner, and the record of who asked for what is part of the project rather than
 a footnote to it — several of the decisions below reversed something Claude had
 already built, and the reasons are worth keeping.
 
+## Unreleased
+
+### Editing the event timezone no longer resurrects a deleted note, or duplicates one
+
+> "yes fix the timezone/fingerprint bug"
+
+`fingerprintNote` is the identity every id-stabilising mechanism around notes
+is keyed on — `rowIdentity` (what gives a blank-`id` row the same id on a
+second parse), the `identified` map that lets a blank-`id` row adopt an id an
+existing row already has, and the tombstone fingerprints `ingest.ts` compares
+a fresh read against. It took `event.timezone` as an input, and nothing
+recomputes those caches when the zone is edited. Reproduced by execution
+before anything was changed, from the timezone box alone:
+
+```
+change event.timezone  ->  a previously DELETED note RESURRECTS
+change event.timezone  ->  blank-id adoption fails, producing a DUPLICATE note
+```
+
+Two independent couplings, and only one of them had any tension in it:
+
+- The fingerprint folded `tz` away whenever it matched the event's zone, so a
+  row carrying its own `tz` and `utc_offset_min` — every row the site writes,
+  and one whose instant no later zone edit can move — changed identity while
+  its instant did not move at all. Pure loss.
+- A row carrying neither (the documented way to hand-add a note, and every row
+  written before `tz` was always emitted) resolves through `event.timezone`, so
+  editing the zone genuinely moves it. Its instant *should* change; its
+  identity should not, because it is the same row in the same file saying the
+  same thing.
+
+**A note's identity is now the wall clock the row says, read in the note's own
+zone** (`noteTimeIdentity`), and `tz` is gone from the fingerprint because the
+zone is folded into that reading. This is the same argument the format
+hardening made for writing `tz` into every row — the five integers are the
+durable fact and the instant is derived — applied one seam earlier. Two things
+ride along: the sub-minute remainder, because the five integers stop at the
+minute and a legacy manifest's `at` does not; and a marker for which half of a
+fall-back hour this is, because 01:30 MDT and 01:30 MST are the same five
+integers an hour apart — the case `utc_offset_min` exists for — and collapsing
+them would swallow one of two notes in silence.
+
+Three other seams were tried against the reproduction and rejected on evidence
+rather than taste: matching tombstones by `id` first (fixes neither failure —
+the failing row's id is minted THROUGH the fingerprint, and adoption is content
+matching with no id to fall back on), recomputing the tombstone fingerprints
+when the zone changes (a tombstone holds an `at` resolved under the OLD zone,
+so recomputing gives an instant the fresh re-parse never produces, and
+`rowIdentity` holds no rows to recompute from at all), and dropping `tz` alone
+while keeping the instant (fixes the first failure, leaves the second exactly
+as it was).
+
+### An unreadable timestamp is no longer an identity every other unreadable note shares
+
+`Date.parse` returns `NaN` for an `at` this build cannot read, and
+`JSON.stringify(NaN)` is `null` — so every unreadable timestamp landed in ONE
+fingerprint slot and deduped against every other one, whatever it said.
+Reachable through `legacyNoteToNote`, which copies an imported manifest's `at`
+across without validating it. The raw string is kept instead. A zone this
+runtime cannot resolve gets the same treatment, and additionally must not
+throw: `Intl` rejects `MDT`, and this is called from the middle of a merge.
+
 ## 0.4.0 — 2026-07-30 — a role says what someone was, and a course URL has to earn its link
 
 ### A role is free text; a new `pinned` column decides whose lane goes on top

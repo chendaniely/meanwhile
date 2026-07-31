@@ -384,8 +384,12 @@ export function App() {
   notesRef.current = notes;
   // Mirrors the event's timezone, read by `deleteNote` below without needing
   // it in that callback's own dependency array — same reason `notesRef`
-  // exists. `fingerprintNote` needs it to match what `ingestFolder` computes
-  // fingerprints against.
+  // exists. `fingerprintNote` uses it as the fallback zone for a note that
+  // names none of its own (everything the composer makes), so what matters is
+  // that this is the zone that note's `at` was resolved under — which is
+  // exactly what "the zone live at delete time" means. The fingerprint no
+  // longer MOVES when this changes (see `noteTimeIdentity` in `core/notes.ts`),
+  // which is what stops editing the timezone box resurrecting a deleted note.
   const timezoneRef = useRef<string | undefined>(timezone);
   timezoneRef.current = timezone;
   // Ids removed from `notes` this session. A delete only changes in-memory

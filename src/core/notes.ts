@@ -870,16 +870,13 @@ function instantPartsInZone(
  *   spreadsheet is a completely ordinary edit, e.g. sorting the column. An
  *   unsorted fingerprint would treat that as a content change and re-mint a
  *   second note for what is still the same row.
- * - **`tz`.** `noteToRow` now writes the zone into every row it produces,
- *   even when it agrees with the event's own (see the doc on `Note.tz` for
- *   why blank-when-matching turned out not to be free). But a row that
- *   predates that change, or one a person added by hand with no `tz` cell at
- *   all, leaves `note.tz` undefined on read; a row that carries the event's
- *   own zone explicitly (`tz: 'America/Denver'` where that IS the event
- *   zone — which is what every row gets once it has round-tripped through
- *   `noteToRow` once) carries it. Those are the same note read two different
- *   ways, and must fingerprint identically or a Save-then-reload duplicates
- *   it.
+ * - **`tz` and the instant, TOGETHER — see `noteTimeIdentity`.** A row that
+ *   names its own zone and one that inherits the event's are the same note
+ *   read two different ways and must fingerprint identically, but neither
+ *   `tz` nor the resolved instant can say so on its own. Comparing the
+ *   instant plus a `tz` folded against `event.timezone` was the first answer
+ *   and it made the whole fingerprint move when the event's zone was edited,
+ *   which resurrected deleted notes and duplicated adopted ones.
  * - **`at`'s exact spelling.** `rowToNote` always produces
  *   `Date.toISOString()`'s canonical form, milliseconds included
  *   (`"...T09:00:00.000Z"`); `legacyNoteToNote` (see `viewer/media/ingest.ts`)
@@ -888,7 +885,8 @@ function instantPartsInZone(
  *   (`"...T09:00:00Z"`). Same instant, different string — comparing the raw
  *   strings is exactly the bug that let a legacy manifest's note and its own
  *   migrated copy in `notes.csv` collide as two notes instead of deduping to
- *   one.
+ *   one. `noteTimeIdentity` goes through `Date.parse` for that reason, and
+ *   keeps the raw string ONLY when the parse fails (see there).
  *
  * **`written` and `deleted` are deliberately excluded.** Both are facts about
  * the ROW rather than about what the note says, and including either would
@@ -899,17 +897,81 @@ function instantPartsInZone(
  * that note again.
  */
 export function fingerprintNote(note: Note, eventTimezone?: string): string {
-  const tz = note.tz !== undefined && note.tz !== eventTimezone ? note.tz : undefined;
   return JSON.stringify([
-    Date.parse(note.at),
+    noteTimeIdentity(note, eventTimezone),
     note.duration,
-    tz,
     [...note.people].sort(),
     note.photo,
     [...note.author].sort(),
     note.text,
     note.extra,
   ]);
+}
+
+/**
+ * A note's timestamp, in the one form that does not move when
+ * `event.timezone` is edited: **the wall clock the row actually says, read in
+ * the note's own zone.**
+ *
+ * The instant is the obvious thing to compare and it is the wrong thing.
+ * A row carrying `tz`/`utc_offset_min` pins an instant that no later edit to
+ * the event's zone can move; a row carrying neither — the documented way to
+ * hand-add a note, and every row written before `tz` was always emitted —
+ * resolves through `event.timezone`, so editing that zone genuinely moves it.
+ * Two rows saying the same thing therefore stop agreeing the moment the event
+ * zone changes, and every id-stabilising mechanism in this module is keyed on
+ * that agreement: `rowIdentity` (which is what gives a blank-`id` row the same
+ * id twice), the `identified` map that lets a blank-`id` row adopt an existing
+ * id, and the tombstone fingerprints `viewer/media/ingest.ts` compares against.
+ * Executed, that was a deleted note coming back and an adopted row duplicating,
+ * both caused by nothing but typing in the timezone box.
+ *
+ * The wall clock is invariant across exactly that edit, because each side is
+ * read in the zone its own `at` was resolved under: a `tz`-carrying row reads
+ * back its own five integers whatever the event zone is, and a zone-less row
+ * re-resolved under a new event zone reads back the same five integers again.
+ * That is the same argument the format hardening made for writing `tz` into
+ * every row — the row's five integers are the durable fact, the instant is
+ * derived — applied one seam earlier, to identity.
+ *
+ * Three things ride along, none of them optional:
+ *
+ * - **`sub`, the sub-minute remainder.** The five integers have minute
+ *   resolution; a legacy manifest note (`legacyNoteToNote` passes `at` through
+ *   untouched) can carry seconds. Every zone offset is a whole number of
+ *   minutes, so this is invariant under the zone too.
+ * - **`repeated`, which side of a fall-back transition this is.** 01:30 MDT
+ *   and 01:30 MST are the same five integers an hour apart — the case
+ *   `utc_offset_min` was added for. Without this they would fingerprint alike
+ *   and one of the two notes would be silently swallowed, which is the exact
+ *   loss that column exists to prevent. It is 0 for the reading a zone-less
+ *   row resolves to, so such a row still matches its saved twin on the
+ *   ordinary side of the hour.
+ * - **The unreadable cases, kept APART rather than collapsed.** `Date.parse`
+ *   returns `NaN` for an `at` this build cannot read (reachable through
+ *   `legacyNoteToNote`, which does not validate), and `JSON.stringify(NaN)` is
+ *   `null` — so every unreadable timestamp used to land in one fingerprint
+ *   slot and dedupe against the others regardless of what they said. The raw
+ *   string is kept instead. A zone this runtime cannot resolve gets the same
+ *   treatment for the same reason, and additionally must not throw: `Intl`
+ *   rejects `MDT`, and this is called from the middle of a merge.
+ */
+function noteTimeIdentity(note: Note, eventTimezone?: string): unknown {
+  const instant = Date.parse(note.at);
+  if (Number.isNaN(instant)) return ['unreadable', note.at];
+  const zone = note.tz ?? eventTimezone ?? 'UTC';
+  if (zoneOffsetMinutes(instant, zone) === null) return ['unzoned', instant];
+
+  const parts = instantPartsInZone(instant, zone);
+  // Floored, not truncated, so a pre-1970 instant does not shift a minute.
+  const sub = ((instant % 60_000) + 60_000) % 60_000;
+  const canonical = wallClockToInstant(
+    { y: parts.year, mo: parts.month, d: parts.day, h: parts.hour, mi: parts.minute },
+    null,
+    zone,
+  );
+  const repeated = canonical === null ? 0 : instant - sub - canonical;
+  return [parts.year, parts.month, parts.day, parts.hour, parts.minute, sub, repeated];
 }
 
 /**

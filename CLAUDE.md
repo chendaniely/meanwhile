@@ -4,7 +4,7 @@
 
 As of 2026-07-30 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **904 tests pass** (`make check`).
+the race. **918 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -1260,6 +1260,82 @@ session's writing behind a broken row. **Save still refuses rather than
 writing something wrong** in one case — a note whose timezone this build
 cannot resolve — and that failure is now a sentence in the error callout
 rather than a dead button (see below).
+
+### A note's identity is its WALL CLOCK, not its instant *(timezone/fingerprint)*
+
+`fingerprintNote` is the identity every id-stabilising mechanism around notes
+is keyed on: `rowIdentity` (what gives a blank-`id` row the same id on a second
+parse), the `identified` map that lets a blank-`id` row adopt an id an existing
+row already has, and the tombstone fingerprints `ingest.ts` compares a fresh
+read against. It took `event.timezone` as an input, and **nothing recomputes
+those caches when the zone is edited** — so typing in the timezone box changed
+what a note *was*. Both of these were reproduced by execution, caused by
+nothing else:
+
+```
+change event.timezone  ->  a previously DELETED note RESURRECTS
+change event.timezone  ->  blank-id adoption fails, producing a DUPLICATE note
+```
+
+**Two independent couplings, and the tension is only in the second.**
+
+1. The fingerprint folded `tz` away whenever it equalled the event's zone, so
+   a saved row — every row the site writes carries `tz` AND `utc_offset_min`,
+   which pin its instant against any later zone edit — changed identity while
+   its instant did not move at all. Pure loss, no argument on the other side.
+2. A row carrying neither (the documented way to hand-add a note, and every
+   row written before `tz` was always emitted) resolves through
+   `event.timezone`, so editing that zone genuinely moves it. Its instant
+   *should* change. Its **identity** should not: it is the same row, in the
+   same file, saying the same thing.
+
+So identity is now the **wall clock the row says, read in the note's own zone**
+(`noteTimeIdentity` in `core/notes.ts`), and `tz` is gone from the fingerprint
+because the zone is folded into that reading. Each side is read in the zone its
+own `at` was resolved under, so a `tz`-carrying row reads back its own five
+integers whatever the event zone is, and a zone-less row re-resolved under a
+new event zone reads back the same five integers again. **This is the same
+argument the format hardening made for writing `tz` into every row — the five
+integers are the durable fact and the instant is derived — applied one seam
+earlier, to identity.**
+
+Three things ride along and none is optional. **`sub`**, the sub-minute
+remainder, because the five integers stop at the minute and a legacy manifest's
+`at` does not. **`repeated`**, which half of a fall-back hour this is, because
+01:30 MDT and 01:30 MST are the same five integers an hour apart — the case
+`utc_offset_min` exists for — and collapsing them would swallow one of two
+notes in silence. And **an unreadable `at` keeps its raw string**: `Date.parse`
+returns `NaN`, `JSON.stringify(NaN)` is `null`, so every unreadable timestamp
+used to land in ONE fingerprint slot and dedupe against the others whatever
+they said. Reachable through `legacyNoteToNote`, which copies an imported
+manifest's `at` across without validating it.
+
+`eventTimezone` is still a parameter and must stay one: the composer makes
+notes with no `tz`, so something has to say which zone their `at` was resolved
+in. It is a **fallback for a note that names no zone**, never a value the
+fingerprint is compared against — which is why recording a tombstone's
+fingerprint AT DELETE TIME (`App.tsx#deleteNote`, through `timezoneRef`) is
+correct rather than incidental: that is the zone the note's own `at` came from.
+
+**Three alternatives were rejected against this evidence.** *Match tombstones
+by `id` first and use the fingerprint only as a secondary check* fixes neither
+failure — an ided row was already caught by `deletedNoteIds`, and the failing
+case is a blank-`id` row whose id is minted through the fingerprint in the
+first place; adoption is content-matching by definition and has no id to fall
+back on. *Recompute `deletedNoteFingerprints` when the zone changes* cannot
+work: a tombstone holds an `at` resolved under the OLD zone, so recomputing it
+under the new one gives an instant the fresh re-parse will never produce, and
+`rowIdentity` — keyed by fingerprint, holding no rows — cannot be recomputed at
+all. *Drop `tz` from the fingerprint and keep the instant* fixes (1) and leaves
+(2) exactly as it was, which was verified by execution rather than argued.
+
+**Reversing this** means going back to comparing instants, and accepting that
+editing `event.timezone` — a one-field edit the settings panel invites, and the
+one the README tells an author to make first — silently changes the identity of
+every note that inherits it. Note the two halves of a repeated hour are only
+distinguishable at all because `repeated` is in there; a "simplification" that
+drops it reintroduces a silent note loss that no test outside
+`tests/note-identity-timezone.test.ts` would catch.
 
 ### `notes*.csv` and `people.csv` are hostile-input-safe, on purpose *(notes-as-csv)*
 

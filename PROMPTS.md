@@ -1604,3 +1604,40 @@ same commit.
 Released as **0.4.0** and pushed: the free-text role and `pinned` split above,
 the `https:`-only course-URL allowlist, the `unguard` correction, and the
 course-URL box committing on blur rather than on every keystroke.
+
+---
+
+> yes fix the timezone/fingerprint bug
+
+`fingerprintNote` took `event.timezone` as an input, and nothing recomputes
+the caches keyed on it when the zone is edited. Reproduced by execution before
+anything was changed: editing the timezone box resurrected a deleted note, and
+made a blank-`id` row fail to adopt the id an existing row already had, so one
+note became two.
+
+Two independent couplings, and only the second had any tension in it. The
+fingerprint folded `tz` away whenever it matched the event's, so a row that
+carries its own `tz` and `utc_offset_min` — every row the site writes, whose
+instant no later zone edit can move — changed identity while its instant did
+not move at all. That half was pure loss. The other half is that a row
+carrying neither resolves through `event.timezone`, so editing the zone
+genuinely moves it: its instant *should* change, and its identity should not,
+because it is the same row in the same file saying the same thing.
+
+Identity is now the wall clock the row says, read in the note's own zone, with
+the sub-minute remainder and a marker for which half of a fall-back hour it is
+— the second because 01:30 MDT and 01:30 MST are the same five integers an
+hour apart, and collapsing them would swallow one of two notes in silence.
+Three other seams were tried against the reproduction and rejected: matching
+tombstones by id first (fixes neither — the failing row's id is minted THROUGH
+the fingerprint), recomputing the tombstones on a zone change (a tombstone
+holds an `at` from the old zone, and `rowIdentity` holds no rows to recompute
+from), and dropping `tz` alone (fixes the first failure and leaves the second
+untouched).
+
+Fixed in the same pass, and confirmed rather than taken on trust: `Date.parse`
+returns `NaN` for an `at` this build cannot read, `JSON.stringify(NaN)` is
+`null`, so every unreadable timestamp landed in ONE fingerprint slot and
+deduped against the others whatever they said. Reachable through
+`legacyNoteToNote`, which copies an imported manifest's `at` across without
+validating it.
