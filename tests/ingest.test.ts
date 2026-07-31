@@ -1235,6 +1235,76 @@ describe('ingestFolder — what "Add files" must not throw away', () => {
     expect(result.manifest.markers?.[0]?.label).toBe('start');
   });
 
+  it('surfaces a refused course URL as a problem, and keeps everything else', async () => {
+    /*
+     * The end-to-end shape of the warning-not-error decision.
+     *
+     * A scheme-less paste — the ordinary thing to type — used to refuse the
+     * WHOLE manifest here, which took the crop, the markers and every
+     * `timeSource: 'manual'` placement with it. Now the manifest loads, the
+     * URL is kept verbatim, and the reason the link will not render is in the
+     * same problems callout as every other silent outcome.
+     *
+     * `validateManifest`'s warnings had NEVER been read by anything in
+     * src/viewer before this, so without the last assertion the warning would
+     * be collected into a variable nobody renders and the reader would see a
+     * missing link with no explanation anywhere.
+     */
+    const inFolder = JSON.stringify({
+      schema: SCHEMA_VERSION,
+      event: {
+        title: 'CM100', timezone: 'UTC',
+        range: { from: '2026-01-01T00:00:00Z', to: '2026-01-02T00:00:00Z' },
+      },
+      course: { kind: 'strava-link', url: 'strava.com/activities/123' },
+      markers: [{ at: '2026-01-01T10:00:00Z', label: 'Cottonwood' }],
+      people: [{ id: 'p', name: 'Priya' }],
+      items: [
+        {
+          id: 'a.jpg', person: 'p', type: 'photo', src: 'a.jpg',
+          at: '2026-01-01T10:00:00Z', timeSource: 'manual',
+        },
+      ],
+    });
+    // The photograph itself is in the folder too, so the manual placement has
+    // a file to stay attached to — that is the thing a refusal destroyed.
+    const result = await ingestFolder(
+      [textFile('manifest.json', inFolder), textFile('a.jpg', 'pretend jpeg bytes')],
+      { title: 'T', timezone: 'UTC' },
+    );
+
+    // Nothing was lost.
+    expect(result.importError).toBeNull();
+    expect(result.manifest.event.title).toBe('CM100');
+    expect(result.manifest.event.range?.from).toBe('2026-01-01T00:00:00Z');
+    expect(result.manifest.markers?.[0]?.label).toBe('Cottonwood');
+    expect(result.manifest.items.find((i) => i.id === 'a.jpg')?.timeSource).toBe('manual');
+    // The URL is kept exactly as written — refusing to act on a value is not
+    // permission to delete it.
+    expect(result.manifest.course).toEqual({
+      kind: 'strava-link', url: 'strava.com/activities/123',
+    });
+    // And the reader is told why the link will not appear.
+    expect(
+      result.noteProblems.some((p) => p.includes('manifest.json') && p.includes('course.url')),
+    ).toBe(true);
+  });
+
+  it('says nothing extra about a course URL that is fine', async () => {
+    // The warning channel is now rendered, so a false positive here would put
+    // noise in front of every ordinary folder.
+    const inFolder = JSON.stringify({
+      schema: SCHEMA_VERSION,
+      event: { title: 'T', timezone: 'UTC' },
+      course: { kind: 'strava-link', url: 'https://www.strava.com/activities/1' },
+      people: [], items: [],
+    });
+    const result = await ingestFolder([textFile('manifest.json', inFolder)], {
+      title: 'T', timezone: 'UTC',
+    });
+    expect(result.noteProblems.some((p) => p.includes('course.url'))).toBe(false);
+  });
+
   it('lets a manifest in the folder still outrank what the session carries', async () => {
     const inFolder = JSON.stringify({
       schema: SCHEMA_VERSION,

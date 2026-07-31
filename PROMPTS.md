@@ -1509,3 +1509,40 @@ write, which is silent data loss in the opposite direction.
 
 So: the URL sink first, the apostrophe second. No version bump — the work
 lands in `## Unreleased` and the owner cuts the release separately.
+
+---
+
+> let's go and make sure the spec and everything is solid. we're making this
+> ready for a real case example. let's make sure this foundation is solid
+> before buildin it into and causing tech debt
+
+An independent pre-release review of the `course.url` work came back
+DO-NOT-SHIP, and it was right twice over.
+
+**CORRECTION to the entry above, dated 2026-07-30.** This file is append-only,
+so the earlier line stands as written and is corrected here instead. It says
+the unvalidated `course.url` was "a real same-origin XSS". **That is false.**
+React 19.2.8 — the version this project ships — runs `sanitizeURL` over both
+`href` and `iframe src`, in the development and production bundles, and
+rewrites a `javascript:` URL to a throwing stub. Verified by execution
+(mounting both sinks in jsdom and reading the attributes back), not by reading
+a changelog, and now pinned in `tests/course-url-guard.test.tsx`.
+
+What was actually reachable, measured the same way: `data:text/html` in the
+`<iframe src>`, which renders attacker markup in an opaque origin — UI
+spoofing and phishing inside meanwhile's own page, not theft of the File
+System Access handles; any `https://` host framed inside the page; and
+`http://`. Serious, and a different and lesser thing than script execution.
+
+The claim came from the brief that commissioned the work, was plausible, and
+reached four source files and this log before anybody ran it. The guard itself
+stays: React's sanitiser covers exactly one scheme and none of the three
+problems above, and a security property that rests on a framework's
+implementation detail is one dependency bump from vanishing silently.
+
+The second finding was ours alone and worse in practice: making a bad
+`course.url` a hard validation error meant one scheme-less paste —
+`strava.com/activities/123`, the ordinary thing to type — refused the whole
+`manifest.json` on the next Open folder, taking the crop, the aid-station
+markers and every hand-placed photograph with it. It is a warning now; the
+manifest loads, the URL is kept verbatim, and the reader refuses to draw it.

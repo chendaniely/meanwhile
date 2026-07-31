@@ -233,6 +233,28 @@ describe('unguard is the exact inverse of the formula guard', () => {
     expect(back.rows[0]).toEqual(row);
   });
 
+  it('re-guards a foreign apostrophe on write — content kept, bytes changed', () => {
+    // The one round-trip difference this fix INTRODUCES, pinned so it is a
+    // documented property rather than a surprise. A file someone else typed
+    // carries `'twas`; meanwhile reads it as `'twas` (the fix) and writes it
+    // back as `''twas`, because `cell()` must guard anything a spreadsheet
+    // could mistake for a formula and a leading apostrophe is this module's
+    // own guard character. The VALUE is identical, which is the promise; the
+    // bytes gain one character, once.
+    const foreign = "a\n'twas\n";
+    const read = parseCsv(foreign).rows[0]?.a;
+    expect(read).toBe("'twas");
+
+    const written = formatCsv(['a'], [{ a: read as string }]);
+    expect(written).toContain("''twas");
+
+    // And it is stable from the second write onward — it does not grow an
+    // apostrophe per save, which is the failure that would actually matter.
+    const second = formatCsv(['a'], [{ a: parseCsv(written).rows[0]?.a as string }]);
+    expect(second).toBe(written);
+    expect(parseCsv(second).rows[0]?.a).toBe("'twas");
+  });
+
   it('is stable when the same value is read twice', () => {
     // Guards against `FORMULA_LEAD` ever gaining a `/g` flag, which would
     // make `.test` alternate true and false on one input and so make the

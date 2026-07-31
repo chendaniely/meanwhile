@@ -27,19 +27,22 @@ question turned up was two problems in the fields nobody was typing into.
 > "yes do it in the order you've ranked them. nobody is using this app now. so
 > hard specing a version doesn't matter too much righ tnow"
 
-### `course.url` was an unvalidated URL sink — a real XSS
+### `course.url` was an unvalidated URL sink
 
 `validateManifest` checked `course.url` was a non-empty string and nothing
 else, and `CourseFallback` handed it straight to `<a href>` and, for a
 `strava-embed`, to an `<iframe src>` with no host allowlist. A
 `manifest.json` — the file this project's whole collaboration model consists
-of emailing to people — carrying
-`{"kind":"strava-link","url":"javascript:…"}` therefore loaded cleanly and
-ran same-origin script on click. React does not block that; it logs a
-development warning and renders the attribute anyway. The page it runs in
-holds File System Access handles to the owner's entire photo folder, on an
-origin shared with everything else they publish to GitHub Pages — the same
-consequence as the Leaflet tooltip XSS fixed in 0.3.0, in a different field.
+of emailing to people — could therefore put an arbitrary address into either
+sink, on a page holding File System Access handles to the owner's entire
+photo folder.
+
+What that actually got you, verified by execution against React 19.2.8
+(see the correction below, which is where this account was arrived at):
+`data:text/html,…` in the `<iframe src>`, rendering attacker markup in an
+opaque origin — UI spoofing and phishing inside meanwhile's own page; any
+`https://` host framed inside the page; and `http://`. Not script execution:
+React sanitises `javascript:` in both sinks.
 
 Now: **a link must be a plain `https://` address, and an embed must
 additionally be on strava.com or www.strava.com.** A link merely offers to
@@ -71,6 +74,64 @@ the `href` and back in the `src`, and refuse in silence. Every one was
 caught. A test never seen to fail is not known to work, and this repository
 has shipped several that assert nothing.
 
+#### Corrected before release: it was not an XSS, and the first fix lost data
+
+> "let's go and make sure the spec and everything is solid. we're making this
+> ready for a real case example. let's make sure this foundation is solid
+> before buildin it into and causing tech debt"
+
+An independent pre-release review said do not ship, and found two things.
+
+**The severity was overstated when first written, in four files and the
+prompt log — this section is what corrected it, and the heading above has
+been rewritten to match rather than left contradicting it.**
+React 19.2.8 — the version this ships — sanitises `javascript:` in both
+`href` and `iframe src`, in the development and production bundles, rewriting
+it to a throwing stub. Verified by execution rather than by reading a
+changelog. So this was never same-origin script execution and it is not
+another Leaflet tooltip XSS. What WAS reachable, measured the same way:
+`data:text/html` in the `<iframe src>`, rendering attacker markup in an
+opaque origin — UI spoofing and phishing inside meanwhile's own page, not
+theft of the photo-folder handles; any `https://` host framed inside the
+page; and `http://`. Every one of those passed through React untouched.
+
+The guard stays, and still refuses `javascript:`. React's sanitiser covers
+exactly one scheme and none of the three problems above; sanitising URLs is
+not React's job; and a security property resting on a framework's
+implementation detail is one dependency bump from vanishing with nothing here
+to notice. The behaviour is now pinned both ways — that React does sanitise
+`javascript:`, so nobody rewrites the false claim, and that it sanitises
+nothing else, so nobody deletes the guard as redundant.
+
+**Refusing the manifest destroyed data, and that was our own doing.** Making a
+bad `course.url` a validation ERROR meant one scheme-less paste —
+`strava.com/activities/123`, the ordinary thing to type — refused the whole
+`manifest.json` on the next **Open folder**, taking `event.range`, every
+marker, the title, the timezone and **every hand-placed photograph** with it:
+exactly the list `CLAUDE.md` names as not regenerable from the photos. It also
+broke files that already worked, since an `http://` course URL loaded before.
+
+It is a warning now. The manifest loads, the URL is kept verbatim — refusing
+to act on a value is not permission to delete it — and the reader declines to
+render it. Two things make that real: `validateManifest`'s warnings had never
+been read by anything in the viewer, and are now routed into the same problems
+callout as everything else; and the event-settings box normalises a
+scheme-less paste to `https://` so the ordinary case never writes a bad
+manifest at all. A scheme that is already there is never rewritten — silently
+upgrading `http://` would change where the author said to go.
+
+**Two user-visible strings were lying.** The link read "Open the activity on
+Strava" whatever the URL was, with `target="_blank"` so the address bar never
+corrected it — an emailed manifest could render a Strava-labelled link to
+`https://evil.test/login`. It names the actual host now. And an embed refused
+for its HOST also printed "a plain activity URL cannot be embedded", which is
+false of a URL containing `/embed/`; each refusal explains only itself.
+
+Eleven more mutations, ten caught. The eleventh — dropping a redundant early
+return in the URL normaliser — was confirmed an equivalent mutant by
+differential execution over 504 inputs, and the line is kept with a comment
+saying so.
+
 ### A leading apostrophe someone else typed is no longer eaten
 
 `unguard()` stripped one leading `'` from every cell — right for a file
@@ -99,6 +160,13 @@ make it never strip at all (20), and give `FORMULA_LEAD` a `/g` flag so its
 The frozen migration fixture, `tests/fixtures/csv-before-2026-07-30.ts`, was
 checked and not touched: no cell in it begins with an apostrophe, so it reads
 identically either way.
+
+One round-trip difference this introduces, found by the same pre-release
+review and now written down in `CLAUDE.md` beside the other four: a foreign
+`'twas` reads as `'twas` and is written back as `''twas`. The content is
+identical — that is the promise — and the file gains one character, once,
+because the writer must guard anything a spreadsheet could run. Stable from
+the second write onward.
 
 ## 0.3.1 — 2026-07-30 — the gate turned on itself, then on its own guards
 

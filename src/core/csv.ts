@@ -131,10 +131,19 @@ export function schemaCellProblem(raw: string | undefined, file: string): string
  *
  * `cells` is the row as `parseCsv` produced it: keyed by the header names the
  * file itself declared, with the formula guard already removed (`formatCsv`
- * puts it back on write). One thing is NOT byte-identical across the round
- * trip: `formatCsv` writes every cell in Unicode NFC, so a decomposed
- * spelling comes back composed — the same treatment every other cell in the
- * file gets, and the reason `people-csv.ts` compares names with `nameKey`.
+ * puts it back on write). TWO things are not byte-identical across the round
+ * trip, and neither loses content:
+ *
+ *   1. `formatCsv` writes every cell in Unicode NFC, so a decomposed spelling
+ *      comes back composed — the same treatment every other cell in the file
+ *      gets, and the reason `people-csv.ts` compares names with `nameKey`.
+ *   2. A cell that begins with a LITERAL apostrophe someone else typed
+ *      (`'twas`, `'Bama`) is read as itself and written back GUARDED, as
+ *      `''twas`. The value survives exactly — that is the whole point of the
+ *      `unguard` fix — but the bytes gain a character, because `cell()` must
+ *      guard anything a spreadsheet could mistake for a formula and a leading
+ *      apostrophe is this module's own guard character. Reading that file
+ *      again yields `'twas`, so it is stable from the second write onward.
  * A row carrying MORE fields than the header row declares loses the surplus,
  * because there is no column name to file them under; a file written by a
  * newer build declares its own headers, so that case is a malformed file

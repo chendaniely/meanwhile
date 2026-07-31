@@ -4,7 +4,7 @@
 
 As of 2026-07-30 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **835 tests pass** (`make check`).
+the race. **859 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -1194,10 +1194,11 @@ line; `mergeNotes` and `parsePeopleCsv` collect them; `noteRowsForSave` and
   build is exactly the thing likely to have added a column, and dropping it
   would defeat the preservation.
 
-**"Verbatim" means the cells, not the bytes.** Four things are NOT
+**"Verbatim" means the cells, not the bytes.** Five things are NOT
 byte-identical across a read-and-save, all verified by execution rather than
 by reading the code — an earlier version of this section claimed only the
-first and was wrong three ways:
+first and was wrong three ways, and a later one missed the fifth, which our
+own `unguard` fix had just introduced:
 
 1. **Unicode normalisation.** `cell()` in `src/core/csv.ts` runs `nfc()` over
    every cell it writes — data, header names, `Note.extra`, preserved rows
@@ -1215,6 +1216,14 @@ first and was wrong three ways:
    `utc_offset_min` comes back with it — blank on preserved rows, filled on
    readable ones. Same for `people.csv`'s `role`/`clock_offset`/
    `also_known_as`.
+5. **A foreign leading apostrophe is re-guarded on write.** A cell someone
+   else typed as `'twas` now READS as `'twas` (that is the fix below) and is
+   written back as `''twas`, because `cell()` must guard anything a
+   spreadsheet could mistake for a formula and `'` is this module's own guard
+   character. The content is identical — that is the whole promise — and the
+   file gains one character, once: reading `''twas` yields `'twas`, so it is
+   stable from the second write onward. **This exception is ours**, introduced
+   by the fix below and missed when that fix was first written up.
 
 Below the level worth calling exceptions, but real and also measured: a BOM
 is added even when the input had none, CRLF becomes LF, needless quoting is
@@ -1569,13 +1578,43 @@ measured 2→3→4→5→6 before, 2 every round after.
 The same threat model, applied to the one field nobody had looked at.
 `validateManifest` checked `course.url` was a non-empty string and nothing
 more, and `CourseFallback.tsx` put it straight into `<a href>` and — for a
-`strava-embed` — into an `<iframe src>` with no host allowlist. So a
-`manifest.json` carrying `{"kind":"strava-link","url":"javascript:…"}`
-validated cleanly and ran same-origin script on click, in the page holding
-File System Access handles to the owner's whole photo folder. **React does
-not stop this**: it logs a development warning and renders the attribute
-anyway. Same page and same consequence as the Leaflet tooltip XSS above; only
-the field was different.
+`strava-embed` — into an `<iframe src>` with no host allowlist.
+
+**React 19.2.8 DOES block `javascript:`, and the first version of this entry
+said it does not.** That was wrong, it was committed, and it was corrected on
+2026-07-30 after being checked by execution — mount both sinks in jsdom and
+read the attributes back, which is now pinned in
+`tests/course-url-guard.test.tsx` under "what React really does with these
+URLs". `sanitizeURL`/`isJavaScriptProtocol` run over `href` and `iframe src`
+in the development AND production bundles and rewrite the value to a throwing
+stub, covering mixed case, an embedded TAB and a leading space. **So this was
+never same-origin script execution, and it is not another Leaflet tooltip
+XSS.**
+
+What was genuinely reachable, measured the same way — each of these passed
+through React untouched:
+
+- **`data:text/html,…` in the `<iframe src>`**, rendering attacker markup in
+  an opaque origin: UI spoofing and phishing inside meanwhile's own page, not
+  theft of the File System Access handles.
+- **Any `https://` host framed**, putting an arbitrary site in the page.
+- **`http://`**, and `vbscript:`.
+
+**The guard stays anyway, and refusing `javascript:` stays with it.** React's
+sanitiser covers exactly one scheme and does nothing about the three bullets
+above; sanitising a URL is not React's job and it is not documented as an API;
+and a security property resting on a framework's implementation detail is one
+dependency bump from vanishing with no failing test anywhere. The pinned test
+holds BOTH halves — that React does sanitise `javascript:`, so nobody
+re-writes the false claim, and that it sanitises nothing else, so nobody
+deletes the guard as redundant.
+
+**The lesson, since this is the second time on this page.** The claim came
+from a brief, was plausible, and was propagated into four files and a prompt
+log before anyone ran it. `node_modules` was sitting right there. *Check a
+claim about a dependency by executing it, not by believing the person who
+handed it to you* — including when that person is the one giving the
+instructions.
 
 `src/core/course-url.ts` is the one copy of the rule, imported by the
 validator and by the component. Four decisions in it:
@@ -1617,16 +1656,41 @@ the embed would have been. A control that is silently absent reads as a bug
 in meanwhile rather than as a refusal of somebody's file — the same rule as
 "a merge that discards anything must say so", above.
 
-**One deliberate departure from the design brief, recorded because it looks
-like an oversight.** The brief asked to prefer *dropping the course* over
-refusing the whole manifest. `validateManifest` cannot express that: it is
-strictly pass/fail, and on `ok: true` it returns the caller's own input
-object rather than a repaired copy — so dropping a field would mean either
-mutating untrusted input or adding a "here is a fixed-up manifest" channel
-that nothing else in the codebase has. Refusing matches what the two adjacent
-course checks already do (a missing `url`, an unknown `kind`), and it is not
-fatal in practice: `ingestFolder` catches the failure, reports it as
-`importError`, and carries on with the media.
+**A bad URL is a WARNING, not an error — and this was got wrong first.** The
+validator refused the whole manifest for one commit. Executing that showed the
+price: `updateCourse` in `App.tsx` accepts a scheme-less paste
+(`strava.com/activities/123`, the ordinary thing to type), Save writes it to
+`manifest.json`, and the next **Open folder** then refused the entire file —
+`ingestFolder` leaves `imported` null, and on `'replace'` nothing stands in
+for it, so `event.range`, every `markers[]` entry, the title, the timezone and
+**every `timeSource: 'manual'` placement** were gone. That is exactly the list
+"The manifest is the contract" names as NOT regenerable from the photographs.
+It also broke files that already worked: an `http://` course URL loaded before
+the guard existed.
+
+Warning loses nothing. The manifest loads, the URL is kept **verbatim** — see
+"Refusing to READ a row is not permission to DELETE it"; the same rule, one
+field over — and `CourseFallback` declines to render it. **The refusal belongs
+where the damage would be, not where the data is.**
+
+Two things that make the warning real rather than decorative:
+
+- **`validateManifest`'s `warnings` had never been read by anything in
+  `src/viewer`** — verified by grep, not assumed. They are now routed into
+  `noteProblems`, the one channel this project already has for "something was
+  not done the way the file said". A warning nothing renders is not a warning.
+- **`updateCourse` normalises the paste** via `normalizeCourseUrl`, prefixing
+  `https://` only when that turns something the guard refuses into something
+  it accepts. A scheme that is already present is never rewritten — silently
+  upgrading `http://` would change where the author said to go — so it stays
+  as typed and is refused at render.
+
+**The link text names the ACTUAL host.** `safeHref` permits any https host by
+design, but the anchor read "Open the activity on Strava" whatever the URL
+was, with `target="_blank"` so the address bar never corrected it: an emailed
+manifest could render a Strava-labelled link to `https://evil.test/login`.
+Text that asserts a destination the guard does not enforce is a phishing
+primitive, not a wording problem.
 
 **`sandbox` was NOT added to the iframe.** The host allowlist is the primary
 defence and it is in place; a sandbox that breaks Strava's own widget would

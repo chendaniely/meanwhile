@@ -3,7 +3,7 @@ import { StrictMode, act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { embeddableSrc, hostOf, safeHref } from '../src/core/course-url.ts';
+import { embeddableSrc, hostOf, normalizeCourseUrl, safeHref } from '../src/core/course-url.ts';
 import { validateManifest } from '../src/core/schema.ts';
 import type { CourseRef } from '../src/core/schema.ts';
 import { CourseFallback } from '../src/viewer/components/CourseFallback.tsx';
@@ -13,16 +13,22 @@ import { CourseFallback } from '../src/viewer/components/CourseFallback.tsx';
  *
  * `validateManifest` checked it was a non-empty string and nothing more, and
  * `CourseFallback` put it straight into `<a href>` and, for an embed, an
- * `<iframe src>` with no host allowlist. So a `manifest.json` — the file this
- * project's whole collaboration model consists of emailing to people —
- * carrying `{"course":{"kind":"strava-link","url":"javascript:…"}}` loaded
- * cleanly and executed same-origin script on click. React does not block a
- * `javascript:` href; it logs a development warning and renders it anyway.
+ * `<iframe src>` with no host allowlist.
  *
- * Same page, same consequence as the Leaflet tooltip XSS
- * (`map-tooltip-xss.test.ts`): File System Access handles to the owner's
- * entire photo folder, on an origin shared with everything else they publish
- * to GitHub Pages.
+ * **Stated accurately, because the first version of this comment was not.**
+ * It claimed `javascript:` executed here and that React does not stop it.
+ * React 19.2.8 — this project's version — sanitises `javascript:` in both
+ * `href` and `iframe src`, in the development and production bundles, and
+ * `describes what React really does` below proves it by execution rather than
+ * by reading the changelog. What passed through untouched, and what this
+ * guard is actually for, is `data:text/html` in the frame (an opaque origin:
+ * UI spoofing inside meanwhile's own page), an arbitrary https host in the
+ * frame, and `http:` anywhere.
+ *
+ * The guard still refuses `javascript:` and is still tested for it: React's
+ * sanitiser covers one scheme, sanitising URLs is not React's job, and a
+ * security property resting on a framework's implementation detail is one
+ * dependency bump from vanishing with nothing here to notice.
  *
  * Three layers are pinned below, and none of them substitutes for another:
  *
@@ -85,6 +91,11 @@ function mount(course: CourseRef) {
       </StrictMode>,
     );
   });
+}
+
+/** The hint paragraph, where the refusal reasons used to bleed into each other. */
+function hintText(): string {
+  return container.querySelector('.app__hint')?.textContent ?? '';
 }
 
 /** Every URL-bearing attribute anywhere in the rendered tree. */
@@ -189,29 +200,90 @@ describe('course-url: validateManifest', () => {
     course,
   });
 
-  it('refuses a javascript: course URL, naming the field', () => {
+  it('WARNS about a javascript: course URL and still loads the manifest', () => {
     const r = validateManifest(withCourse({ kind: 'strava-link', url: 'javascript:alert(1)' }));
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.errors.join(' ')).toMatch(/course\.url/);
-    expect(r.errors.join(' ')).toMatch(/https/);
+    // Loading is the assertion that matters. Refusing here for one commit
+    // took `event.range`, `markers[]` and every `timeSource: 'manual'`
+    // placement with it — see 'the data a refusal would have destroyed'.
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.warnings.join(' ')).toMatch(/course\.url/);
+    expect(r.warnings.join(' ')).toMatch(/https/);
+    // And it is kept verbatim, not scrubbed: refusing to act on a value is
+    // not permission to delete it.
+    expect(r.manifest.course).toEqual({ kind: 'strava-link', url: 'javascript:alert(1)' });
   });
 
-  it('refuses an embed pointed at a host that is not Strava', () => {
+  it('WARNS about an embed pointed at a host that is not Strava, naming both', () => {
     const r = validateManifest(
       withCourse({ kind: 'strava-embed', url: 'https://evil.test/activities/1/embed/x' }),
     );
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.errors.join(' ')).toMatch(/evil\.test/);
-    expect(r.errors.join(' ')).toMatch(/strava\.com/);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.warnings.join(' ')).toMatch(/evil\.test/);
+    expect(r.warnings.join(' ')).toMatch(/strava\.com/);
   });
 
-  it('accepts a non-Strava https LINK, which is a link and not a frame', () => {
+  it('never refuses a manifest over a course URL, whatever it says', () => {
+    for (const [, url] of REFUSED) {
+      if (url === '') continue;
+      for (const kind of ['strava-link', 'strava-embed'] as const) {
+        expect(validateManifest(withCourse({ kind, url })).ok, `${kind} ${url}`).toBe(true);
+      }
+    }
+  });
+
+  it('keeps the data a refusal would have destroyed', () => {
+    // The regression this warning-not-error decision exists to prevent, made
+    // concrete. CLAUDE.md's "The manifest is the contract" names exactly
+    // these as NOT regenerable from the photographs; `ingestFolder` leaves
+    // `imported` null on a refusal, and on 'replace' nothing stands in.
+    const r = validateManifest({
+      schema: 1,
+      event: {
+        title: 'CM100',
+        timezone: 'America/Denver',
+        range: { from: '2026-07-25T10:00:00Z', to: '2026-07-27T00:00:00Z' },
+      },
+      people: [{ id: 'p', name: 'Priya' }],
+      markers: [{ label: 'Cottonwood', at: '2026-07-26T03:00:00Z' }],
+      items: [
+        {
+          id: 'a.jpg', person: 'p', type: 'photo', src: 'a.jpg',
+          at: '2026-07-25T15:45:00Z', timeSource: 'manual',
+        },
+      ],
+      // The ordinary paste: the address bar with the scheme dropped.
+      course: { kind: 'strava-link', url: 'strava.com/activities/123' },
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.manifest.event.range).toEqual({
+      from: '2026-07-25T10:00:00Z', to: '2026-07-27T00:00:00Z',
+    });
+    expect(r.manifest.markers).toHaveLength(1);
+    expect(r.manifest.items[0]?.timeSource).toBe('manual');
+    expect(r.manifest.event.timezone).toBe('America/Denver');
+  });
+
+  it('still loads an http:// course URL, which was legal before this guard', () => {
+    // Backward compatibility, stated as a test: a manifest that opened before
+    // the guard landed must still open after it.
+    const r = validateManifest(
+      withCourse({ kind: 'strava-link', url: 'http://www.strava.com/activities/1' }),
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it('accepts a non-Strava https LINK with no warning about it at all', () => {
     const r = validateManifest(
       withCourse({ kind: 'strava-link', url: 'https://connect.garmin.com/activity/1' }),
     );
     expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // Permitted by design — meanwhile does not claim to know which sites are
+    // safe to visit. The link's own TEXT names the host; see the render tests.
+    expect(r.warnings.join(' ')).not.toMatch(/connect\.garmin\.com/);
   });
 
   it('still accepts the real thing', () => {
@@ -255,6 +327,54 @@ describe('course-url: what CourseFallback actually renders', () => {
     );
   });
 
+  it('names the ACTUAL host in the link text, never a hardcoded "Strava"', () => {
+    // The phishing shape: an emailed manifest whose link reads "Open the
+    // activity on Strava" and goes to evil.test, with target="_blank" so the
+    // address bar never changes to give it away.
+    mount({ kind: 'strava-link', url: 'https://evil.test/login' });
+    const link = container.querySelector('.fallback__link');
+    expect(link?.getAttribute('href')).toBe('https://evil.test/login');
+    expect(link?.textContent).toContain('evil.test');
+    expect(link?.textContent).not.toMatch(/strava/i);
+    // And the callout above it must not assert Strava either.
+    expect(container.querySelector('.callout')?.textContent).not.toMatch(/strava/i);
+  });
+
+  it('names the host for a legitimate Strava link too, rather than a label', () => {
+    mount({ kind: 'strava-link', url: GOOD_LINK });
+    expect(container.querySelector('.fallback__link')?.textContent).toContain('www.strava.com');
+  });
+
+  it('gives each refusal ONLY its own reason', () => {
+    // An embed refused for its HOST used to also print "a plain activity URL
+    // cannot be embedded: the embed needs a code that only Strava's share
+    // dialog produces" — false, since this URL carries /embed/ and was
+    // refused for where it points. The page contradicted itself.
+    mount({ kind: 'strava-embed', url: 'https://evil.test/activities/1/embed/x' });
+    expect(container.querySelector('.fallback__refused')?.textContent).toMatch(/evil\.test/);
+    expect(hintText()).not.toMatch(/share dialog/i);
+    expect(hintText()).not.toMatch(/cannot be embedded/i);
+
+    // The plain-link case keeps the explanation that IS true of it.
+    mount({ kind: 'strava-link', url: GOOD_LINK });
+    expect(hintText()).toMatch(/cannot be embedded/i);
+
+    // And a URL refused for its SCHEME borrows neither reason.
+    mount({ kind: 'strava-embed', url: 'data:text/html,<b>x' });
+    expect(hintText()).not.toMatch(/cannot be embedded/i);
+    expect(hintText()).not.toMatch(/share dialog/i);
+  });
+
+  it('points at the repair the reader can actually reach', () => {
+    // The likeliest way to get here is typing into the event-settings box,
+    // not hand-editing JSON, so "correct course.url and open the folder
+    // again" sent people to the wrong place.
+    mount({ kind: 'strava-link', url: 'data:text/html,<b>x' });
+    expect(container.querySelector('.fallback__refused')?.textContent).toMatch(
+      /event settings/i,
+    );
+  });
+
   it('still renders a legitimate Strava link and embed', () => {
     mount({ kind: 'strava-link', url: GOOD_LINK });
     expect(container.querySelector('.fallback__link')?.getAttribute('href')).toBe(GOOD_LINK);
@@ -268,6 +388,107 @@ describe('course-url: what CourseFallback actually renders', () => {
     if (!(button instanceof HTMLButtonElement)) throw new Error('load button not found');
     act(() => button.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(container.querySelector('iframe')?.getAttribute('src')).toBe(GOOD_EMBED);
+  });
+});
+
+describe('what React really does with these URLs', () => {
+  /*
+   * Pinned because a claim about it was committed, was wrong, and was
+   * repeated in four files. Two things this holds:
+   *
+   *   1. React DOES sanitise `javascript:` — so no future comment may say it
+   *      does not, and the guard must not be justified by that claim.
+   *   2. React does NOT sanitise anything else — so no future session may
+   *      delete the guard on the grounds that React has it covered.
+   *
+   * If React ever changes either way, this fails and says which.
+   */
+  const blocked = (v: string | null) => (v ?? '').startsWith('javascript:throw');
+
+  function renderRaw(url: string): { href: string | null; src: string | null } {
+    act(() => {
+      root.render(
+        <>
+          <a href={url}>x</a>
+          <iframe src={url} title="t" />
+        </>,
+      );
+    });
+    return {
+      href: container.querySelector('a')?.getAttribute('href') ?? null,
+      src: container.querySelector('iframe')?.getAttribute('src') ?? null,
+    };
+  }
+
+  it.each([
+    'javascript:globalThis.__PWNED=1',
+    'JaVaScRiPt:globalThis.__PWNED=1',
+    'java\tscript:globalThis.__PWNED=1',
+    ' javascript:globalThis.__PWNED=1',
+  ])('sanitises %s in BOTH href and iframe src', (url) => {
+    const { href, src } = renderRaw(url);
+    expect(blocked(href), 'href').toBe(true);
+    expect(blocked(src), 'iframe src').toBe(true);
+  });
+
+  it.each([
+    ['data:text/html,<b>x</b>', 'renders attacker markup in the frame'],
+    ['vbscript:msgbox(1)', 'a scheme React knows nothing about'],
+    ['//evil.test/x', 'protocol-relative, inherits the page scheme'],
+    ['https://evil.test/login', 'an arbitrary site framed inside this page'],
+    ['http://evil.test/x', 'cleartext'],
+  ])('does NOT sanitise %s — %s', (url) => {
+    const { href, src } = renderRaw(url);
+    expect(blocked(href)).toBe(false);
+    expect(blocked(src)).toBe(false);
+    expect(href).toBe(url);
+    expect(src).toBe(url);
+    // Which is precisely why the guard cannot be retired: the FRAME is the
+    // sink React leaves wide open, and `embeddableSrc` closes every one of
+    // these. (`https://evil.test/login` is deliberately still LINKABLE —
+    // meanwhile does not police which sites you may visit — and is handled
+    // instead by naming the host in the link's own text.)
+    expect(embeddableSrc(url)).toBeNull();
+  });
+});
+
+describe('course-url: normalizeCourseUrl', () => {
+  it('prefixes https:// for the ordinary scheme-less paste', () => {
+    // The input that made a bad manifest in the first place.
+    expect(normalizeCourseUrl('strava.com/activities/123')).toBe(
+      'https://strava.com/activities/123',
+    );
+    expect(normalizeCourseUrl('  www.strava.com/activities/1  ')).toBe(
+      'https://www.strava.com/activities/1',
+    );
+    expect(normalizeCourseUrl('//www.strava.com/activities/1')).toBe(
+      'https://www.strava.com/activities/1',
+    );
+  });
+
+  it('leaves an address that already works exactly alone', () => {
+    expect(normalizeCourseUrl(GOOD_EMBED)).toBe(GOOD_EMBED);
+    expect(normalizeCourseUrl('')).toBe('');
+    expect(normalizeCourseUrl('   ')).toBe('');
+  });
+
+  it('never invents a scheme over one that is already there', () => {
+    // Upgrading http:// to https:// would silently change where the author
+    // said to go. It stays as typed and is refused at render instead.
+    for (const url of ['http://evil.test/x', 'javascript:alert(1)', 'data:text/html,x']) {
+      expect(normalizeCourseUrl(url), url).toBe(url);
+      expect(safeHref(normalizeCourseUrl(url)), url).toBeNull();
+    }
+  });
+
+  it('only ever produces something the one guard accepts, or the input back', () => {
+    for (const raw of [
+      'strava.com/x', 'evil.test/x', 'not a url at all', 'https://ok.test/x',
+      'javascript:1', '///x', '@evil.test',
+    ]) {
+      const out = normalizeCourseUrl(raw);
+      expect(out === raw.trim() || safeHref(out) !== null, raw).toBe(true);
+    }
   });
 });
 
@@ -287,6 +508,13 @@ describe('course-url: the call site, read from source', () => {
     expect(src).toContain('src={embedSrc}');
     expect(src).toContain('safeHref(course.url)');
     expect(src).toContain('embeddableSrc(course.url)');
+  });
+
+  it('never hardcodes the destination in the link text', () => {
+    // `href` may point at any https host, so the visible text has to be
+    // derived from the URL rather than asserting a site.
+    expect(src).toContain('Open the activity on {host}');
+    expect(src).not.toMatch(/Open the activity on Strava/);
   });
 
   it('keeps the rule in core, so the two layers cannot drift', () => {

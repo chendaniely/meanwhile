@@ -492,26 +492,48 @@ export function validateManifest(input: unknown): ValidationResult {
         if (typeof url !== 'string' || url === '') {
           errors.push(`"course.url" is required for kind "${kind}"`);
         } else if (hostOf(url) === null) {
-          // A manifest is a file people send each other, so this string is
-          // untrusted input that ends up in an `href` and, for an embed, an
-          // `iframe src`. `javascript:` in either one runs script in a page
-          // holding File System Access handles to the reader's photo folder.
-          // See `course-url.ts` for exactly what is refused and why.
-          errors.push(
-            `"course.url" must be a plain https:// address — this one is not, so it ` +
-              `was refused rather than turned into a link. Other schemes ` +
-              `("javascript:", "data:") run as code in the page when the link is ` +
-              `clicked, and a URL carrying a tab, a space, a backslash or a "@" ` +
-              `does not resolve to the host it appears to name.`,
+          /*
+           * A WARNING, not an error, and the difference is somebody's work.
+           *
+           * This was an error for one commit, and executing that showed what
+           * it costs: `updateCourse` in App.tsx accepts a scheme-less paste
+           * (`strava.com/activities/123` — the ordinary thing to type), Save
+           * writes it to `manifest.json`, and the next "Open folder" then
+           * refused the WHOLE manifest. `ingestFolder` leaves `imported` as
+           * null, and on 'replace' nothing stands in for it — so the crop,
+           * every marker, the title, the timezone and **every
+           * `timeSource: 'manual'` placement** were gone, which is exactly
+           * the list CLAUDE.md's "The manifest is the contract" names as NOT
+           * regenerable from the photographs. It also broke files that
+           * already loaded: an `http://` course URL was legal before.
+           *
+           * Warning instead loses nothing. The manifest loads with the URL
+           * untouched, the problem is reported, and `CourseFallback` — which
+           * checks independently, because App.tsx's own settings box never
+           * goes through this function — declines to render it. The refusal
+           * happens where the damage would be, not where the data is.
+           *
+           * The URL is NOT stripped on the way back out, either: preserving a
+           * value this build will not act on is the same rule as CLAUDE.md's
+           * "Refusing to READ a row is not permission to DELETE it".
+           */
+          warnings.push(
+            `"course.url" is not a plain https:// address, so it will not be shown as ` +
+              `a link. It is kept in the manifest exactly as written — correct it in ` +
+              `the event settings, or in "course.url", to turn the link back on. ` +
+              `(A URL carrying a tab, a space, a backslash or a "@" does not resolve ` +
+              `to the host it appears to name, which is why those are refused too.)`,
           );
         } else if (kind === 'strava-embed' && embeddableSrc(url) === null) {
-          // An embed is loaded INTO this page, which a link is not, so it
-          // needs the host allowlist on top of the scheme check.
-          errors.push(
+          // Same reasoning, one step stricter: an embed is loaded INTO this
+          // page, which a link is not, so it needs the host allowlist on top
+          // of the scheme check. Still a warning — the link out is fine, and
+          // it is only the frame that is declined.
+          warnings.push(
             `"course.url" for kind "strava-embed" is on "${hostOf(url)}", but an embed ` +
               `is loaded inside meanwhile's own page, so only ` +
-              `${embeddableHosts().join(' and ')} are accepted there. ` +
-              `Use kind "strava-link" to link out to it instead.`,
+              `${embeddableHosts().join(' and ')} are framed there. It is still ` +
+              `offered as a link out.`,
           );
         }
         warnings.push(

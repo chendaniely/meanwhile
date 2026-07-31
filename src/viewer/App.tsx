@@ -33,6 +33,7 @@ import {
   type TimeWindow,
 } from '../core/window.ts';
 import { CourseCharts } from './components/CourseCharts.tsx';
+import { normalizeCourseUrl } from '../core/course-url.ts';
 import { CourseFallback } from './components/CourseFallback.tsx';
 import { CourseRail } from './components/CourseRail.tsx';
 import { NoteList } from './components/Notes.tsx';
@@ -497,7 +498,14 @@ export function App() {
   const updateCourse = (url: string) => {
     if (stage.name !== 'loaded') return;
     const manifest: Manifest = { ...stage.manifest };
-    const trimmed = url.trim();
+    // Normalised, not merely trimmed. The ordinary way to fill this box is to
+    // copy the address bar and lose the scheme — `strava.com/activities/123` —
+    // and before this that went into `manifest.json` verbatim, where the
+    // reader then declined to link it. `normalizeCourseUrl` prefixes
+    // `https://` only when doing so turns something the guard refuses into
+    // something it accepts, so an explicit `http://` is left exactly as typed
+    // rather than silently upgraded to a different destination.
+    const trimmed = normalizeCourseUrl(url);
     if (!trimmed) delete manifest.course;
     else if (/\/embed\//.test(trimmed)) manifest.course = { kind: 'strava-embed', url: trimmed };
     else manifest.course = { kind: 'strava-link', url: trimmed };

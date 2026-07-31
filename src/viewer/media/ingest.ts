@@ -298,6 +298,8 @@ export async function ingestFolder(
    * nothing said about it anywhere.
    */
   const ignoredCandidates: string[] = [];
+  /** Warnings from `validateManifest` for the manifest actually used. */
+  const manifestWarnings: string[] = [];
   /**
    * Manifests closer to the top that could not be read at all.
    *
@@ -325,6 +327,23 @@ export async function ingestFolder(
       if (result.ok) {
         imported = result.manifest;
         importedFrom = found.path;
+        /*
+         * A warning nothing renders is not a warning.
+         *
+         * `validateManifest` has always collected these and NOTHING in
+         * `src/viewer` had ever read them — verified by grep before this was
+         * written. That was survivable while every warning was advisory ("two
+         * people have role runner"), and stopped being survivable the moment a
+         * refused `course.url` became a warning rather than an error: the
+         * whole point of that change is that the manifest still loads, which
+         * only works if the reader is told why the link is missing.
+         *
+         * Routed into the same problems callout that carries `importError`
+         * and every other silent-outcome report, because this project already
+         * has one channel for "something was not done the way the file said"
+         * and a second one would be a second place to forget to look.
+         */
+        manifestWarnings.push(...result.warnings.map((w) => `${found.path}: ${w}`));
       } else {
         // Refused with a legible reason rather than half-applied. A manifest
         // that partly loads is how you lose work without noticing.
@@ -526,6 +545,7 @@ export async function ingestFolder(
   );
   const noteProblems = [
     ...ignoredCandidates,
+    ...manifestWarnings,
     ...courseProblems,
     ...rosterProblems,
     ...rosterProblemsFromSession,
