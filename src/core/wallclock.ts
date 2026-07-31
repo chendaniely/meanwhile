@@ -9,7 +9,7 @@
  * `markers.csv` and `placements.csv` carry the same seven columns, and the
  * same wall clock has to mean the same instant in every one of them. A second
  * implementation of the ladder is how one file's 01:30 ends up an hour from
- * another file's, with nothing to notice it by. `markers.ts` importing
+ * another file's, with nothing to notice it by. `markers-csv.ts` importing
  * `resolveZoned` from `notes.ts` would have said the rule belongs to notes; it
  * belongs to the format.
  *

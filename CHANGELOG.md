@@ -83,7 +83,7 @@ disagreement reported rather than guessed through — but it was private to
 `notes.ts`. It is now `src/core/wallclock.ts`, along with `readCalendarParts`
 (the five integers, range-checked, refused rather than rolled over),
 `wallClockToInstant`, `readOffsetCell` and the `Resolved` type. Extracted
-rather than exported in place: a `markers.ts` importing `resolveZoned` from
+rather than exported in place: a `markers-csv.ts` importing `resolveZoned` from
 `notes.ts` would say the rule belongs to notes, and it belongs to the format.
 
 Every message these can produce takes a noun naming the kind of row, so a
@@ -148,6 +148,69 @@ No owner prompt is quoted here because there was none to quote — this step was
 specified in a task brief rather than asked for directly, and inventing a
 quotation would poison the source `scripts/check-owner-quotes.mjs` checks
 against.
+
+### `markers.csv`, as a codec — nothing reads it yet
+
+The third step of replacing `manifest.json` with a set of CSVs.
+`src/core/markers-csv.ts` is a pure `parseMarkersCsv` / `formatMarkersCsv` pair
+with 59 tests, and **nothing imports it** — `ingest.ts`, `App.tsx` and the save
+path are untouched, so the site still keeps markers in `manifest.json`. Wiring
+is a later step.
+
+The columns are `label`, then `notes*.csv`'s seven timestamp columns
+unprefixed — `year, month, day, hour, minute, tz, utc_offset_min` — then
+`distance_m`, then any column somebody else added, then `schema`. The
+timestamp goes through the `wallclock.ts` ladder above with a noun of `marker`,
+so a problem reads `marker "Cottonwood" has a month of 13` and sends its author
+to this file rather than to `notes.csv`.
+
+**A marker has no id, and two consequences follow that are worth writing down
+rather than leaving to be discovered.** `Marker` in `schema.ts` is `{ label,
+at?, atDistance? }`; nothing in the project mints or carries an identifier for
+one, so a column here would be invented on write and churned on every save.
+So: `markers.csv` cannot be merged between two people, because row-binding two
+crew members' copies would produce every aid station twice and nothing could
+tell that from a genuine second pass through the same aid station on an
+out-and-back — this file has one author, and it does not glob the way
+`notes*.csv` does. And `schema` is per file rather than per row, the same call
+`event.csv` makes: the per-row argument is that a row-bound file lands a row
+from somebody's older copy among newer rows, and nothing lands here from
+anywhere else.
+
+**An `atDistance`-only marker is invisible in the app, and the reader now says
+so.** `markerLines` in `Swimlanes.tsx` draws markers on the time axis and drops
+one with no `at`, because nothing converts metres along the course into a time
+yet. A hand-authorable file whose most obvious use silently does nothing is a
+trap, so this is reported as a warning — once for the whole file, since the
+reason is a fact about the build rather than about any one row. The marker is
+returned and written back either way. The warning goes when the spine learns to
+convert distance to time, and not before.
+
+The rule the module exists for, the same one `event.csv` was built around: a
+row this build cannot interpret is reported AND written back verbatim. A month
+of 13, a `tz` of `MDT` that `Intl` cannot resolve, a `distance_m` that is not a
+number, a row with no label, a row giving neither a time nor a distance — each
+becomes a `PreservedRow`, because the alternative is that the reader drops it,
+the writer only writes what parsed, and one Save puts an aid station off disk.
+They are written at the END of the file, which is where `people.csv` puts
+preserved rows and not where `notes*.csv` does: a refused note is slotted back
+into its place in time because a notes file is read in chronological order,
+whereas a marker has no identity to reconnect and the bottom is simply where
+somebody repairing the file will look.
+
+Two smaller decisions, both about `distance_m`. A blank cell means absent and
+`0` means zero, because the start line is a real marker at a real distance and
+a falsy check drops it silently. And a cell that is not a number preserves the
+row rather than reading as zero: `Number('about 5k')` is `NaN`, which is
+`typeof 'number'` and so passes `validateManifest`'s only check on the field —
+and `JSON.stringify` then writes it as `null`, which the same validator refuses
+on the next open, taking the whole manifest with it.
+
+Every one of the 59 tests was checked by breaking the production code and
+confirming it fails: 49 mutations, and each test proven to be killed by at
+least one of them.
+
+No owner prompt is quoted here, for the same reason as the two entries above.
 
 ## 0.4.0 — 2026-07-30 — a role says what someone was, and a course URL has to earn its link
 
