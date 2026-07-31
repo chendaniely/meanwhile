@@ -212,6 +212,88 @@ least one of them.
 
 No owner prompt is quoted here, for the same reason as the two entries above.
 
+### `placements.csv`, as a codec and an apply function — nothing reads it yet
+
+The fourth step of replacing `manifest.json` with a set of CSVs.
+`src/core/placements-csv.ts` is a pure `parsePlacementsCsv` /
+`formatPlacementsCsv` pair plus `applyPlacements`, with 73 tests, and **nothing
+imports it** — `ingest.ts`, `App.tsx` and the save path are untouched. Wiring is
+a later step.
+
+**A placement is a correction, not a record**, and that is the whole design.
+`assembleManifest` re-derives every item from the files on disk on every open,
+so a `placements.csv` row exists only where somebody disagreed with what it
+worked out. It starts empty and stays empty: a folder of 231 photographs nobody
+has argued with produces a file with no rows in it. Two facts cannot be
+re-derived from a file that does not carry them, and this is where they go:
+
+- **A hand-placed time** (`timeSource: 'manual'` plus an `at`), which today
+  survives a re-ingest only through `AssembleOptions.existingItems` — i.e. only
+  while a previous `manifest.json` is around to carry it.
+- **A corrected `person`**, which nothing carries at all today: device grouping
+  is re-derived every open, so a correction is destroyed in silence. That half
+  is the reason the file is worth having now rather than later.
+
+The columns are `item_id`, then `notes*.csv`'s seven timestamp columns
+unprefixed — `year, month, day, hour, minute, tz, utc_offset_min` — then
+`person`, then any column somebody else added, then `schema`. The timestamp goes
+through the `wallclock.ts` ladder with a noun of `placement`, so a problem reads
+`placement "priya/PXL_20260722_161300.jpg" has a month of 13` and sends its
+author to this file rather than to `notes.csv`. `schema` is per file, the same
+call `event.csv` and `markers.csv` make: this file neither globs nor row-binds,
+so a version declared anywhere in it is a statement about the file.
+
+**The join closes a hole this project had already written down.** An item's id
+is its path relative to the folder root, which is what makes it stable across
+re-ingests — and what makes it move the moment somebody reorganises the folder.
+CLAUDE.md records the consequence: a reorganisation orphans every manual
+placement, while notes survive one precisely because they join photographs by
+BASENAME. `applyPlacements` joins the same way and under the same condition:
+exact `item_id` first, then an unambiguous basename, then a report. **An
+ambiguous basename is refused, never guessed** — two phones both produce
+`PXL_20260822_131204.jpg`, and attaching somebody's hand-placed time to the
+wrong photograph is worse than leaving the row unapplied. The successful
+fallback is reported too, because a correction landing on a file the row does
+not name should not happen quietly. An `item_id` matching nothing at all is
+reported and the row survives: the photograph may simply not be in the folder
+that happens to be open, and deleting somebody's correction because they opened
+the wrong folder is the failure this project keeps legislating against.
+
+**`person` is a NAME, not an id**, resolved through `resolvePersonNames` so
+aliases work — rename that device to "Priya" and a file still saying "Google
+Pixel 8 Pro" keeps resolving. The candidate set is the roster UNION every person
+the items were derived onto, which is exactly the set `assembleManifest` puts in
+`manifest.people` and exactly the set `validateManifest` checks `items[].person`
+against. The roster alone would be too narrow — correcting a photograph onto a
+device lane `people.csv` has never been told about is an ordinary thing to want,
+and that lane's label is what the swimlanes show. A name that resolves to
+nobody, or to more than one person, leaves the DERIVED person standing and says
+so; carrying it through as an id produces a manifest `validateManifest` refuses
+outright and a photograph with no lane colour at all, since `assignLaneColors`
+has no entry for an id that is not in `manifest.people`.
+
+**A correction that changes nothing is reported and never deleted.** A
+corrections file should tend towards holding only real corrections rather than
+accumulating fossils as the derivation improves, but which fossils are worth
+keeping is the author's call. One detail worth stating: a row whose instant
+matches an item's EXIF is NOT redundant, because applying it flips `timeSource`
+to `manual` and that stops the person's `clockOffset` being applied — deleting
+such a row would move the photograph.
+
+And the rule the whole family of modules exists for: a row this build cannot
+interpret is reported AND written back verbatim. A month of 13, a `tz` of `MDT`
+that `Intl` cannot resolve, a row with no `item_id`, a row giving neither a time
+nor a person — each becomes a `PreservedRow`, written at the END of the file
+where `people.csv` and `markers.csv` put theirs. It matters more here than
+anywhere else in the set: a placement is the only record of a decision somebody
+made by hand, and no file on disk can re-derive it.
+
+Every one of the 73 tests was checked by breaking the production code and
+confirming it fails: 52 mutations, every mutation killing at least one test and
+every test killed by at least one mutation.
+
+No owner prompt is quoted here, for the same reason as the three entries above.
+
 ## 0.4.0 — 2026-07-30 — a role says what someone was, and a course URL has to earn its link
 
 ### A role is free text; a new `pinned` column decides whose lane goes on top
