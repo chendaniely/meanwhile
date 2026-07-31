@@ -397,7 +397,23 @@ normal event, and a second timezone field in the compose box would be paid
 for on every note to serve a few. A person who needs it can set `tz` in the
 spreadsheet, which is read correctly.
 
-## A leading apostrophe someone else typed is eaten *(found 2026-07-30, pre-release gate pass 2)*
+## ~~A leading apostrophe someone else typed is eaten~~ *(found 2026-07-30, pre-release gate pass 2)*
+
+**Done, 2026-07-30.** `unguard` is now the exact inverse of the guard: it
+strips the leading `'` **if and only if the REMAINDER matches
+`FORMULA_LEAD`** — the same question `cell()` asked when it decided to write
+one. That is a third candidate the analysis below missed, and it is neither
+of the two it weighed. It costs nothing and needs no migration, for the
+reason the second bullet already established: a file meanwhile wrote carries
+the doubled apostrophe, so it reads identically before and after; only
+somebody else's file reads differently, and it now reads correctly. Six
+cases pinned in `tests/csv.test.ts`, including the one that kills the
+next-character shortcut — `'  =evil`, where the character after the
+apostrophe is a SPACE and the cell is still ours. Reverting the fix, and
+separately narrowing it to a next-character test, were both executed against
+the suite and failed 4 and 10 tests respectively.
+
+The original reasoning, kept because it is what made the fix findable:
 
 `unguard()` in `src/core/csv.ts` strips one leading `'` from every cell,
 unconditionally. That is exactly right for a file meanwhile wrote — the
@@ -428,3 +444,8 @@ the files already written under the current rule — which is why this is a
 task rather than a one-liner. Note the size of the problem honestly: it costs
 an apostrophe at the start of a cell, and nothing else. See CLAUDE.md's
 "Verbatim means the cells, not the bytes".
+
+*(That last paragraph was wrong on both counts, which is worth keeping: there
+was a third candidate, and it needed no migration at all. The bullet above
+had already proved why — a file meanwhile wrote carries `''twas`, not
+`'twas` — and the conclusion simply did not follow it through.)*

@@ -174,6 +174,77 @@ describe('formula guard: leading whitespace does not get a cell past it', () => 
 });
 
 /**
+ * `unguard` stripped a leading apostrophe UNCONDITIONALLY, which is right for
+ * a file meanwhile wrote and wrong for one it did not.
+ *
+ * A crew member's own `notes.csv`, typed by hand in a spreadsheet, could
+ * carry `'twas a long night`; a `people.csv` could carry the name `'Bama`.
+ * Both lost the apostrophe on the FIRST read and were saved that way —
+ * silent, and not recoverable from the saved file. Recorded in TODO.md as an
+ * open bug and in CLAUDE.md as the one genuine content loss in a round trip.
+ *
+ * The inverse of the guard is: strip the leading `'` exactly when what
+ * FOLLOWS it is what `cell` would have guarded, i.e. when the remainder
+ * matches `FORMULA_LEAD`. The rows below are the whole truth table, and the
+ * fifth is why the remainder has to go through the full regex rather than a
+ * check of its first character — `cell` guards `  =evil` (leading spaces,
+ * because Excel strips them before deciding), so a next-character test sees a
+ * SPACE, decides the apostrophe was somebody else's, keeps it, and hands a
+ * live formula back to the spreadsheet on the next save.
+ */
+describe('unguard is the exact inverse of the formula guard', () => {
+  const CASES: Array<[read: string, expected: string, why: string]> = [
+    ["''twas", "'twas", 'our own guard on a cell that already began with an apostrophe'],
+    ["'twas", "'twas", 'somebody else’s literal apostrophe — was eaten before this fix'],
+    ["'=SUM(1+1)", '=SUM(1+1)', 'our own guard on a formula'],
+    ["'@Priya", '@Priya', 'our own guard on an @ mention'],
+    ["'  =evil", '  =evil', 'our own guard on whitespace-then-formula'],
+    ["'Bama", "'Bama", 'a name that starts with an apostrophe — was eaten before this fix'],
+  ];
+
+  for (const [read, expected, why] of CASES) {
+    it(`reads ${JSON.stringify(read)} as ${JSON.stringify(expected)} — ${why}`, () => {
+      expect(parseCsv(`a\n${read}\n`).rows[0]?.a).toBe(expected);
+    });
+  }
+
+  it('applies the same rule to a header, so a column name is not renamed', () => {
+    // Headers go through `unguard` too. A file someone typed with a column
+    // called `'note` would otherwise be read as a column called `note`, and
+    // every cell under it filed against a name the file does not contain.
+    expect(parseCsv("'note,b\nx,y\n").headers).toEqual(["'note", 'b']);
+    expect(parseCsv("'=note,b\nx,y\n").headers).toEqual(['=note', 'b']);
+  });
+
+  it('round-trips every one of them through formatCsv and back', () => {
+    // The property that makes the guard safe to apply unconditionally on
+    // write: whatever went in comes back out, byte for byte.
+    const values = ["'twas a long night", "'Bama", '=SUM(1+1)', '@Priya', '  =evil', "''double"];
+    for (const value of values) {
+      const back = parseCsv(formatCsv(['a'], [{ a: value }])).rows[0]?.a;
+      expect(back, value).toBe(value);
+    }
+  });
+
+  it('round-trips a whole row of them at once, headers included', () => {
+    const row = { "'col": "'twas", b: "'Bama", c: '  =evil' };
+    const back = parseCsv(formatCsv(["'col", 'b', 'c'], [row]));
+    expect(back.headers).toEqual(["'col", 'b', 'c']);
+    expect(back.rows[0]).toEqual(row);
+  });
+
+  it('is stable when the same value is read twice', () => {
+    // Guards against `FORMULA_LEAD` ever gaining a `/g` flag, which would
+    // make `.test` alternate true and false on one input and so make the
+    // apostrophe survive or vanish depending on call order.
+    for (let i = 0; i < 3; i++) {
+      expect(parseCsv("a\n'Bama\n").rows[0]?.a).toBe("'Bama");
+      expect(parseCsv("a\n'=1+1\n").rows[0]?.a).toBe('=1+1');
+    }
+  });
+});
+
+/**
  * `José` composed (U+00E9) and `José` decomposed (e + U+0301) render
  * identically and compare unequal as JavaScript strings — verified in both
  * directions against `resolvePersonNames`, which matched neither against the

@@ -13,7 +13,10 @@
  * or `@` is executed when the file is opened. These files are meant to be
  * passed between people, so that is a live risk rather than a theoretical one.
  * A leading apostrophe disarms it; spreadsheets hide the apostrophe, and
- * `parseCsv` removes it. See `FORMULA_LEAD` for why the whitespace matters.
+ * `parseCsv` removes it — but only when it is one this module wrote, or a
+ * name someone typed as `'Bama` loses its apostrophe on the first read. See
+ * `FORMULA_LEAD` for why the whitespace matters and `unguard` for how the
+ * two cases are told apart.
  *
  * NFC: every cell is written in Unicode Normalization Form C. `José` typed on
  * a Mac (which composes to NFD in some input paths) and `José` typed on
@@ -271,8 +274,45 @@ function splitRecords(text: string): RawRecord[] {
   return records;
 }
 
+/**
+ * The exact inverse of the formula guard in `cell`.
+ *
+ * **It used to strip a leading `'` unconditionally, and that lost data.**
+ * Right for a file meanwhile wrote — the apostrophe is our own guard coming
+ * back off — and wrong for one it did not: a note reading `'twas a long
+ * night`, or a person named `'Bama`, came back without the apostrophe on the
+ * FIRST read and was saved that way, silently and unrecoverably.
+ *
+ * The fix is to ask the question `cell` asked. `cell` writes an apostrophe
+ * exactly when `FORMULA_LEAD` matches the value, so an apostrophe is ours
+ * exactly when `FORMULA_LEAD` matches what FOLLOWS it. Six cases, all pinned
+ * in `tests/csv.test.ts`:
+ *
+ * | read      | remainder | ours? | result   |
+ * |-----------|-----------|-------|----------|
+ * | `''twas`  | `'twas`   | yes   | `'twas`  |
+ * | `'twas`   | `twas`    | no    | `'twas`  |
+ * | `'=SUM()` | `=SUM()`  | yes   | `=SUM()` |
+ * | `'@Priya` | `@Priya`  | yes   | `@Priya` |
+ * | `'  =evil`| `  =evil` | yes   | `  =evil`|
+ * | `'Bama`   | `Bama`    | no    | `'Bama`  |
+ *
+ * **Testing the whole remainder against `FORMULA_LEAD`, not just its first
+ * character, is what makes row five work.** `cell` guards a cell whose first
+ * NON-WHITESPACE character is a formula lead, so `  =evil` is written `'  =evil`
+ * and a next-character check would see a space, call the apostrophe somebody
+ * else's, and hand a live DDE payload back to the spreadsheet.
+ *
+ * There is no migration to do, and that is worth stating because it looks
+ * like there should be: a file meanwhile wrote already carries the doubled
+ * apostrophe (`FORMULA_LEAD`'s own anchored `'` branch guards `'twas` as
+ * `''twas`), so it reads the same before and after this change. Only a file
+ * from somewhere else reads differently, and it reads CORRECTLY now.
+ */
 function unguard(value: string): string {
-  return value.startsWith("'") ? value.slice(1) : value;
+  if (!value.startsWith("'")) return value;
+  const rest = value.slice(1);
+  return FORMULA_LEAD.test(rest) ? rest : value;
 }
 
 export function formatCsv(

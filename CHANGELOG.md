@@ -71,6 +71,35 @@ the `href` and back in the `src`, and refuse in silence. Every one was
 caught. A test never seen to fail is not known to work, and this repository
 has shipped several that assert nothing.
 
+### A leading apostrophe someone else typed is no longer eaten
+
+`unguard()` stripped one leading `'` from every cell — right for a file
+meanwhile wrote, wrong for one it did not. A note reading `'twas a long
+night`, or a person named `'Bama`, lost the apostrophe on the first read and
+saved without it, silently and unrecoverably. Open in `TODO.md` since the
+0.3.1 gate found it.
+
+It is now the exact inverse of the guard: strip the `'` **if and only if the
+remainder matches `FORMULA_LEAD`** — the same question the writer asked when
+it decided to add one. Testing the whole remainder rather than just the next
+character is the part that matters: a cell written `'  =evil` is ours, and a
+next-character check sees a space, keeps the apostrophe, and hands a live
+formula back to the spreadsheet.
+
+No migration was needed, and the old `TODO.md` entry had already proved why
+without following it through: a file meanwhile wrote carries `''twas`, not
+`'twas`, so it reads identically before and after. Only somebody else's file
+reads differently, and it now reads correctly.
+
+Broken four ways to prove the tests hold it: revert `unguard` to the old
+unconditional strip (4 failures), narrow it to a next-character test (10),
+make it never strip at all (20), and give `FORMULA_LEAD` a `/g` flag so its
+`lastIndex` carries between calls (13).
+
+The frozen migration fixture, `tests/fixtures/csv-before-2026-07-30.ts`, was
+checked and not touched: no cell in it begins with an apostrophe, so it reads
+identically either way.
+
 ## 0.3.1 — 2026-07-30 — the gate turned on itself, then on its own guards
 
 ### The analytics leak is shut

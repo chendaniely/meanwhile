@@ -4,7 +4,7 @@
 
 As of 2026-07-30 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **825 tests pass** (`make check`).
+the race. **835 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -1222,13 +1222,28 @@ dropped, columns are reordered into canonical order (unknown ones last,
 before `schema`), header names are trimmed, and duplicate header names
 collapse to the last one. None of these lose a cell's content.
 
-**One that DOES lose content, and is a genuine bug rather than a formatting
-difference:** `unguard()` strips a leading apostrophe unconditionally, so a
-cell a person typed as `'twas a long night` — or a name like `'Bama` — parses
-to the text without it, on the FIRST read, and saves that way. This
-contradicts the formula-guard bullet below, whose "the round trip is
-invisible to a person" holds only for files meanwhile itself wrote. Not fixed
-here; see `TODO.md`.
+**There was a fifth that DID lose content, and it is now fixed *(2026-07-30)*.**
+`unguard()` stripped a leading apostrophe unconditionally, so a cell a person
+typed as `'twas a long night` — or a name like `'Bama` — parsed to the text
+without it, on the FIRST read, and saved that way. It is now the exact
+inverse of the guard: **the leading `'` is stripped if and only if the
+REMAINDER matches `FORMULA_LEAD`**, which is precisely the question
+`cell()` asked when it decided to write one.
+
+Testing the whole remainder, not just its next character, is the part that
+is easy to get wrong. `cell()` guards a cell whose first NON-WHITESPACE
+character is a formula lead, so `  =evil` is written `'  =evil`; a
+next-character check sees a SPACE, concludes the apostrophe was somebody
+else's, keeps it, and hands a live formula straight back to the spreadsheet.
+`tests/csv.test.ts` pins all six cases, and that mutation was executed and
+confirmed to fail ten tests.
+
+**No migration was needed, which looks wrong and is not.** A file meanwhile
+wrote already carries a doubled apostrophe — `FORMULA_LEAD`'s own anchored
+`'` branch guards `'twas` as `''twas` — so it reads identically before and
+after. Only a file from somewhere else reads differently, and it now reads
+correctly. So the formula-guard bullet below no longer carries an exception:
+the round trip really is invisible to a person, whoever wrote the file.
 
 The fallback considered and not taken was refusing to save at all. Preserving
 is strictly better: it needs no decision from the author and cannot strand a
@@ -1247,10 +1262,12 @@ something a stranger typed, not as trusted output from this app:
   a formula by Excel and Sheets the moment the file is opened. `formatCsv`
   writes a leading apostrophe on any such cell; `parseCsv` strips it back off
   on read, so the round trip is invisible to a person but the live formula
-  never reaches their spreadsheet. **The strip is unconditional, which costs
-  a real apostrophe** in a file meanwhile did not write: `'twas` reads as
-  `twas`. Round-trip-stable for our own output, lossy once on someone else's
-  — see the round-trip exceptions above and `TODO.md`. **Reversing this** means accepting that
+  never reaches their spreadsheet. **The strip used to be unconditional,
+  which cost a real apostrophe** in a file meanwhile did not write: `'twas`
+  read as `twas`. Fixed 2026-07-30 — `unguard` now strips the `'` only when
+  what follows it is what `cell()` would have guarded, so the round trip is
+  lossless for a hand-typed file too. See the round-trip exceptions above.
+  **Reversing this** means accepting that
   anyone who receives a `notes.csv` — which is the entire point of the file
   — can have arbitrary formulas run in their spreadsheet by whoever wrote a
   note.
