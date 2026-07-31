@@ -201,13 +201,24 @@ describe('course variants', () => {
     expect(r.warnings).toEqual([]);
   });
 
-  it('accepts a Strava fallback but warns that the spine stays off', () => {
+  it('accepts a Strava fallback and says NOTHING about it', () => {
     const r = validateManifest(
       minimal({ course: { kind: 'strava-link', url: 'https://www.strava.com/activities/123' } }),
     );
     expect(r.ok).toBe(true);
-    // The user needs to know why the map and elevation profile are missing.
-    expect(r.warnings.join(' ')).toMatch(/GPX export/);
+    /*
+     * This warned unconditionally until 2026-07-30, which was harmless only
+     * while nothing read `warnings`. Once they were routed into the viewer's
+     * problems callout it made the commonest correct configuration — paste a
+     * Strava link, Save, Open — report a problem, in a callout whose wording
+     * is about unreadable rows and deleted notes. A warning that fires on an
+     * ordinary correct file trains people to ignore the channel.
+     *
+     * The fact is still told to the reader, by `CourseFallback` on the course
+     * view, which is where a missing map needs explaining. What must not come
+     * back is telling them here.
+     */
+    expect(r.warnings).toEqual([]);
   });
 
   it('rejects an unknown course kind', () => {

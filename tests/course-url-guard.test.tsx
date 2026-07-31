@@ -481,6 +481,16 @@ describe('course-url: normalizeCourseUrl', () => {
     }
   });
 
+  it('leaves a word alone rather than promoting it to a live link', () => {
+    // `none`, `n/a`, `TBD` and `-` are real things people leave in an
+    // optional field. Prefixing them produced `https://none`, which `hostOf`
+    // accepts, so the page rendered an anchor reading "Open the activity on
+    // none". A dot is what separates a shortened address from a word.
+    for (const word of ['none', 'n/a', 'TBD', '-', 'unknown', '/activities/123']) {
+      expect(normalizeCourseUrl(word), word).toBe(word);
+    }
+  });
+
   it('only ever produces something the one guard accepts, or the input back', () => {
     for (const raw of [
       'strava.com/x', 'evil.test/x', 'not a url at all', 'https://ok.test/x',

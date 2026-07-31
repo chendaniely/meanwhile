@@ -32,7 +32,7 @@
  *   here).
  *
  * **The guard stays anyway, and that is not stubbornness.** React's sanitiser
- * covers exactly one scheme and does nothing about the two real problems
+ * covers exactly one scheme and does nothing about the three real problems
  * above. Sanitising a URL is not React's job and it does not claim it as an
  * API. And a security property that rests on a framework's implementation
  * detail is one dependency bump away from vanishing silently, with no test
@@ -63,11 +63,22 @@
  * - **Userinfo.** `https://www.strava.com@evil.com/` has a host of
  *   `evil.com`; the part that reads like Strava is a username. The authority
  *   charset below has no `@` in it, so such a URL matches nothing at all.
- * - **A non-ASCII host.** IDNA maps some non-ASCII characters onto ASCII
- *   ones during resolution, so a host this file reads is not necessarily the
- *   host the browser dials. Refusing them keeps `hostOf` a statement about
- *   what will actually be contacted. The cost is an internationalised domain
- *   name being refused; no Strava URL is one.
+ * - **A non-ASCII host.** IDNA maps some non-ASCII characters onto ASCII ones
+ *   during resolution, so a host this file reads is not necessarily the host
+ *   the browser dials. The cost is an internationalised domain name being
+ *   refused; no Strava URL is one.
+ *
+ *   **This does NOT make `hostOf` a statement about what will actually be
+ *   contacted, and an earlier version of this comment claimed it did.**
+ *   Numeric IPv4 forms stay ASCII and still resolve to something else
+ *   entirely: `0x7f.1`, `2130706433` and `0177.0.0.1` all dial 127.0.0.1, and
+ *   `1.1` dials 1.0.0.1 — verified against the WHATWG parser. That is not a
+ *   bypass of anything that matters here, because none of them can equal
+ *   `strava.com`, so the embed allowlist is unaffected. What it does mean is
+ *   that the host shown in the link's own text can differ from the host
+ *   dialled for these forms. Canonicalising IPv4 is deliberately NOT done:
+ *   it is a second address parser to get wrong, for a label mismatch on
+ *   addresses nobody pastes into a course field.
  *
  * **Reversing any of this** means accepting that a `manifest.json` — a file
  * whose entire purpose is to be passed between people — can render attacker
@@ -196,6 +207,13 @@ export function normalizeCourseUrl(raw: string): string {
   // silently. A mutation test will report this line as an equivalent mutant;
   // that is expected, not a missing test.
   if (trimmed === '' || hostOf(trimmed) !== null) return trimmed;
+  // The dot is what separates an address someone shortened from a word they
+  // typed. Without it, `none`, `n/a`, `TBD` and `-` — all real things people
+  // leave in an optional field — became `https://none` and rendered as live
+  // anchors labelled "Open the activity on none". Storing them verbatim and
+  // letting the render guard refuse them with an explanation is what happened
+  // before normalisation existed, and it was better.
+  if (!trimmed.includes('.')) return trimmed;
   const prefixed = `https://${trimmed.replace(/^\/+/, '')}`;
   return hostOf(prefixed) !== null ? prefixed : trimmed;
 }

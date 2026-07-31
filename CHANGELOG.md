@@ -116,9 +116,11 @@ to act on a value is not permission to delete it — and the reader declines to
 render it. Two things make that real: `validateManifest`'s warnings had never
 been read by anything in the viewer, and are now routed into the same problems
 callout as everything else; and the event-settings box normalises a
-scheme-less paste to `https://` so the ordinary case never writes a bad
-manifest at all. A scheme that is already there is never rewritten — silently
-upgrading `http://` would change where the author said to go.
+scheme-less paste to `https://` **when the edit is committed** — see the
+correction below, because the first version of this did it on every keystroke
+and made typing worse than not normalising at all. A scheme that is already
+there is never rewritten — silently upgrading `http://` would change where
+the author said to go.
 
 **Two user-visible strings were lying.** The link read "Open the activity on
 Strava" whatever the URL was, with `target="_blank"` so the address bar never
@@ -131,6 +133,62 @@ Eleven more mutations, ten caught. The eleventh — dropping a redundant early
 return in the URL normaliser — was confirmed an equivalent mutant by
 differential execution over 504 inputs, and the line is kept with a comment
 saying so.
+
+#### Corrected again: the usability additions were the shipping blockers
+
+A second independent review passed the security work — 2,717 differential
+inputs against the WHATWG parser found no way past the embed allowlist — and
+returned do-not-ship on the two conveniences added around it.
+
+**The URL box normalised on every keystroke.** It was a controlled input whose
+`onChange` wrote through the normaliser and fed the result back into the
+field, so typing `https://www.strava.com/activities/123` by hand ended at
+`https://https://www.strava.com/activities/123` — refused by the guard, no
+link rendered, and saved to `manifest.json` that way. Pasting worked and
+typing did not, the exact inverse of what normalising was for. Backspacing
+could not recover either: it converges on `https://h` and never reaches empty,
+so "clear the box to remove the course" was unreachable.
+
+**This is a class this project has already paid for**, recorded under "A
+rename is TOTAL, and committed — never per-keystroke" — nineteen renames and
+an alias list holding every prefix of a name. Fixed the way that entry says,
+reusing its precedent rather than inventing a second one: the field holds a
+draft, committed on blur or Enter, Escape reverts, and Escape deliberately
+does not call `.blur()` (which would fire the commit handler against the
+stale draft and commit the edit it was meant to abandon). Normalisation
+happens at commit.
+
+The tests could not have caught it: they exercised the normaliser as a pure
+function and never mounted the box. There is now a test that types character
+by character.
+
+**A correct manifest raised a false alarm.** Routing every validator warning
+into the problems callout surfaced one that fires unconditionally for every
+Strava course — "no time-and-distance data" — so the commonest workflow there
+is (paste a link, Save, Open) reported a problem on a file with nothing wrong,
+in a callout whose wording is about unreadable rows and deleted notes, and
+which `CourseFallback` already explains properly on the page where it
+matters. A warning that fires on an ordinary correct configuration trains
+people to ignore the channel. It is gone at the source, so everything
+`warnings` still carries describes something actually wrong — which makes
+routing them wholesale correct by construction rather than by filtering on
+their wording. Manifest advisories are also ordered last now, behind anything
+reporting a loss.
+
+**And normalisation no longer promotes words into links.** `none`, `n/a`,
+`TBD` and `-` became `https://none` and rendered as anchors reading "Open the
+activity on none". A dot is now required before anything is prefixed;
+everything else is stored verbatim and refused at render with an explanation,
+which is what happened before normalisation existed and was better.
+
+Three smaller corrections: a comment said React's sanitiser misses "two" real
+problems immediately after listing three; the claim that refusing non-ASCII
+hosts makes `hostOf` "a statement about what will actually be contacted" is
+false for numeric IPv4 forms (`0x7f.1` and `2130706433` both dial 127.0.0.1 —
+not a bypass, since neither can equal strava.com, but a label/destination
+mismatch now that the host is shown as link text, and corrected rather than
+papered over with an IPv4 canonicaliser); and a mutation count in `TODO.md`
+had gone stale the same day it was written.
 
 ### A leading apostrophe someone else typed is no longer eaten
 

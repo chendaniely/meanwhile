@@ -411,7 +411,11 @@ cases pinned in `tests/csv.test.ts`, including the one that kills the
 next-character shortcut — `'  =evil`, where the character after the
 apostrophe is a SPACE and the cell is still ours. Reverting the fix, and
 separately narrowing it to a next-character test, were both executed against
-the suite and failed 4 and 10 tests respectively.
+the suite and failed 5 and 10 tests respectively. (Re-measured 2026-07-30:
+the first figure was 4 when written and went stale the same day, when a
+round-trip test was added to that same describe block. A count of "how many
+tests a mutation breaks" is a fact about the suite at one moment, so it goes
+stale silently — treat one in prose as a claim to re-run, not to trust.)
 
 The original reasoning, kept because it is what made the fix findable:
 

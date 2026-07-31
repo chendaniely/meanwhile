@@ -4,7 +4,7 @@
 
 As of 2026-07-30 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **859 tests pass** (`make check`).
+the race. **869 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
@@ -1678,12 +1678,51 @@ Two things that make the warning real rather than decorative:
 - **`validateManifest`'s `warnings` had never been read by anything in
   `src/viewer`** — verified by grep, not assumed. They are now routed into
   `noteProblems`, the one channel this project already has for "something was
-  not done the way the file said". A warning nothing renders is not a warning.
+  not done the way the file said", and ordered LAST within it, behind
+  everything that reports a discarded note or an unreadable row. A warning
+  nothing renders is not a warning.
+
+  **Routing them exposed a warning that should never have existed.**
+  `validateManifest` warned, unconditionally, that a `strava-link`/
+  `strava-embed` carries no time-and-distance data — harmless while nothing
+  read `warnings`, and the moment they were rendered it made the commonest
+  correct configuration report a problem on a file with nothing wrong with
+  it. **A warning that fires on an ordinary, correct configuration is not a
+  warning**; it trains people to ignore the channel, which costs the warnings
+  that matter. Deleted at the source, so everything `warnings` still carries
+  describes something genuinely wrong — which is what makes routing them
+  wholesale correct by construction, rather than by filtering on their
+  wording. The fact itself is still told to the reader by `CourseFallback`,
+  on the page where a missing map needs explaining.
 - **`updateCourse` normalises the paste** via `normalizeCourseUrl`, prefixing
   `https://` only when that turns something the guard refuses into something
-  it accepts. A scheme that is already present is never rewritten — silently
-  upgrading `http://` would change where the author said to go — so it stays
-  as typed and is refused at render.
+  it accepts **and the input contains a dot**. A scheme that is already
+  present is never rewritten — silently upgrading `http://` would change
+  where the author said to go — so it stays as typed and is refused at
+  render. The dot is what separates a shortened address from a word: without
+  it, `none`, `n/a`, `TBD` and `-` became `https://none` and rendered as live
+  anchors reading "Open the activity on none".
+
+- **And it normalises at COMMIT, never per keystroke — this was got wrong
+  too.** The box was a controlled input whose `onChange` wrote straight
+  through `updateCourse`, so the stored value was rewritten on every
+  character and fed back into the field: typing an address by hand ended at
+  `https://https://www.strava.com/activities/123`, and backspacing converged
+  on `https://h` without ever reaching empty, making "clear the box to remove
+  the course" unreachable. **Pasting worked and typing did not**, the exact
+  inverse of the point.
+
+  It is the same defect as "A rename is TOTAL, and committed — never
+  per-keystroke" below, in a different field, four sections apart in this
+  file. Fixed by reusing that entry's precedent rather than inventing a
+  second one — `CourseUrlInput` in `App.tsx` mirrors `RenameInput`, including
+  the trap about not calling `.blur()` inside the Escape handler.
+
+  **The lesson for the tests, not just the code:** the guard tests exercised
+  `normalizeCourseUrl` as a pure function and so could not see this at all.
+  `tests/course-url-input.test.tsx` MOUNTS the box and types one character at
+  a time. A pure test of a function a component feeds back into itself proves
+  nothing about the loop.
 
 **The link text names the ACTUAL host.** `safeHref` permits any https host by
 design, but the anchor read "Open the activity on Strava" whatever the URL

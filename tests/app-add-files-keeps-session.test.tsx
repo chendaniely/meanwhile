@@ -214,6 +214,15 @@ describe('App: "Add files" keeps what only this session knows', () => {
       setter?.call(courseField, 'https://www.strava.com/activities/12345');
       courseField.dispatchEvent(new Event('input', { bubbles: true }));
     });
+    // The box holds a DRAFT and commits on blur or Enter, never per keystroke
+    // — see `CourseUrlInput` in App.tsx, and the entry it reuses ("A rename is
+    // TOTAL, and committed"). Typing alone therefore stores nothing, which is
+    // the point: normalising on every character turned a typed URL into
+    // `https://https://…`. React delegates onBlur from FOCUSOUT, so `blur`
+    // (which does not bubble) would never reach the handler.
+    await act(async () => {
+      courseField.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    });
 
     await pickFiles([textFile('notes.csv', NOTES_CSV), textFile('route.gpx', '<gpx></gpx>')]);
     await waitFor(

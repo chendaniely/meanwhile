@@ -1290,9 +1290,15 @@ describe('ingestFolder — what "Add files" must not throw away', () => {
     ).toBe(true);
   });
 
-  it('says nothing extra about a course URL that is fine', async () => {
-    // The warning channel is now rendered, so a false positive here would put
-    // noise in front of every ordinary folder.
+  it('reports NOTHING AT ALL for a clean manifest with a Strava link', async () => {
+    /*
+     * Asserts the whole list is empty, not merely that it lacks the string
+     * "course.url" — the weaker assertion was what this test made first, and
+     * it passed while the callout was in fact firing on every correct file,
+     * because the noise came from a DIFFERENT warning (the unconditional
+     * "no time-and-distance data" advisory). Aim at the property — this
+     * folder has nothing wrong with it, so the reader must be told nothing.
+     */
     const inFolder = JSON.stringify({
       schema: SCHEMA_VERSION,
       event: { title: 'T', timezone: 'UTC' },
@@ -1302,7 +1308,38 @@ describe('ingestFolder — what "Add files" must not throw away', () => {
     const result = await ingestFolder([textFile('manifest.json', inFolder)], {
       title: 'T', timezone: 'UTC',
     });
-    expect(result.noteProblems.some((p) => p.includes('course.url'))).toBe(false);
+    expect(result.noteProblems).toEqual([]);
+  });
+
+  it('puts a manifest advisory LAST, behind anything that reports a loss', async () => {
+    /*
+     * Ordering, pinned because it is invisible otherwise. `noteProblems` is
+     * rendered as one joined sentence, so whatever comes first is what gets
+     * read. Everything else in that list reports something DISCARDED or
+     * unreadable — a note another file deleted, a roster ignored, a name that
+     * resolved to nobody. A manifest advisory is not that, and it spliced in
+     * second until this was fixed, ahead of every one of them.
+     */
+    const inFolder = JSON.stringify({
+      schema: SCHEMA_VERSION,
+      event: { title: 'T', timezone: 'UTC' },
+      // Produces a manifest warning: not a plain https:// address.
+      course: { kind: 'strava-link', url: 'strava.com/activities/1' },
+      people: [{ id: 'p', name: 'Priya' }],
+      items: [],
+    });
+    // Produces a real report: a note naming somebody not on the roster.
+    const notes = 'id,year,month,day,hour,minute,people,text\nn_1,2026,7,25,10,0,Ghost,hi\n';
+    const result = await ingestFolder(
+      [textFile('manifest.json', inFolder), textFile('notes.csv', notes)],
+      { title: 'T', timezone: 'UTC' },
+    );
+
+    const advisory = result.noteProblems.findIndex((p) => p.includes('course.url'));
+    const loss = result.noteProblems.findIndex((p) => p.includes('Ghost'));
+    expect(advisory, 'the advisory should be reported').toBeGreaterThanOrEqual(0);
+    expect(loss, 'the unresolved name should be reported').toBeGreaterThanOrEqual(0);
+    expect(loss).toBeLessThan(advisory);
   });
 
   it('lets a manifest in the folder still outrank what the session carries', async () => {

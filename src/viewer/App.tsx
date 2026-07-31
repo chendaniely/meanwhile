@@ -80,6 +80,66 @@ function courseUrlOf(manifest: Manifest): string {
 }
 
 /**
+ * The Strava/course URL box.
+ *
+ * **A draft, committed on blur or Enter — never per keystroke.** This is
+ * exactly the failure CLAUDE.md already records under "A rename is TOTAL, and
+ * committed — never per-keystroke", re-broken in a different field: it was a
+ * controlled input whose `onChange` wrote straight through `updateCourse`,
+ * which normalises. So the stored value was rewritten on every character and
+ * fed back into the box, and typing `https://www.strava.com/activities/123`
+ * by hand ended at `https://https://www.strava.com/activities/123` — refused
+ * by the guard, no link rendered, and saved to `manifest.json` that way.
+ * Pasting worked; typing always produced a bad manifest, the exact inverse of
+ * what normalising was added to do. Backspacing could not recover either: it
+ * converges on `https://h` and never reaches empty, so `updateCourse`'s
+ * "blank means remove the course" branch was unreachable.
+ *
+ * Normalisation therefore happens at COMMIT. Between commits the box holds
+ * precisely what was typed.
+ *
+ * Escape reverts and deliberately does NOT call `.blur()` — see the same trap
+ * documented on `RenameInput` in `IngestReport.tsx`: blurring fires `onBlur`
+ * in the same event-handling pass, and React's batching means `commit` reads
+ * the stale draft and commits the very edit Escape was meant to abandon.
+ */
+export function CourseUrlInput({ value, onCommit }: { value: string; onCommit: (url: string) => void }) {
+  const [draft, setDraft] = useState(value);
+
+  // Picks up a commit that landed, or a re-ingest that replaced the course.
+  // Does NOT fire per keystroke: `value` only changes from OUTSIDE this
+  // component.
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  const commit = () => {
+    if (draft !== value) onCommit(draft);
+  };
+
+  return (
+    <label className="field">
+      <span className="field__label">Strava activity (optional)</span>
+      <input
+        className="field__input mw-mono"
+        value={draft}
+        placeholder="https://www.strava.com/activities/…"
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+          } else if (e.key === 'Escape') {
+            setDraft(value);
+          }
+        }}
+      />
+    </label>
+  );
+}
+
+/**
  * `meanwhile-<slug of the event title>-<when>.zip`, or
  * `meanwhile-<when>.zip` when there is no title to slug — a blank event name
  * must still produce a legal filename.
@@ -1233,15 +1293,7 @@ export function App() {
                     value={stage.manifest.event.timezone ?? ''}
                     onChange={(next) => updateEvent({ timezone: next })}
                   />
-                  <label className="field">
-                    <span className="field__label">Strava activity (optional)</span>
-                    <input
-                      className="field__input mw-mono"
-                      value={courseUrlOf(stage.manifest)}
-                      placeholder="https://www.strava.com/activities/…"
-                      onChange={(e) => updateCourse(e.target.value)}
-                    />
-                  </label>
+                  <CourseUrlInput value={courseUrlOf(stage.manifest)} onCommit={updateCourse} />
                 </div>
                 <p className="app__hint">
                   A bare Strava activity link renders as a link and nothing more; a link

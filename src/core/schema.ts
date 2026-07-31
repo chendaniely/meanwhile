@@ -536,11 +536,30 @@ export function validateManifest(input: unknown): ValidationResult {
               `offered as a link out.`,
           );
         }
-        warnings.push(
-          `course kind "${kind}" has no time-and-distance data, so the elevation ` +
-            `backdrop, distance axis, and map stay off. ` +
-            `Ask for a GPX export to turn them on.`,
-        );
+        /*
+         * There is deliberately NO warning here that a Strava kind carries no
+         * time-and-distance data.
+         *
+         * One used to fire unconditionally for every `strava-link` and
+         * `strava-embed`. That was harmless while nothing read `warnings` —
+         * and stopped being harmless the moment they were routed into the
+         * viewer's problems callout, because it made a perfectly correct
+         * manifest report a problem. The commonest workflow there is (paste a
+         * Strava link, Save, Open the folder again) raised "One thing needed a
+         * closer look rather than being guessed at", a sentence about
+         * unreadable rows and deleted notes, on a file with nothing wrong
+         * with it.
+         *
+         * A warning that fires on an ordinary, correct configuration trains
+         * people to ignore the channel, which costs the warnings that matter.
+         * And the fact itself is not lost: `CourseFallback` states it in its
+         * own callout, on the course view, which is the page where a missing
+         * map and elevation profile need explaining.
+         *
+         * Everything `warnings` still carries describes something actually
+         * wrong with the file, which is what makes routing them wholesale
+         * correct by construction rather than by filtering on their wording.
+         */
       } else {
         errors.push('"course.kind" must be one of gpx, strava-embed, strava-link');
       }

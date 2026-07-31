@@ -545,7 +545,6 @@ export async function ingestFolder(
   );
   const noteProblems = [
     ...ignoredCandidates,
-    ...manifestWarnings,
     ...courseProblems,
     ...rosterProblems,
     ...rosterProblemsFromSession,
@@ -561,6 +560,12 @@ export async function ingestFolder(
     ]),
     ...photoProblems,
     ...reportUnresolvedNoteNames(notes, manifest.people),
+    // LAST, deliberately. Everything above reports something that was
+    // DISCARDED or could not be read — a note another file deleted, a roster
+    // that was ignored, a row that would not parse. These are advisories
+    // about the manifest, and putting one ahead of those buries the report
+    // that costs somebody data under the one that does not.
+    ...manifestWarnings,
   ];
 
   return {
