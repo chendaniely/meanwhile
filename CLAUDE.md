@@ -1919,10 +1919,13 @@ also be a switch. The owner cut it:
 So they are two fields now:
 
 - **`role` is free text and carries NO behaviour.** Nothing anywhere compares
-  it to anything. `SUGGESTED_ROLES` (was `ROLES`) is a documented vocabulary
-  with **no reader in `src/`** — renamed rather than repurposed so no call
-  site can drift back into treating it as a gate. If no suggestion UI ever
-  wants it, delete it rather than quietly re-promoting it.
+  it to anything, and **there is no list of role strings in the code at
+  all.** `ROLES` was first renamed `SUGGESTED_ROLES` and kept as a documented
+  vocabulary; it was deleted before 0.4.0 once it was clear nothing in `src/`
+  read it. `runner`, `crew`, `friend` and `other` are examples in prose now.
+  Do not reintroduce the constant: a list of permitted-looking values sitting
+  in `schema.ts` is how a suggestion gets quietly re-promoted into a gate,
+  which is exactly the change that deleted the owner's real data.
 - **`Person.pinned` is the one field on a person that changes what the app
   does.** In `people.csv` it is a `pinned` column holding the integer `1`,
   blank otherwise — never `true`/`TRUE`, per the standing rule that no format

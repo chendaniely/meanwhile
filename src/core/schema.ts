@@ -28,8 +28,10 @@ export type ItemId = string;
  * The enum survived as long as it did because `runner` was doing a second,
  * unrelated job — deciding whose lane pinned to the top. That job now belongs
  * to `Person.pinned`, which is why this can be free text safely: nothing reads
- * a role to decide anything. See `SUGGESTED_ROLES` below, and CLAUDE.md's "A
- * role says what someone WAS; `pinned` says whose lane goes on top".
+ * a role to decide anything. There is deliberately no list of permitted or
+ * suggested values anywhere — `runner`, `crew` and the rest are examples in
+ * the docs, not a vocabulary this file knows about. See CLAUDE.md's "A role
+ * says what someone WAS; `pinned` says whose lane goes on top".
  */
 export type Role = string;
 
@@ -396,25 +398,6 @@ export type ValidationResult =
   | { ok: true; manifest: Manifest; warnings: string[] }
   | { ok: false; errors: string[]; warnings: string[] };
 
-/**
- * Roles this project's own vocabulary suggests — a SUGGESTION, never a gate.
- *
- * It was `ROLES`, and it was enforced: `validateManifest` refused a manifest
- * naming any other role, and `parsePeopleCsv` blanked the cell and reported a
- * problem. What that bought, measured across the whole repository, was
- * nothing — `crew`, `friend` and `other` had zero reads anywhere outside the
- * check itself, and the runner-toggle UI could only ever produce `runner` or
- * no role at all. What it cost was real: the owner typed `crew chief` and
- * `pacer` into `people.csv` and one Save wrote both cells blank.
- *
- * Renamed rather than repurposed in place, so no call site can keep treating
- * it as a permitted-values list by accident. **Nothing in `src/` reads it
- * today** — it is a documented vocabulary for the docs and for any future
- * suggestion UI, and if that never arrives it should be deleted rather than
- * quietly re-promoted into a check. Adding a value here does not make it
- * special; removing one does not make it refused.
- */
-export const SUGGESTED_ROLES: readonly string[] = ['runner', 'crew', 'friend', 'other'];
 const KINDS: readonly string[] = ['photo', 'video'];
 
 function isObject(v: unknown): v is Record<string, unknown> {

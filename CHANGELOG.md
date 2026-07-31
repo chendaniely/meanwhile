@@ -34,7 +34,11 @@ The owner split it:
 > that later. we just care about who gets pinned"
 
 - **`role` is any string, kept exactly as typed**, and carries no behaviour
-  anywhere. `ROLES` is now `SUGGESTED_ROLES` and validates nothing.
+  anywhere. `ROLES` — the constant that enforced the enum — is **deleted**.
+  It was first renamed `SUGGESTED_ROLES` and left in place as a documented
+  vocabulary, then removed before release once it was clear nothing in `src/`
+  read it: a list of role strings that no code consults is a check waiting to
+  be re-promoted, and the examples belong in the docs instead.
 - **`Person.pinned`, and a `pinned` column in `people.csv`** holding the
   integer `1` — never `TRUE`, because a spreadsheet rewrites anything that
   looks like a yes/no and leaves a bare number alone.

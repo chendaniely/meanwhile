@@ -534,7 +534,23 @@ refactor of a channel several call sites write to, and it should be done once,
 deliberately, rather than by inserting a second sort.
 
 
-## `SUGGESTED_ROLES` has no reader *(2026-07-30, left deliberately)*
+## ~~`SUGGESTED_ROLES` has no reader~~ *(2026-07-30, left deliberately)*
+
+**Closed 2026-07-30 by the second of the two options below: the constant is
+deleted.** The owner approved it before 0.4.0 shipped, while the entry was
+still one day old and no suggestion UI had been asked for. Nothing in `src/`,
+`tests/` or `scripts/` referenced it — the only two mentions were its own
+declaration and the `Role` doc comment pointing at it, both removed together.
+The examples it held (`runner`, `crew`, `friend`, `other`) survive as prose in
+`docs/` and in the changelog, which is where a suggestion nothing reads
+belongs; `Role`'s doc comment now says explicitly that no such list exists, so
+the "comes back as an inline array" risk below is answered in the one place a
+future session would look first. The standing prohibition in the last
+paragraph is unchanged and outlives the constant: do **not** wire a
+permitted-values check back into `parsePeopleCsv` or `validateManifest`.
+
+The original reasoning, kept because it is what the decision was weighed
+against:
 
 When `role` became free text, `ROLES` was renamed `SUGGESTED_ROLES` and
 stopped validating anything. **Nothing in `src/` reads it now** — it survives
