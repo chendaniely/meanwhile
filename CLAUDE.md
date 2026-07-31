@@ -4,13 +4,16 @@
 
 As of 2026-07-30 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
-the race. **918 tests pass** (`make check`).
+the race. **930 tests pass** (`make check`).
 
 **Built:** scaffold, brand tokens, `tests/core-purity.test.ts`, `Makefile`.
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
 `metadata.ts`, `assemble.ts`, `palette.ts`, `window.ts`, `state.ts`,
-`course.ts`, `course-url.ts`, `csv.ts`, `notes.ts`, `people-csv.ts`,
-`timeline.ts`. Viewer: folder/file
+`course.ts`, `course-url.ts`, `csv.ts`, `wallclock.ts`, `notes.ts`,
+`people-csv.ts`, `timeline.ts` — `wallclock.ts` is the seven spreadsheet-safe
+timestamp columns (`year, month, day, hour, minute, tz, utc_offset_min`) and
+the ladder that resolves them, lifted out of `notes.ts` so every CSV in the
+set reads one wall clock as one instant. Viewer: folder/file
 picking, ingest report, the media pipeline, the two-handle time window with
 density histogram, the feed, the swimlanes with a moment strip and notes in
 the lanes, the lightbox, the unplaced tray, and the **course view** — Leaflet map with

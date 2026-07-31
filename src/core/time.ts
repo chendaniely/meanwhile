@@ -241,7 +241,7 @@ export function inferEventTimezone(
  * every naive minute in the gap). Both outcomes are stable and neither is
  * worth more code for a single-day event. Now that `notes*.csv` rows can
  * carry `utc_offset_min`, this two-pass guess is only the fallback for a row
- * that has none (see `resolveZoned` in `notes.ts`) — a row that must be
+ * that has none (see `resolveZoned` in `wallclock.ts`) — a row that must be
  * exact through a DST boundary should carry the offset instead of relying on
  * this.
  */

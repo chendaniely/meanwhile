@@ -18,8 +18,14 @@
  * `year` absent is what selects the legacy path; `date`+`time` is tried
  * before a bare `at`.
  *
- * Pure: only `./time.ts`, `./csv.ts`, `./schema.ts` (a type-only import, for
- * `Item`), and ECMAScript/WHATWG globals (`Intl`, `Date`, `Number`).
+ * The timestamp columns themselves are `./wallclock.ts`'s, not this module's:
+ * `event.csv`, `markers.csv` and `placements.csv` carry the same seven of them
+ * and must resolve a wall clock to the same instant `notes*.csv` does. See the
+ * module doc there.
+ *
+ * Pure: only `./time.ts`, `./csv.ts`, `./wallclock.ts`, `./schema.ts` (a
+ * type-only import, for `Item`), and ECMAScript/WHATWG globals (`Intl`,
+ * `Date`, `Number`).
  * Row-at-a-time conversion (`rowToNote`, `noteToRow`)
  * knows nothing about CSV text — that's `csv.ts`'s job. `mergeNotes` is the
  * exception: it takes whole files and calls `parseCsv` on each before
@@ -32,6 +38,10 @@ import {
 import {
   CSV_SCHEMA, nfc, parseCsv, preservedHeaders, schemaCellProblem, type PreservedRow,
 } from './csv.ts';
+import {
+  nonEmpty, readCalendarParts, readOffsetCell, resolveZoned, wallClockToInstant,
+  type Resolved,
+} from './wallclock.ts';
 import type { Item } from './schema.ts';
 
 export interface Note {
@@ -171,8 +181,8 @@ export function noteHeadersFor(
  *
  * So the row is resolved through the same ladder a READABLE row is — its own
  * `utc_offset_min`, else its own `tz`, else the event's zone (see
- * `resolveZoned`, which shares `wallClockToInstant` with this) — and only
- * falls back to UTC when none of them resolves.
+ * `resolveZoned` in `./wallclock.ts`, which shares `wallClockToInstant` with
+ * this) — and only falls back to UTC when none of them resolves.
  *
  * Returns `NaN` when there is nothing to go on at all, which sorts the row to
  * the end rather than to 1970.
@@ -351,89 +361,6 @@ export function rowToNote(row: Record<string, string>, eventTimezone?: string): 
   return note;
 }
 
-/** Days in a month, with a real leap-year rule rather than a lookup that lies. */
-function daysInMonth(year: number, month: number): number {
-  return new Date(Date.UTC(year, month, 0)).getUTCDate();
-}
-
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
-/**
- * Read one of the five timestamp integers, refusing anything a spreadsheet
- * would otherwise let roll over into a different moment.
- *
- * **Refused, never rolled over**, and that is the whole point. `Date.UTC`
- * happily turns month 13 into next January, day 32 into the 1st of the
- * following month, hour 24 into tomorrow, and `Number('45.7')` into 45 —
- * every one of which then REWRITES ITSELF on the next save, so the file no
- * longer says what its author typed and nothing ever reported a problem.
- * These are exactly what a drag-fill or a fat finger produces, and a
- * rolled-over value places a note confidently in the wrong place, which this
- * project holds to be worse than a visible gap.
- */
-function readCalendarInt(
-  raw: string,
-  field: string,
-  min: number,
-  max: number,
-  label: string,
-): number | { error: string } {
-  if (!/^\d+$/.test(raw)) {
-    return {
-      error: `note "${label}" has a ${field} of "${raw}", which is not a whole number`,
-    };
-  }
-  const value = Number(raw);
-  if (value < min || value > max) {
-    return { error: `note "${label}" has a ${field} of ${value}; ${field} runs ${min}–${max}` };
-  }
-  return value;
-}
-
-/** All five integers, range-checked, including day-against-month. */
-function readCalendarParts(
-  parts: { year: string; month: string; day: string; hour: string; minute: string },
-  label: string,
-): { y: number; mo: number; d: number; h: number; mi: number } | { error: string } {
-  // Four digits as well as the range: `year` 26 is the single most likely
-  // mistype, and `Date.UTC(26, …)` silently means 1926.
-  if (!/^\d{4}$/.test(parts.year)) {
-    return {
-      error:
-        `note "${label}" has a year of "${parts.year}" — write the full four-digit year, ` +
-        'between 1900 and 2100',
-    };
-  }
-  const y = readCalendarInt(parts.year, 'year', 1900, 2100, label);
-  if (typeof y !== 'number') return y;
-  const mo = readCalendarInt(parts.month, 'month', 1, 12, label);
-  if (typeof mo !== 'number') return mo;
-  const d = readCalendarInt(parts.day, 'day', 1, 31, label);
-  if (typeof d !== 'number') return d;
-  const h = readCalendarInt(parts.hour, 'hour', 0, 23, label);
-  if (typeof h !== 'number') return h;
-  const mi = readCalendarInt(parts.minute, 'minute', 0, 59, label);
-  if (typeof mi !== 'number') return mi;
-
-  const length = daysInMonth(y, mo);
-  if (d > length) {
-    return {
-      error:
-        `note "${label}" has a day of ${d}, but ${MONTH_NAMES[mo - 1]} ${y} has ${length} days`,
-    };
-  }
-  return { y, mo, d, h, mi };
-}
-
-interface Resolved {
-  instant: number;
-  /** The row's own explicit zone, if it had one — undefined otherwise. */
-  tz: string | undefined;
-}
-
 /**
  * Find the instant a row names, trying the current five-integer shape first
  * and falling back to the two legacy shapes a hand-written or older file
@@ -513,149 +440,6 @@ function resolveInstant(
   }
 
   return { error: `note "${label}" has no date/time columns` };
-}
-
-/** Zero-pad a calendar integer, e.g. pad(7, 2) -> "07". */
-function pad(n: number, width: number): string {
-  return String(Math.trunc(n)).padStart(width, '0');
-}
-
-/** "-06:00" from -360, for a message a person can compare against a cell. */
-function formatOffset(minutes: number): string {
-  const sign = minutes < 0 ? '-' : '+';
-  const abs = Math.abs(minutes);
-  return `${sign}${pad(Math.floor(abs / 60), 2)}:${pad(abs % 60, 2)}`;
-}
-
-/**
- * Turn five calendar integers into an instant, using the row's `tz` and
- * `utc_offset_min`.
- *
- * **The offset determines the instant; the zone is for display and date
- * math.** They are both carried because neither is sufficient on its own:
- *
- *   - A zone NAME alone cannot express the repeated hour at a fall-back
- *     transition. 01:30 MDT and 01:30 MST are the same five integers, an hour
- *     apart, and a zone-only read silently returns the first every time —
- *     which for a 33-hour race that crosses the transition is an hour of the
- *     night placed wrong with nothing to notice it by.
- *   - An OFFSET alone loses which zone the writer meant, so nothing can
- *     render another date in it or explain the number.
- *
- * With both, every row is exact on its own terms, because each row carries
- * the offset in force at ITS moment rather than inheriting one from the
- * event.
- *
- * **Disagreement is reported, never guessed through.** "Agreement" is
- * deliberately not `zoneOffsetMinutes(naive-read-in-zone)`: at a fall-back
- * hour the zone legitimately has two offsets, and both are correct answers.
- * The test is instead whether the instant the offset produces really IS that
- * wall-clock time in that zone — which accepts both sides of the repeated
- * hour and rejects an offset from a different continent.
- */
-function resolveZoned(
-  parts: { y: number; mo: number; d: number; h: number; mi: number },
-  row: Record<string, string>,
-  eventTimezone: string | undefined,
-  label: string,
-): Resolved | { error: string } {
-  const tz = nonEmpty(row.tz);
-  const offsetRaw = nonEmpty(row.utc_offset_min);
-  // The zone the wall clock falls back to when the row carries no offset of
-  // its own: an older row, or one typed by hand. Resolving through it is what
-  // keeps every file written before the offset column existed reading to the
-  // same instant it always did.
-  const zone = tz ?? eventTimezone ?? 'UTC';
-
-  let offset: number | null = null;
-  if (offsetRaw !== undefined) {
-    if (!OFFSET_CELL.test(offsetRaw)) {
-      return {
-        error:
-          `note "${label}" has a utc_offset_min of "${offsetRaw}", which is not a whole ` +
-          'number of minutes — write -360 for UTC-06:00',
-      };
-    }
-    offset = Number(offsetRaw);
-    if (Math.abs(offset) > MAX_UTC_OFFSET_MIN) {
-      return {
-        error:
-          `note "${label}" has a utc_offset_min of ${offset}; real UTC offsets run from ` +
-          '-720 to 840 minutes',
-      };
-    }
-  }
-
-  const instant = wallClockToInstant(parts, offset, zone);
-  if (instant === null) {
-    return { error: `note "${label}" could not be resolved in timezone "${zone}"` };
-  }
-
-  if (offset !== null && tz !== undefined) {
-    const inZone = zoneOffsetMinutes(instant, tz);
-    if (inZone === null) {
-      return { error: `note "${label}" could not be resolved in timezone "${tz}"` };
-    }
-    if (inZone !== offset) {
-      return {
-        error:
-          `note "${label}" says timezone "${tz}" and utc_offset_min ${offset} ` +
-          `(UTC${formatOffset(offset)}), but "${tz}" is UTC${formatOffset(inZone)} at that ` +
-          'moment — correct one of the two rather than have meanwhile pick',
-      };
-    }
-  }
-  return { instant, tz };
-}
-
-/** `utc_offset_min`'s shape and bound, shared so the two readers cannot drift. */
-const OFFSET_CELL = /^[+-]?\d+$/;
-const MAX_UTC_OFFSET_MIN = 18 * 60;
-
-/**
- * `utc_offset_min` as a number, or null when the cell is absent or says
- * something no UTC offset could.
- *
- * The lenient half of the pair: `resolveZoned` REPORTS a bad offset cell,
- * because a note whose timestamp is wrong must not be shown as if it were
- * right. This is for `preservedRowInstant`, which has no way to report
- * anything — its row has already been refused — and only needs to know
- * whether there is an offset worth trusting before falling back to the zone.
- */
-function readOffsetCell(raw: string | undefined): number | null {
-  const s = nonEmpty(raw);
-  if (s === undefined || !OFFSET_CELL.test(s)) return null;
-  const offset = Number(s);
-  return Math.abs(offset) > MAX_UTC_OFFSET_MIN ? null : offset;
-}
-
-/**
- * The instant five wall-clock integers name — the one implementation of
- * `notes*.csv`'s rule that the row's own offset wins and its zone is the
- * fallback.
- *
- * Shared by `resolveZoned` (a row that reads cleanly) and
- * `preservedRowInstant` (one that does not, and only needs a sort key). They
- * differ in what they do with a problem, never in where a timestamp lands —
- * a second implementation here is how a preserved row ends up filed hours away
- * from the notes it was written between.
- *
- * Null only when `zone` is one this runtime cannot resolve, or when the
- * integers will not fit a naive timestamp at all; with an offset there is
- * nothing to look up and the answer is always a number.
- */
-function wallClockToInstant(
-  parts: { y: number; mo: number; d: number; h: number; mi: number },
-  offsetMinutes: number | null,
-  zone: string,
-): number | null {
-  if (offsetMinutes !== null) {
-    return Date.UTC(parts.y, parts.mo - 1, parts.d, parts.h, parts.mi) - offsetMinutes * 60_000;
-  }
-  const naive =
-    `${pad(parts.y, 4)}-${pad(parts.mo, 2)}-${pad(parts.d, 2)}` +
-    `T${pad(parts.h, 2)}:${pad(parts.mi, 2)}:00`;
-  return zonedToInstant(naive, zone);
 }
 
 /**
@@ -738,12 +522,6 @@ function readDuration(raw: string): string | undefined | typeof INVALID_DURATION
   if (/^-?\d+(?:\.\d+)?$/.test(s)) return formatDuration(Number(s) * 60_000);
 
   return INVALID_DURATION;
-}
-
-function nonEmpty(raw: string | undefined): string | undefined {
-  if (raw === undefined) return undefined;
-  const s = raw.trim();
-  return s === '' ? undefined : s;
 }
 
 function splitList(raw: string | undefined): string[] {

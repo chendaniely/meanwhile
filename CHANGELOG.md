@@ -68,6 +68,37 @@ across without validating it. The raw string is kept instead. A zone this
 runtime cannot resolve gets the same treatment, and additionally must not
 throw: `Intl` rejects `MDT`, and this is called from the middle of a merge.
 
+### The timestamp ladder is now `src/core/wallclock.ts`, shared by every CSV in the set
+
+`manifest.json` is being replaced by a set of CSVs, and three of the new files
+— `event.csv`, `markers.csv`, `placements.csv` — carry the same seven timestamp
+columns `notes*.csv` does: `year, month, day, hour, minute, tz,
+utc_offset_min`. They have to resolve a wall clock to the same instant it does,
+or the same five integers mean different moments in different files with
+nothing to notice it by.
+
+`resolveZoned` already implemented the correct three-rung ladder — the row's
+own offset, else the row's own zone, else the event's zone, with a
+disagreement reported rather than guessed through — but it was private to
+`notes.ts`. It is now `src/core/wallclock.ts`, along with `readCalendarParts`
+(the five integers, range-checked, refused rather than rolled over),
+`wallClockToInstant`, `readOffsetCell` and the `Resolved` type. Extracted
+rather than exported in place: a `markers.ts` importing `resolveZoned` from
+`notes.ts` would say the rule belongs to notes, and it belongs to the format.
+
+Every message these can produce takes a noun naming the kind of row, so a
+`markers.csv` problem reads `marker "Cottonwood" has a utc_offset_min of…`
+rather than calling it a note. The noun defaults to `note`, which is why this
+is behaviour-preserving: the 918 tests that existed before it all pass with no
+edit to a single expected string, and `tests/fixtures/csv-before-2026-07-30.ts`
+still reads to the same instants, ids and text.
+
+The column names are deliberately NOT parameterised. A prefix would give
+`utc_offset_min` two spellings across the file set — the one column somebody
+hand-repairing a row has to find — `wallClockToInstant` builds a naive
+timestamp ending `:00` so there is nowhere for a `second` to go, and these are
+times a person types, where minute precision is the right precision.
+
 ## 0.4.0 — 2026-07-30 — a role says what someone was, and a course URL has to earn its link
 
 ### A role is free text; a new `pinned` column decides whose lane goes on top
