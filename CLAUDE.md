@@ -2,7 +2,7 @@
 
 ## STATUS: M0-M11 done. Notes and people now live in CSV, not the manifest.
 
-As of 2026-07-30 you can point the site at a folder — with photos, an
+As of 2026-07-31 you can point the site at a folder — with photos, an
 optional GPX/TCX, and optional `notes*.csv`/`people.csv` files — and look at
 the race. **1174 tests pass** (`make check`).
 
@@ -10,14 +10,30 @@ the race. **1174 tests pass** (`make check`).
 Kernel: `schema.ts`, `time.ts`, `bytes.ts`, `exif.ts`, `isobmff.ts`,
 `metadata.ts`, `assemble.ts`, `palette.ts`, `window.ts`, `state.ts`,
 `course.ts`, `course-url.ts`, `csv.ts`, `wallclock.ts`, `notes.ts`,
-`people-csv.ts`, `event-csv.ts`, `timeline.ts` — `wallclock.ts` is the seven
-spreadsheet-safe timestamp columns (`year, month, day, hour, minute, tz,
-utc_offset_min`), the ladder that resolves them, and `instantPartsInZone` for
-the write direction, lifted out of `notes.ts` so every CSV in the set reads
-and writes one wall clock as one instant. **`event-csv.ts` is a tested pure
-codec and NOTHING READS IT YET** — `ingest.ts`, `App.tsx` and the save path
-are untouched, so `event.csv` is not a format this site loads or writes; see
-"`event.csv` is a codec, not yet a file" in the decision record. Viewer:
+`people-csv.ts`, `event-csv.ts`, `markers-csv.ts`, `placements-csv.ts`,
+`settings-csv.ts`, `timeline.ts`.
+
+`wallclock.ts` is the seven spreadsheet-safe timestamp columns (`year, month,
+day, hour, minute, tz, utc_offset_min`), the ladder that resolves them, and
+`instantPartsInZone` for the write direction, lifted out of `notes.ts` so every
+CSV in the set reads and writes one wall clock as one instant.
+
+**FOUR OF THESE ARE TESTED PURE CODECS THAT NOTHING READS YET** —
+`event-csv.ts`, `markers-csv.ts`, `placements-csv.ts` and `settings-csv.ts`.
+`ingest.ts`, `App.tsx` and the save path are untouched, so `event.csv`,
+`markers.csv`, `placements.csv` and the settings file are **not formats this
+site loads or writes**. Verified from `dist/`, not asserted: none of their
+column names appears in the shipped bundle. See "`event.csv` is a codec, not
+yet a file" in the decision record — it now covers all four.
+
+Two exceptions to "nothing reads them", both real: `notes.ts` imports
+`wallclock.ts` and IS shipped, and `settings-csv.ts` imports `event-csv.ts`.
+So `wallclock.ts` is live code, not a codec in waiting.
+
+**`settings-csv.ts` has never been mutation-tested.** Its 52 tests pass; the
+agent writing it was cut off before the break-it pass. Treat it as unverified
+until that is done — every codec before it found a real defect in its own tests
+that way. Viewer:
 folder/file
 picking, ingest report, the media pipeline, the two-handle time window with
 density histogram, the feed, the swimlanes with a moment strip and notes in
@@ -1172,14 +1188,34 @@ repairs the shape while saying the same thing. **Do not regenerate it:** a
 test that rebuilds its own input cannot catch a reader and a writer drifting
 together.
 
-### `event.csv` is a codec, not yet a file *(2026-07-31)*
+### Four codecs exist; none of their files does *(2026-07-31)*
 
-`src/core/event-csv.ts` reads and writes the event itself — title, timezone,
-crop, course — as a two-column `key,value` CSV. **Nothing imports it.**
-`ingest.ts`, `App.tsx` and the save path are untouched, so this site still
-loads and writes `manifest.json` for all of that and no `event.csv` is
-produced or read anywhere. Wiring is a later task. Do not cite this as a
-shipped format.
+`event-csv.ts`, `markers-csv.ts`, `placements-csv.ts` and `settings-csv.ts`
+read and write four CSVs that this site does not yet load or produce. **Only
+`settings-csv.ts` imports any of the others** (it imports `event-csv.ts`);
+`ingest.ts`, `App.tsx` and the save path are untouched, so `manifest.json` is
+still what the site reads and writes. Wiring is task 8 of 8. **Do not cite any
+of the four as a shipped format** — verified from `dist/`, none of their
+column names is in the bundle.
+
+The design is `docs/superpowers/specs/2026-07-31-event-as-csv-set-design.md`
+and where the build stopped is
+`docs/superpowers/plans/2026-07-31-csv-migration-progress.md`. Read the second
+before continuing: it records what is verified, what is not, and the measured
+facts about Google Sheets that cost a day to establish.
+
+The fifth new module, `wallclock.ts`, is **not** in this category — `notes.ts`
+imports it and is shipped.
+
+`markers.csv` cannot be merged between two people, and that is structural:
+`Marker` has no `id`, so two crew members' marker files have no key to
+reconcile on. Notes row-bind because their ids are opaque and stable. One
+author per marker file.
+
+`placements.csv` holds **corrections, not records** — one row per item somebody
+fixed by hand, never one per photograph. It starts empty and stays empty until
+hand-placement is built, because nothing in the viewer can originate a
+`timeSource: 'manual'`.
 
 Key/value rather than one wide row, which every other file in the set uses:
 there is exactly one event, and a single-row file would put twenty-odd
