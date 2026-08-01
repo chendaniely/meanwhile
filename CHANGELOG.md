@@ -8,6 +8,28 @@ already built, and the reasons are worth keeping.
 
 ## Unreleased
 
+### The settings file: five URLs, key/value, and a `#` for comments
+
+`settings-csv.ts` reads and writes the file that says WHERE an event lives —
+the URLs of the other five CSVs, plus anything else the site needs to remember.
+It is not one of the five and is not in the Save zip: it describes where the
+data lives rather than what it is, and it holds link-shared URLs, which are
+bearer capabilities.
+
+- **Comments and key order survive a round trip in place.** Treating a `#` key
+  as an unknown one would sort the owner's section headings away from the keys
+  they label, scrambling a hand-organised file.
+- **`/edit?usp=sharing` URLs are rewritten** to `export?format=csv`; an export
+  URL passes through, and a non-Sheets URL (a gist, a bucket) is left alone —
+  the codec must not assume Google.
+- **`keyValueCsvKind` tells a settings file from an `event.csv`.** Both are
+  `key,value` and both preserve unknown keys, so pasting one URL into the
+  other's slot would otherwise parse cleanly and report nothing. It keys on
+  content: a settings file carries a `*_url`, an event carries `title` or
+  `timezone`, and a file matching both or neither is reported.
+
+Nothing imports it yet.
+
 ### Editing the event timezone no longer resurrects a deleted note, or duplicates one
 
 > "yes fix the timezone/fingerprint bug"

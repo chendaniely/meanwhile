@@ -1641,3 +1641,22 @@ returns `NaN` for an `at` this build cannot read, `JSON.stringify(NaN)` is
 deduped against the others whatever they said. Reachable through
 `legacyNoteToNote`, which copies an imported manifest's `at` across without
 validating it.
+
+> my config csv might be key,value instead i might put in other site config
+> options in there (like github repo, etc) so we can keep it more generic to
+> key,value. this settings file is osmething a user can upload/download as well
+
+> main thing about csv for settings is that you can also dump that in a google
+> drive
+
+The second decided the format. A settings file is the natural place for TOML or
+YAML, and the dependency budget argues against both — but neither argument
+reaches the one that matters: **a TOML file cannot BE a Google Sheet.** Keeping
+the settings in CSV stops the file that configures the other five from being the
+one file that cannot live where they do. `csv.ts` already exists, and every value
+here is a string, so nothing wants nesting or types.
+
+Two things a settings file does want are cheap in CSV: **comments**, by skipping
+any key beginning `#`, and **lists**, via the `;` separator `people` and `author`
+already use — which `notes_url` needs, because `notes*.csv` globs across several
+crew members' files and the three transports must hold the same set.
