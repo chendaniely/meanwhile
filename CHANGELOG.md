@@ -6,7 +6,7 @@ owner, and the record of who asked for what is part of the project rather than
 a footnote to it — several of the decisions below reversed something Claude had
 already built, and the reasons are worth keeping.
 
-## Unreleased
+## 0.5.0 — 2026-07-31 — five CSV codecs, and a note that survives a timezone edit
 
 ### The settings file: five URLs, key/value, and a `#` for comments
 
