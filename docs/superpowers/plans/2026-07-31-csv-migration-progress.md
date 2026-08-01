@@ -24,7 +24,7 @@ writing needs OAuth and an origin-bound client ID.
 | 2 | `914091c` | `src/core/event-csv.ts` | 984 |
 | 3 | `509739a` | `src/core/markers-csv.ts` | 1045 |
 | 4 | `0b252c6` | `src/core/placements-csv.ts` + `applyPlacements` | 1120 |
-| 5 | `43d84b0` | `src/core/settings-csv.ts` | **1174** |
+| 5 | `43d84b0` + `cf8e774` | `src/core/settings-csv.ts` | **1186** |
 
 **Four of the five are imported by nothing. The exception matters:**
 `wallclock.ts` is imported by `notes.ts:44`, and `notes.ts` is in the shipped
@@ -39,17 +39,23 @@ untouched, so no new format is live. But `notes.ts` and `time.ts` were both
 edited, and calling this "no behaviour change" would elide that — the change
 they carry is the timezone/fingerprint fix in `0a1cbe6`, which is live.
 
-## Task 5 is UNVERIFIED — close this first
+## Task 5 was interrupted and is now CLOSED — `cf8e774`
 
-`43d84b0` was interrupted before its **break-it verification** ran. Its 52 tests
-pass; **no mutation was planted to prove any of them bite.**
+`43d84b0` was cut off before its break-it verification ran, so its 52 tests
+passed with nothing proving any of them bit. Closing it took **102 mutations**
+and found a real bug:
 
-That matters more here than it sounds. Each of the four codecs before it found
-real defects in its own tests this way: Task 2 shipped a **tautological**
-assertion (it compared the output to the constant that produced it, so renaming
-the constant killed 25 other tests and left that one green); Tasks 3 and 4 each
-**discarded a mutation for killing nothing** and replaced it with one that
-discriminated. Assume `settings-csv.ts` has one of those until proven otherwise.
+**The bug:** a settings file that had lost its header row returned a
+`{key: '', …}` row, which `formatSettingsCsv` silently drops — so **one Save
+put a setting off disk with nothing reported.** The writer's own comment
+asserted this could not happen, which is why nobody had looked.
+
+Fixed; 0 survivors; 52 → 64 tests. No tautology was found, unlike Task 2, which
+had shipped an assertion comparing the output to the constant that produced it.
+
+**The transferable lesson: a passing suite is not a verified one.** Every one of
+the five codecs found a real defect in its own tests or code this way. Do not
+skip the mutation pass on tasks 6–8 because the suite is green.
 
 ## Remaining — tasks 6–8
 

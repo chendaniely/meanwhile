@@ -30,10 +30,13 @@ Two exceptions to "nothing reads them", both real: `notes.ts` imports
 `wallclock.ts` and IS shipped, and `settings-csv.ts` imports `event-csv.ts`.
 So `wallclock.ts` is live code, not a codec in waiting.
 
-**`settings-csv.ts` has never been mutation-tested.** Its 52 tests pass; the
-agent writing it was cut off before the break-it pass. Treat it as unverified
-until that is done — every codec before it found a real defect in its own tests
-that way. Viewer:
+**All five are now mutation-verified.** `settings-csv.ts` was the exception for
+a few hours — the agent writing it was cut off before the break-it pass — and
+closing that found a real bug: a settings file that had lost its header row
+returned a blank-key row, which the writer silently drops, so **one Save could
+put a setting off disk with nothing reported.** 102 mutations, 0 survivors,
+52 → 64 tests. The lesson is the one this file already states, arriving from a
+new direction: a passing suite is not a verified one. Viewer:
 folder/file
 picking, ingest report, the media pipeline, the two-handle time window with
 density histogram, the feed, the swimlanes with a moment strip and notes in
