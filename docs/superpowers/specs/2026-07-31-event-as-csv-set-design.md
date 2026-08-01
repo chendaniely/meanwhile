@@ -48,8 +48,8 @@ year, month, day, hour, minute, tz, utc_offset_min
 with an eighth `_second` column, which would have been wrong four ways: the
 offset column would carry two spellings of one concept across the file set
 (`utc_offset_min` vs `_offset_min`), which this project legislates against;
-`readCalendarParts` (`notes.ts:397`) takes five integers and `wallClockToInstant`
-hardcodes `:00` (`:657`), so `_second` cannot go through the existing reader at
+`readCalendarParts` (`wallclock.ts:116`) takes five integers and `wallClockToInstant`
+hardcodes `:00` (`wallclock.ts:279`), so `_second` cannot go through the existing reader at
 all; and a prefixed name matches nothing `resolveZoned` looks for
 (`notes.ts:562-563` reads `row.tz` and `row.utc_offset_min` by literal name).
 
@@ -63,10 +63,10 @@ data.
 `event.csv`'s crop stays key/value (`range_from_year`, `range_to_minute`, …) —
 a different shape entirely, so no conflict.
 
-**`resolveZoned` (`notes.ts:556-609`) is GENERALISED AND EXPORTED, not
+**`resolveZoned` (`wallclock.ts:187`) is GENERALISED AND EXPORTED, not
 "reused".** It implements the right three-rung ladder — own offset → own `tz` →
 event zone — with a disagreement report at `:599`. But today it is unexported,
-its `Resolved` type (`:436`) is unexported, and **every error message hardcodes
+its `Resolved` type (`wallclock.ts:151`) is unexported, and **every error message hardcodes
 the noun**: `note "${label}" has a utc_offset_min of…` (`:575`, `:583`),
 `could not be resolved in timezone` (`:591`, `:597`), plus `readCalendarInt`
 and `readCalendarParts` (`:385`, `:404`, `:431`). A bad `markers.csv` row would
@@ -135,12 +135,16 @@ Both files get the full treatment `notes*.csv` and `people.csv` already have:
 ## `placements.csv`
 
 ```
-item_id, at_year … at_offset_min, person, schema
+item_id, year, month, day, hour, minute, tz, utc_offset_min, person, schema
 ```
 
 **One row per item a person corrected.** Never one per photograph. It starts
-empty and stays empty until hand-placement is built — `timeSource: 'manual'`
-has **no producer anywhere in the codebase** today.
+empty and stays empty until hand-placement is built, because **nothing in the
+VIEWER can originate a `timeSource: 'manual'`** — the unplaced tray is
+read-only. (`applyPlacements` sets it and `assemble.ts` carries one forward,
+but neither can mint the first one. An earlier draft of this line said "no
+producer anywhere in the codebase", which the commit that built
+`applyPlacements` had already made false.)
 
 - **`item_id` is the relative path**, matching `Item.id` (`assemble.ts:267`).
   Join order: **exact path → unambiguous basename → report**. The basename
@@ -335,7 +339,7 @@ same id, genuinely different extra
   canonical -> both correct
 ```
 
-**Canonicalise, the way `fingerprintPreservedRow` (`notes.ts:1290-1311`)
+**Canonicalise, the way `fingerprintPreservedRow` (`notes.ts:1106`)
 already does** — skip blank keys, NFC, drop empty cells, sort by column name.
 Today an *unreadable* row dedupes correctly and the same row made *readable*
 does not; that asymmetry is the bug. ~6 lines.
@@ -350,7 +354,7 @@ fold was removed by the same commit, and `:902` is now `note.duration`. The
 rule survives its stale explanation.)
 
 **One consequence to budget:** canonicalising `extra` changes every fingerprint
-that has one, and the fingerprint feeds `deriveNoteId` (`notes.ts:1155`). A
+that has one, and the fingerprint feeds `deriveNoteId` (`notes.ts:898`). A
 note already saved under a derived id would get a *different* id and appear
 once as a new note — one round of the 2→3→4 growth this project has fought
 twice. Keep `undefined → null` (not `[]`) so notes with no `extra` are
@@ -442,11 +446,11 @@ this design lands, because v6 makes the zone come from a possibly-absent,
 possibly-remote file and would have multiplied the exposure.
 
 Identity is now **the wall clock the row says, read in the note's own zone**
-(`noteTimeIdentity`, `notes.ts:959-984`), so a note's instant may legitimately
+(`noteTimeIdentity`, `notes.ts:702`), so a note's instant may legitimately
 move when the zone is edited while its identity does not. `App.tsx:390-392`
 now documents exactly that. The `Date.parse` → `NaN` → `JSON.stringify` → `null`
 collapse, which made every unreadable `at` dedupe against every other, is fixed
-at `notes.ts:1096`.
+at `notes.ts:704`.
 
 **Nothing here is outstanding.** This section exists only so an implementer
 reading a stale citation does not "fix" it a second time or revert it.
@@ -455,7 +459,7 @@ reading a stale citation does not "fix" it a second time or revert it.
 
 - **`docs/superpowers/specs/2026-07-28-meanwhile-design.md:123`** — "the
   manifest is the entire interface between the two artifacts and the unit of
-  sharing" — and `CLAUDE.md:1417`. Deleting the manifest **reverses a design
+  sharing" — and `CLAUDE.md:1565`. Deleting the manifest **reverses a design
   record entry** and needs its own, plus the CLI-contract question re-answered:
   a future CLI would now import five codecs instead of one schema.
 - **`README.md`** documents the three-file save at `:281`, `:322`, `:405`,
@@ -466,11 +470,11 @@ reading a stale citation does not "fix" it a second time or revert it.
 
 **Not "about a week."** Four codecs, not three — v5 forgot the settings file
 needs parse, format, UI, `localStorage` and URL rewriting. Prior comparable:
-`notes.ts` (1,465 lines) + `people-csv.ts` (710) for **two** CSVs.
+`notes.ts` (1,270 lines after the extraction) + `people-csv.ts` (710) for **two** CSVs.
 
 Plus: the network layer with content-type sniffing, the setup page, rewiring
 974-line `ingest.ts` for five sources and five error channels, retiring a
-validator with 31 test invocations, and the 14 test files building `Manifest`
+validator with 31 test invocations, and the 16 test files building `Manifest`
 or `SCHEMA_VERSION` literals.
 
 **Ten days to a fortnight** is the honest range.
@@ -491,7 +495,7 @@ One-off script: read `manifest.json`, write `event.csv`, `markers.csv`, and a
 - `time_source` cannot distinguish naive from zoned (`metadata.ts:190`).
 - A leading apostrophe is consumed by Sheets: **one pass**.
 - `inferEventTimezone` deliberately does not count `Z` (`time.ts:196`).
-- `timeSource: 'manual'` has **no producer anywhere**.
+- no UI can originate a `timeSource: 'manual'` — `applyPlacements` (`placements-csv.ts:633`) sets it and `assemble.ts` carries one forward, but the unplaced tray is read-only, so none exists to carry.
 - The manifest never had a hard-refusal boundary to preserve.
 - `pinLegacyRunners` has **two** call sites (`people-csv.ts:283`,
   `ingest.ts:467`) and keys on header presence, so regenerating headers from a

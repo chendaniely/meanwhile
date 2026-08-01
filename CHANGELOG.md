@@ -126,7 +126,7 @@ times a person types, where minute precision is the right precision.
 The second step of replacing `manifest.json` with a set of CSVs. `event.csv`
 carries the event itself: its title, its timezone, the crop, and how the course
 is supplied. `src/core/event-csv.ts` is a pure `parseEventCsv` /
-`formatEventCsv` pair with 51 tests, and **nothing imports it** — `ingest.ts`,
+`formatEventCsv` pair with 52 tests, and **nothing imports it** — `ingest.ts`,
 `App.tsx` and the save path are untouched, so the site still keeps all of this
 in `manifest.json`. Wiring is a later step.
 

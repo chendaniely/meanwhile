@@ -9,6 +9,21 @@ manifest.json
 notes*.csv
 people.csv
 
+# The rest of the CSV set, added 2026-07-31 alongside their codecs. These were
+# NOT ignored for the first five commits of that work, so a `markers.csv`
+# dropped in the repo root would have been committed to a PUBLIC repo — the
+# same mistake `notes*.csv` and `people.csv` above exist to prevent.
+event.csv
+markers.csv
+placements.csv
+
+# Worse than the others: the settings file names the URLs of all five data
+# files, and a link-shared Google Sheets URL IS a bearer capability — whoever
+# holds it reads every note, every name and every timestamp. One leaked
+# settings file leaks the whole event.
+settings.csv
+*-settings.csv
+
 # What the Save button downloads: one zip of notes.csv + people.csv +
 # manifest.json, named `meanwhile-<event>-<when>.zip`. See filenameForSave()
 # in src/viewer/App.tsx. The bare `meanwhile.zip` is no longer produced —
@@ -111,3 +126,7 @@ node_modules/
 dist/
 *.tsbuildinfo
 .DS_Store
+
+# Agent worktrees and local Claude Code state. `.claude/worktrees/` holds real
+# git checkouts, so `git add -A` will otherwise commit them as embedded repos.
+.claude/

@@ -26,9 +26,18 @@ writing needs OAuth and an origin-bound client ID.
 | 4 | `0b252c6` | `src/core/placements-csv.ts` + `applyPlacements` | 1120 |
 | 5 | `43d84b0` | `src/core/settings-csv.ts` | **1174** |
 
-**Nothing imports any of them.** `ingest.ts`, `App.tsx`, the save path and
-`manifest.json` are all untouched. Five pure, tested modules and no behaviour
-change — that is deliberate, and it means the work so far is safe to sit on.
+**Four of the five are imported by nothing. The exception matters:**
+`wallclock.ts` is imported by `notes.ts:44`, and `notes.ts` is in the shipped
+bundle — that was the point of task 1, lifting the timestamp ladder out so
+several files could share it. `event-csv.ts` is imported by `settings-csv.ts`.
+Only `markers-csv.ts`, `placements-csv.ts` and `settings-csv.ts` are test-only.
+
+Verified from the build rather than assumed: `range_from_year`, `markers.csv`,
+`placements.csv`, `notes_url`, `keyValueCsvKind` and `item_id` appear **zero**
+times in `dist/`. `ingest.ts`, `App.tsx`, the save path and `manifest.json` are
+untouched, so no new format is live. But `notes.ts` and `time.ts` were both
+edited, and calling this "no behaviour change" would elide that — the change
+they carry is the timezone/fingerprint fix in `0a1cbe6`, which is live.
 
 ## Task 5 is UNVERIFIED — close this first
 
@@ -58,16 +67,21 @@ discriminated. Assume `settings-csv.ts` has one of those until proven otherwise.
 
 ## What the owner has already set up
 
-- **Five Google Sheets**, named and empty except notes: `test-event`,
-  `test-people`, `test-notes`, `test-markers`, `test-placements`.
-- **`~/Desktop/meanwhile-cm100-settings.csv`** — the real settings file,
-  `key,value`, all five URLs verified resolving, plus a `github_repo` key that
-  nothing reads yet (deliberately — it proves unknown-key preservation).
-- **The data repo** `chendaniely/meanwhile-cm100-g` holds real data at
-  `9248b20`: three notes, a roster of Dan / REDACTED / Rylen with device names
-  as aliases and REDACTED pinned, and `manifest.json`.
-- **The photo folder** is `~/Desktop/Ridgeline 100_ Example City` — 231
-  files, flat, with the three data files symlinked in. See `EVENT.md`.
+**This is a public repo. The specifics live in `EVENT.md`, which is gitignored
+for exactly that reason — crew names and local paths do not belong here.**
+
+- **Five Google Sheets** exist, one per data file, named and empty except
+  notes. Their URLs are in the owner's settings file, not in this repo.
+- **A real settings file** exists on the owner's disk: `key,value`, all five
+  URLs verified resolving, plus a `github_repo` key that nothing reads yet
+  (deliberately — it proves unknown-key preservation survives a round trip).
+- **The private data repo** holds real data — a handful of notes, a roster
+  renamed from device names with the old names kept as aliases, one person
+  pinned, and a `manifest.json`. Its name and location are in `EVENT.md`.
+- **The photo folder** is a flat directory of 231 files with the data files
+  symlinked in. Path in `EVENT.md`. The symlinks are not optional: a Save run
+  against that folder before they existed wrote an empty `notes.csv` over a
+  file it had never read.
 
 ## Measured facts — do not re-derive these
 
@@ -86,9 +100,14 @@ discriminated. Assume `settings-csv.ts` has one of those until proven otherwise.
   is mandatory, not defensive.
 - **A wrong `gid` returns HTTP 400 with 3KB of HTML.** Never hand that to
   `parseCsv`.
-- **`timeSource: 'manual'` has no producer anywhere.** `placements.csv` starts
-  empty and stays empty until hand-placement is built. It is a durable home
-  waiting for a feature, not a rescue of existing data.
+- **Nothing in the VIEWER can originate a `timeSource: 'manual'`.** Be precise
+  here: `applyPlacements` (`placements-csv.ts:633`) sets it, and `assemble.ts`
+  carries an existing one forward — but no UI can mint one, because the
+  unplaced tray is read-only. So `placements.csv` starts empty and stays empty
+  until hand-placement is built: a durable home waiting for a feature, not a
+  rescue of existing data. (An earlier draft of this line said "no producer
+  anywhere", which the commit three rows above in that table had already made
+  false.)
 - **`assembleManifest` builds items from the files on disk**, so a persisted
   item index cannot be a source. That is why items are derived and there is no
   `items.csv`.
@@ -106,10 +125,16 @@ discriminated. Assume `settings-csv.ts` has one of those until proven otherwise.
   owner anywhere without appending the same text verbatim to `PROMPTS.md` fails
   the build. Never invent a quote to satisfy it.
 
-## Five specs were written and four rejected — read the spec's rejection notes
+## Six drafts, four rejected by review — read the spec's own rejection notes
 
-The design took six versions. Each rejection is recorded *inside* the spec so
-the ground is not re-lost. The recurring failure was mine: confidently-stated
-mechanism claims that were factually wrong, and repeated attempts to make
-machine-generated data behave like authored data. If a future session finds
-itself proposing an `items.csv`, read v4's rejection first.
+v6 is what shipped. The spec records why v1, v4 and v5 were rejected; v2 and v3
+are named but their reasoning is compressed into the timestamp section rather
+than given their own entries.
+
+The recurring failure was mine, twice over: confidently-stated mechanism claims
+that turned out factually wrong, and repeated attempts to make the
+machine-generated item index behave like authored data. **v4 proposed a
+2,000-row `items.csv` and was rejected because `assembleManifest` builds items
+from the files on disk, so such a file cannot be a source at all.** If a future
+session finds itself proposing one, that is the finding to re-read — it is in
+the spec under "The shape, unchanged from v5 and verified".
