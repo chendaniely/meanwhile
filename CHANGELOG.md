@@ -30,6 +30,26 @@ bearer capabilities.
 
 Nothing imports it yet.
 
+**A settings file that lost its header row could lose a setting on the next
+Save, in silence.** Found by mutation testing the codec — 102 mutations against
+its own suite, every rule and every exported function. A blank first column is
+reported and ignored when it is an ordinary row; the line standing in for a
+MISSING header skipped that check, so `parseSettingsCsv` returned a row with a
+blank key — the one shape `formatSettingsCsv` drops — and one Save later the
+address was off disk with nothing said anywhere. `readRows` now puts the eaten
+header line through the same check as every other line, so the loss is reported
+at read time instead: "refusing to read a row is not permission to delete it",
+one file over. `formatSettingsCsv`'s own comment had asserted this could not
+happen, which is why nothing had looked.
+
+Twelve tests were added alongside it, closing every gap the sweep exposed: the
+`https://docs.google.com` host check (a spreadsheet-shaped path on another host
+must not be rewritten into a Google address), trimming a pasted URL, a `gid`
+that is not a number or is the tail of a longer parameter name, a header whose
+SECOND column name is wrong, a key that merely contains `url`, `schema` set
+through `updates`, and a full parse → format → parse round trip pinned against
+literal rows rather than against a second read of the same input.
+
 ### Editing the event timezone no longer resurrects a deleted note, or duplicates one
 
 > "yes fix the timezone/fingerprint bug"

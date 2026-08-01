@@ -448,6 +448,31 @@ function readRows(text: string, file: string, problems?: string[]): SettingsRow[
   const keyCol = rawKeyCol ?? 'key';
   const valCol = rawValCol ?? 'value';
 
+  /**
+   * One line, whether it came from the header row or from the body.
+   *
+   * **The eaten header line goes through this too, and that is the point.** It
+   * used to be pushed straight into `out` without the blank-key check below, so
+   * a file that had lost its header AND whose first cell was empty produced a
+   * row with a blank key — the one shape `formatSettingsCsv` skips. The row
+   * therefore survived the read, said nothing about itself, and was deleted by
+   * the next Save with nothing to notice it by: "refusing to read a row is not
+   * permission to delete it", one file over. Reported and dropped at READ time
+   * is what every other keyless row already does, and it is the honest half of
+   * that pair.
+   */
+  function take(rawKey: string, value: string): void {
+    const key = rawKey.trim();
+    if (key === '') {
+      problems?.push(
+        `${file} has a row with nothing in the first column, so there is nothing to say what ` +
+          'it configures; it was ignored.',
+      );
+      return;
+    }
+    out.push({ key, value });
+  }
+
   // A header row is the one row of a two-column key/value file that can be
   // mistaken for data, so a file that has lost it — hand-written, or a
   // spreadsheet export that dropped it — would otherwise have its FIRST
@@ -460,20 +485,10 @@ function readRows(text: string, file: string, problems?: string[]): SettingsRow[
         `"${headers.join(',')}" instead, so that line was read as a setting rather than as a ` +
         'header.',
     );
-    out.push({ key: rawKeyCol.trim(), value: rawValCol ?? '' });
+    take(rawKeyCol, rawValCol ?? '');
   }
 
-  for (const row of rows) {
-    const key = (row[keyCol] ?? '').trim();
-    if (key === '') {
-      problems?.push(
-        `${file} has a row with nothing in the first column, so there is nothing to say what ` +
-          'it configures; it was ignored.',
-      );
-      continue;
-    }
-    out.push({ key, value: row[valCol] ?? '' });
-  }
+  for (const row of rows) take(row[keyCol] ?? '', row[valCol] ?? '');
   return out;
 }
 
@@ -544,6 +559,12 @@ function settingsOf(
  * by construction and neither can be produced by `parseSettingsCsv`: a row with
  * a blank key (nothing would say what it configures), and an `updates` entry
  * whose key is blank.
+ *
+ * **The first half of that was untrue until the line standing in for a missing
+ * header was made to go through the blank-key check as well** — see `take()` in
+ * `readRows`. While it was untrue this function was the thing DELETING such a
+ * row, in silence, which is the failure `tests/settings-csv.test.ts` now pins
+ * from both ends.
  */
 export function formatSettingsCsv(
   rows: readonly SettingsRow[],
