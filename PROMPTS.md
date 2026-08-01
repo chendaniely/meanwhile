@@ -1660,3 +1660,31 @@ Two things a settings file does want are cheap in CSV: **comments**, by skipping
 any key beginning `#`, and **lists**, via the `;` separator `people` and `author`
 already use — which `notes_url` needs, because `notes*.csv` globs across several
 crew members' files and the three transports must hold the same set.
+
+> i want the local <> sheets <> git to all have the same files that can be
+> synced manually or automatically or semi-automatically
+
+This settled the shape after four rejected designs. "The same files" is the
+constraint that rules out keeping `manifest.json` for items alone: a JSON file
+cannot be a Google Sheet, so the one file left out would be the one holding the
+crop, the markers, the course reference and every hand placement — precisely
+CLAUDE.md's own list of what a re-ingest cannot reproduce.
+
+> ok then read the csvs i will import after save
+
+And this settled the direction of sync. The owner is the mechanism: the app
+reads, Save downloads, the owner imports. No write path to Sheets is built,
+which is what lets the whole design need no accounts, no keys and no backend —
+reading a published sheet requires no auth, writing requires OAuth and an
+origin-bound client ID.
+
+> ideally we accept markdown formatted text and multi line text in the notes, to
+> allow for dashes, but i don't think we need to account for that right now
+
+Deferred, with the obstacle recorded because the obvious one is wrong.
+Multi-line text is already legal — RFC 4180 permits newlines inside a quoted
+field and `parseCsv` handles them; the project normalises them to spaces by
+choice. The real obstacle is the dash: a markdown bullet begins `- `, which the
+formula guard rewrites, and that guard survives exactly one pass through a
+Google Sheet. Markdown's commonest construct is the one this loop protects
+least, so it should land with whatever answers that.
