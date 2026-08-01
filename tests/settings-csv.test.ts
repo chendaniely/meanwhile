@@ -153,6 +153,34 @@ describe('settings.csv — reading', () => {
     expect(urls.notes).toEqual([exported('N')]);
   });
 
+  it('reports a header row whose second column name is the wrong one too', () => {
+    // Checking only the first name would let "key,url" through, and the file
+    // would then be read with its first setting eaten as column names.
+    const { urls, problems } = parseSettingsCsv(['key,url', `event_url,${sheet('E')}`].join('\n'));
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('should begin with a header row reading "key,value"');
+    expect(problems[0]).toContain('"key,url"');
+    expect(urls.event).toEqual([exported('E')]);
+  });
+
+  it('reports the line standing in for a missing header when IT has no key, rather than keeping a row Save would delete', () => {
+    // The bug this pins: the eaten header line skipped the blank-key check, so
+    // parseSettingsCsv returned a row with a key of "" — the one shape
+    // formatSettingsCsv drops — and the next Save deleted the address with
+    // nothing said anywhere.
+    const { rows, problems } = parseSettingsCsv(
+      [',https://lost.test/x.csv', `event_url,${sheet('E')}`].join('\n'),
+    );
+    expect(problems).toHaveLength(2);
+    expect(problems[0]).toContain('should begin with a header row reading "key,value"');
+    expect(problems[1]).toContain('nothing in the first column');
+    expect(rows.map((r) => r.key)).toEqual(['event_url']);
+    // Whatever parseSettingsCsv hands back, formatSettingsCsv writes back: no
+    // row it returns may be one the writer silently drops.
+    expect(rows.every((r) => r.key.trim() !== '')).toBe(true);
+    expect(rowsOf(formatSettingsCsv(rows))).toEqual(rows.map((r) => [r.key, r.value]).concat([['schema', '1']]));
+  });
+
   it('reports a row with nothing in the first column and ignores it', () => {
     const { rows, problems } = parseSettingsCsv(
       file([`event_url,${sheet('E')}`, `,${sheet('ORPHAN')}`]),
@@ -183,6 +211,15 @@ describe('settings.csv — reading', () => {
     // ...and nothing was lost from it either.
     expect(rows.map((r) => r.key)).toEqual(['event_url', 'github_repo', 'schema']);
     expect(formatSettingsCsv(rows)).toContain('schema,99');
+  });
+
+  it('names the file first in the problem that refuses it, and names the file it was told about', () => {
+    const { problems } = parseSettingsCsv(
+      file([`event_url,${sheet('E')}`, 'schema,99']),
+      'priya-settings.csv',
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]?.startsWith('priya-settings.csv has schema 99')).toBe(true);
   });
 
   it('refuses a schema that is not a whole number', () => {
@@ -283,6 +320,44 @@ describe('settings.csv — Google Sheets addresses', () => {
     ]) {
       expect(fetchableCsvUrl(elsewhere)).toBe(elsewhere);
     }
+  });
+
+  it('leaves a spreadsheet-shaped path on some other host alone, rather than sending it to Google', () => {
+    // The dangerous failure is not "it was not rewritten": it is that rewriting
+    // builds a fresh docs.google.com address out of the id, so a host check
+    // that let these through would silently change WHERE the file is read from.
+    for (const elsewhere of [
+      'https://evil.test/spreadsheets/d/ABC123/edit',
+      'https://docs.google.com.evil.test/spreadsheets/d/ABC123/edit?usp=sharing',
+    ]) {
+      expect(fetchableCsvUrl(elsewhere)).toBe(elsewhere);
+    }
+  });
+
+  it('hands back a string that names no address at all exactly as it was given', () => {
+    for (const raw of ['', '   ', 'TBD', 'notes.csv']) expect(fetchableCsvUrl(raw)).toBe(raw);
+  });
+
+  it('trims an address pasted with spaces around it, rather than failing to recognise it', () => {
+    expect(fetchableCsvUrl(`  ${sheet('ABC123')}  `)).toBe(exported('ABC123'));
+  });
+
+  it('ignores a gid that is not a number, rather than asking for a tab that cannot exist', () => {
+    expect(fetchableCsvUrl('https://docs.google.com/spreadsheets/d/ABC123/edit#gid=all')).toBe(
+      exported('ABC123'),
+    );
+  });
+
+  it('reads gid as a parameter of its own, never as the tail of a longer name', () => {
+    expect(fetchableCsvUrl('https://docs.google.com/spreadsheets/d/ABC123/edit?tabgid=99')).toBe(
+      exported('ABC123'),
+    );
+  });
+
+  it('takes the query gid when the query and the fragment name different tabs', () => {
+    expect(fetchableCsvUrl('https://docs.google.com/spreadsheets/d/ABC123/edit?gid=7#gid=9')).toBe(
+      `${exported('ABC123')}&gid=7`,
+    );
   });
 
   it('does not upgrade a scheme somebody typed', () => {
@@ -412,6 +487,49 @@ describe('settings.csv — writing', () => {
     ]);
   });
 
+  it('writes one schema row when the schema is the thing being set', () => {
+    const written = formatSettingsCsv([], { schema: '1' });
+    expect(rowsOf(written)).toEqual([['schema', '1']]);
+    // Two of them would be a file naming a key twice, which the reader reports.
+    expect(parseSettingsCsv(written).problems.filter((p) => p.includes('more than once'))).toEqual(
+      [],
+    );
+  });
+
+  it('gives a hand-organised file back whole: comments in place, unknown keys, ";"-lists and NFC', () => {
+    // Pinned against literal rows rather than against a second read of the
+    // input: comparing rowsOf(written) with rowsOf(text) puts the same reader
+    // on both sides, so a reader that dropped comments would agree with itself.
+    const decomposed = 'José';
+    const composed = 'José';
+    expect(decomposed).not.toBe(composed);
+    const text = file([
+      '# --- the five data files ---',
+      `event_url,${sheet('E')}`,
+      `notes_url,${sheet('N')} ; https://example.test/priya-notes.csv`,
+      '# --- everything else ---',
+      'github_repo,chendaniely/meanwhile-cm100-g',
+      `author,${decomposed}`,
+    ]);
+    const written = formatSettingsCsv(parseSettingsCsv(text).rows);
+    expect(rowsOf(written)).toEqual([
+      ['# --- the five data files ---', ''],
+      ['event_url', sheet('E')],
+      ['notes_url', `${sheet('N')} ; https://example.test/priya-notes.csv`],
+      ['# --- everything else ---', ''],
+      ['github_repo', 'chendaniely/meanwhile-cm100-g'],
+      ['author', composed],
+      ['schema', '1'],
+    ]);
+    // The ";"-list still names both files after the round trip...
+    expect(parseSettingsCsv(written).urls.notes).toEqual([
+      exported('N'),
+      'https://example.test/priya-notes.csv',
+    ]);
+    // ...and writing it a second time changes not one byte.
+    expect(formatSettingsCsv(parseSettingsCsv(written).rows)).toBe(written);
+  });
+
   it('writes a key set to nothing as a blank row, because the key still records that somebody added it', () => {
     const written = formatSettingsCsv([], { markers_url: '' });
     expect(rowsOf(written)).toEqual([
@@ -495,6 +613,15 @@ describe('settings.csv — telling it apart from event.csv', () => {
   it('calls a file carrying neither signal neither', () => {
     expect(keyValueCsvKind(file(['github_repo,a/b']))).toBe('neither');
     expect(keyValueCsvKind('')).toBe('neither');
+  });
+
+  it('does not take a key that merely contains "url" for the address of a data file', () => {
+    // The signal is the "_url" SUFFIX. A key that happens to carry the letters
+    // — a note about the urls, a bare "url" — names no data file, and calling
+    // such a file a settings file would make the reader look for five
+    // addresses that are not in it.
+    expect(keyValueCsvKind(file(['urls_readme,how to fill these in']))).toBe('neither');
+    expect(keyValueCsvKind(file(['url,https://example.test/']))).toBe('neither');
   });
 
   it('does not let a commented-out key decide what the file is', () => {
